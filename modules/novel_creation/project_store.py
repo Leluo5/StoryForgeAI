@@ -50,6 +50,15 @@ class ProjectStore:
     def _lock(self, project_id: str) -> FileLock:
         return FileLock(os.path.join(self.data_dir, ".locks", f"{project_id}.lock"))
 
+    def _collab_lock(self, project_id: str) -> FileLock:
+        """协同编排专用写锁（独立锁文件，与常规项目锁分开）。
+
+        多角色协同接口持锁期间会经调度器触发角色 Agent 调用，其内部审计
+        （append_tool_call）又需拿常规项目锁；若复用同一把锁会重入死锁，
+        故协同用独立锁路径实现「409 写锁未获取」（接口契约 §2.4）。
+        """
+        return FileLock(os.path.join(self.data_dir, ".locks", f"{project_id}.collab.lock"))
+
     def _load(self, project_id: str) -> Dict[str, Any]:
         data = read_json(self._path(project_id), {})
         if not isinstance(data, dict):
@@ -59,6 +68,8 @@ class ProjectStore:
         data.setdefault("roles", [])
         data.setdefault("role_bindings", [])
         data.setdefault("agent_sessions", [])
+        # 协同模式开关（数据结构设计 §2.3：默认 false）
+        data.setdefault("collab_enabled", False)
         return data
 
     def _save(self, project_id: str, data: Dict[str, Any]) -> None:
@@ -79,6 +90,7 @@ class ProjectStore:
             "genre": kwargs.get("genre") or "",
             "status": kwargs.get("status") or "active",
             "author": kwargs.get("author") or "",
+            "collab_enabled": bool(kwargs.get("collab_enabled", False)),
             "created_at": now,
             "updated_at": now,
             "chapters": [],
@@ -151,7 +163,7 @@ class ProjectStore:
 
     def update_project(self, project_id: str, **updates: Any) -> Dict[str, Any]:
         """更新项目基础字段。"""
-        allowed = {"title", "description", "genre", "status", "author"}
+        allowed = {"title", "description", "genre", "status", "author", "collab_enabled"}
         with self._lock(project_id):
             data = self._load(project_id)
             if not data.get("id"):
@@ -159,9 +171,34 @@ class ProjectStore:
             for key, value in updates.items():
                 if key not in allowed:
                     raise bad_request(f"非法项目字段: {key}")
+                if key == "collab_enabled" and not isinstance(value, bool):
+                    raise bad_request("collab_enabled 须为布尔值")
                 data[key] = value
             if data["status"] not in _PROJECT_STATUSES:
                 raise bad_request(f"非法项目状态: {data['status']}")
+            data["updated_at"] = _now()
+            self._save(project_id, data)
+            return data
+
+    # ---------- Collab 协同开关 ----------
+
+    def get_collab_enabled(self, project_id: str) -> bool:
+        """读取项目协同模式开关（数据结构设计 §2.3）。"""
+        with self._lock(project_id):
+            data = self._load(project_id)
+            if not data.get("id"):
+                raise not_found(f"项目不存在: {project_id}")
+            return bool(data.get("collab_enabled", False))
+
+    def set_collab_enabled(self, project_id: str, enabled: bool) -> Dict[str, Any]:
+        """设置项目协同模式开关。"""
+        if not isinstance(enabled, bool):
+            raise bad_request("enabled 须为布尔值")
+        with self._lock(project_id):
+            data = self._load(project_id)
+            if not data.get("id"):
+                raise not_found(f"项目不存在: {project_id}")
+            data["collab_enabled"] = enabled
             data["updated_at"] = _now()
             self._save(project_id, data)
             return data

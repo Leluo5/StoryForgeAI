@@ -60,6 +60,32 @@ class FileLock:
             self._fh.seek(0)
             msvcrt.locking(self._fh.fileno(), msvcrt.LK_LOCK, 1)
 
+    def try_acquire(self, timeout: Optional[float] = None) -> bool:
+        """非阻塞尝试获取锁；成功返回 True，超时/占用返回 False。
+
+        用于「写锁未获取」的 409 语义（接口契约 §2.4）：不阻塞主流程，
+        拿不到锁立即返回 False，由调用方决定抛错或降级。timeout 为秒，
+        None 表示仅尝试一次（非阻塞）。
+        """
+        if not self._thread_lock.acquire(blocking=False):
+            # 线程锁已被本进程占用：非阻塞尝试失败
+            return False
+        os.makedirs(os.path.dirname(self.lock_path) or ".", exist_ok=True)
+        self._fh = open(self.lock_path, "a+", encoding="utf-8")
+        try:
+            if fcntl is not None:
+                fcntl.flock(self._fh.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+            elif msvcrt is not None:  # pragma: no cover - Windows
+                self._fh.seek(0)
+                msvcrt.locking(self._fh.fileno(), msvcrt.LK_NBLCK, 1)
+        except (BlockingIOError, OSError):
+            # 文件锁已被其他进程占用：非阻塞尝试失败
+            self._fh.close()
+            self._fh = None
+            self._thread_lock.release()
+            return False
+        return True
+
     def release(self) -> None:
         if self._fh is None:
             return

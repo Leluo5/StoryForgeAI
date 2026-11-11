@@ -30,6 +30,7 @@ from typing import Any, Dict
 from flask import Blueprint, jsonify, request
 
 from ..common.errors import bad_request, conflict, forbidden, not_found
+from .role_agent_scheduler import merge_result
 
 
 def create_blueprint(
@@ -241,5 +242,79 @@ def create_blueprint(
             gender=payload.get("gender"),
         )
         return _ok({"id": role["id"], "name": role["name"]})
+
+    # ---------- 2.4 多角色协同 ----------
+
+    @bp.post("/api/projects/<project_id>/collab")
+    def collab_invoke(project_id: str):
+        """多角色协同调用（接口契约 §2.4）。
+
+        请求 {"roles": ["role1", "role2"], "step_order": 11, "context": {...}}。
+        流程：project_id 获取写锁（非阻塞，未获抛 409）→ 各角色 Agent 依序调用
+        （并行读/串行写，context 逐角色合并）→ 汇总 merged_context 与 conflicts。
+
+        错误码：
+            400 roles 为空/非法 step_order/context 非对象
+            404 项目不存在
+            409 协同未开启（collab_enabled=false）/ 写锁未获取
+        """
+        payload = request.get_json(silent=True) or {}
+        roles = payload.get("roles")
+        step_order = payload.get("step_order")
+        context = payload.get("context") or {}
+        if not isinstance(roles, list) or not roles:
+            raise bad_request("roles 不能为空")
+        if any(not isinstance(r, str) or not r.strip() for r in roles):
+            raise bad_request("roles 须为字符串数组")
+        if not isinstance(step_order, int) or not (1 <= step_order <= 11):
+            raise bad_request("step_order 须为 1-11 整数")
+        if not isinstance(context, dict):
+            raise bad_request("context 须为对象")
+
+        # 协同模式开关（接口契约 §2.4：409 协同未开启）
+        if not project_store.get_collab_enabled(project_id):
+            raise conflict("协同模式未开启")
+
+        # 项目存在校验（404）
+        project_store.get_project(project_id)
+
+        # 角色存在校验（404，拿锁前完成，避免锁内异常污染）
+        for role_id in roles:
+            role_store.get_role(project_id, role_id)
+
+        # 获取协同写锁（非阻塞，未获抛 409）
+        collab_lock = project_store._collab_lock(project_id)
+        if not collab_lock.try_acquire():
+            raise conflict("写锁未获取")
+        try:
+            merged: Dict[str, Any] = {}
+            conflicts: list = []
+            # 各角色依序调用；角色无命中绑定则跳过（无输出，不算冲突）
+            for role_id in roles:
+                # 命中规则与调度器一致：step_order <= 当前 且 enabled=true
+                bindings = role_store.get_bindings(project_id, role_id, enabled=True)
+                if not any(b["step_order"] <= step_order for b in bindings):
+                    continue
+                try:
+                    result = scheduler.invoke_role_agents(
+                        project_id, role_id, step_order, merged,
+                    )
+                except Exception as _e:  # 记录但继续其他角色
+                    conflicts.append({
+                        "role_id": role_id,
+                        "error": str(_e),
+                    })
+                    continue
+                # 冲突检测：后写覆盖告警（结果与既有上下文键冲突）
+                if merged and set(merged.keys()) & set(result.keys()):
+                    conflicts.append({
+                        "role_id": role_id,
+                        "type": "context_overlap",
+                        "keys": sorted(set(merged.keys()) & set(result.keys())),
+                    })
+                merged = merge_result(merged, result)
+        finally:
+            collab_lock.release()
+        return _ok({"merged_context": merged, "conflicts": conflicts})
 
     return bp
