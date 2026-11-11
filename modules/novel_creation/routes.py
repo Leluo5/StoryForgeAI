@@ -12,6 +12,8 @@
     PUT    /api/roles/<role_id>/agents/<bid>     更新绑定（3.3）
     POST   /api/roles/<role_id>/agents/invoke    按预设流程调用（3.4）
     GET    /api/roles/<role_id>/agents           列出角色 Agent（3.5）
+  §4 工具接口（P3-T7）：
+    POST   /api/projects/<id>/tools/<tool>       调用写作工具（4.1，工具-角色联动 §4.2）
 
 关键设计：
   角色接口路径无 project_id，而 RoleStore 全部方法需 (project_id, ...)。
@@ -38,6 +40,7 @@ def create_blueprint(
     project_store: Any,
     scheduler: Any,
     flow_engine: Any,
+    tool_registry: Any = None,
 ) -> Blueprint:
     """创建小说创作模块蓝图（依赖注入）。
 
@@ -46,6 +49,7 @@ def create_blueprint(
         project_store: ProjectStore 实例（聚合根反查 / 工具调用审计）。
         scheduler: RoleAgentScheduler 实例（有序调用绑定 Agent）。
         flow_engine: StepFlowEngine 实例（11 步流程配置与触发）。
+        tool_registry: ToolRegistry 实例（工具注册/派发，§4 工具接口）。
     """
     bp = Blueprint("novel_creation", __name__)
 
@@ -316,5 +320,75 @@ def create_blueprint(
         finally:
             collab_lock.release()
         return _ok({"merged_context": merged, "conflicts": conflicts})
+
+    # ---------- 4.1 调用写作工具 ----------
+
+    @bp.post("/api/projects/<project_id>/tools/<tool>")
+    def invoke_tool(project_id: str, tool: str):
+        """调用写作工具（接口契约 §4.1）。
+
+        请求 {"params": {...}, "role_id": "可选"}。
+        流程：白名单校验（404 未注册）→ 项目存在校验（404）→ role_link 工具注入
+        角色上下文（只读，§4.2）→ 派发处理器 → 审计落库（success/failed/pending）。
+
+        响应：
+            同步工具：{"code": 0, "data": {"result": ...}}
+            长任务（gen_novel / gen_audiobook / run_70_workflow）：
+                {"code": 0, "data": {"task_id": "...", "status": "queued"}}
+        错误码：404 工具未注册 / 项目不存在 / 角色不存在。
+
+        注：真实长任务队列由实现任务替换；本阶段占位返回 task_id（新 UUID）
+        + status=queued，并落 pending 审计，保持契约「长任务排队」语义。
+        """
+        if tool_registry is None:
+            raise not_found("工具注册中心未初始化")
+        # 白名单校验：未注册抛 404（接口契约 §4.1：404 工具未注册）
+        spec = tool_registry.get(tool)
+        if spec is None:
+            raise not_found(f"工具未注册: {tool}")
+        project_store.get_project(project_id)  # 404 若不存在
+
+        payload = request.get_json(silent=True) or {}
+        params = payload.get("params") or {}
+        role_id = payload.get("role_id")
+        if not isinstance(params, dict):
+            raise bad_request("params 须为对象")
+        if role_id is not None and not isinstance(role_id, str):
+            raise bad_request("role_id 须为字符串")
+
+        # §4.2 工具-角色联动：role_link 工具读取角色上下文（只读注入）
+        context: Dict[str, Any] = {}
+        if spec.role_link and role_id:
+            role = role_store.get_role(project_id, role_id)  # 404 若不存在
+            context["role"] = role
+            context["role_id"] = role_id
+            context["project_id"] = project_id
+
+        # 派发处理器（异常映射 500/502 由应用层错误处理器统一处理）
+        try:
+            result = spec.handler(params, context)
+            status = "success"
+        except Exception as _e:  # noqa: BLE001 - 失败审计后重抛
+            project_store.append_tool_call(
+                project_id, tool, params, {"error": str(_e)},
+                status="failed", role_id=role_id,
+            )
+            raise
+
+        # 长任务：落 pending 审计，返回排队语义（task_id 暂用新 UUID）
+        if spec.long_task:
+            from ..common.storage import new_id as _new_id
+            task_id = _new_id()
+            project_store.append_tool_call(
+                project_id, tool, params, {"task_id": task_id},
+                status="pending", role_id=role_id,
+            )
+            return _ok({"task_id": task_id, "status": "queued"})
+
+        # 同步工具：审计 + 返回 result
+        project_store.append_tool_call(
+            project_id, tool, params, result, status="success", role_id=role_id,
+        )
+        return _ok({"result": result})
 
     return bp

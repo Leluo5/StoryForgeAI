@@ -1192,13 +1192,17 @@ from modules.novel_creation.project_store import ProjectStore
 from modules.novel_creation.role_store import RoleStore
 from modules.novel_creation.role_agent_scheduler import RoleAgentScheduler
 from modules.novel_creation.step_flow_engine import StepFlowEngine
+from modules.novel_creation.tool_registry import create_default_registry
 from modules.novel_creation.routes import create_blueprint
 
 _project_store = ProjectStore(os.path.join(DATA_DIR, "projects"))
 _role_store = RoleStore(os.path.join(DATA_DIR, "projects"))
 _role_scheduler = RoleAgentScheduler(_role_store, _project_store, coze_client)
 _step_flow_engine = StepFlowEngine(_role_scheduler, _role_store)
-_novel_bp = create_blueprint(_role_store, _project_store, _role_scheduler, _step_flow_engine)
+_tool_registry = create_default_registry()
+_novel_bp = create_blueprint(
+    _role_store, _project_store, _role_scheduler, _step_flow_engine, _tool_registry,
+)
 app.register_blueprint(_novel_bp)
 
 

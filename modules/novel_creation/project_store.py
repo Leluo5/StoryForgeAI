@@ -296,14 +296,20 @@ class ProjectStore:
     def append_tool_call(
         self, project_id: str, tool_name: str, request: Dict[str, Any],
         response: Dict[str, Any], status: str = "success",
+        role_id: Optional[str] = None,
     ) -> Dict[str, Any]:
-        """记录工具调用（数据结构设计 §2.5）。status: success/failed。"""
-        if status not in {"success", "failed"}:
-            raise bad_request("工具调用状态须为 success/failed")
+        """记录工具调用（数据结构设计 §2.5）。
+
+        status: success/failed/pending（pending 供长任务排队后补 status）。
+        role_id: 联动角色（可选，数据结构设计 §2.5）。
+        """
+        if status not in {"success", "failed", "pending"}:
+            raise bad_request("工具调用状态须为 success/failed/pending")
         record: Dict[str, Any] = {
             "id": new_id(),
             "project_id": project_id,
             "tool_name": tool_name,
+            "role_id": role_id,
             "request": request,
             "response": response,
             "status": status,
