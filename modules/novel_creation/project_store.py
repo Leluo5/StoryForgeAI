@@ -14,7 +14,7 @@ from __future__ import annotations
 import os
 from typing import Any, Dict, List, Optional
 
-from ..common.errors import bad_request, not_found
+from ..common.errors import bad_request, conflict, not_found
 from ..common.storage import FileLock, atomic_write_json, new_id, now_iso, read_json
 
 # 章节状态白名单（数据结构设计 §2.4）
@@ -90,6 +90,18 @@ class ProjectStore:
         if project["status"] not in _PROJECT_STATUSES:
             raise bad_request(f"非法项目状态: {project['status']}")
         with self._lock(project_id):
+            # 同名项目查重（接口契约 §2.1：409 同名项目已存在）
+            existing = self._load(project_id)
+            if existing.get("id"):
+                raise conflict(f"项目已存在: {project['title']}")
+            for name in os.listdir(self.data_dir):
+                if not name.endswith(".json") or name.startswith("."):
+                    continue
+                other_id = name[: -len(".json")]
+                with self._lock(other_id):
+                    other = self._load(other_id)
+                if other.get("title") == project["title"]:
+                    raise conflict(f"项目已存在: {project['title']}")
             self._save(project_id, project)
         return project
 
@@ -164,30 +176,36 @@ class ProjectStore:
     # ---------- Chapter ----------
 
     def create_chapter(
-        self, project_id: str, title: str, content: str = "", order: int = 0,
+        self, project_id: str, title: str, content: str = "", order: Optional[int] = None,
     ) -> Dict[str, Any]:
-        """创建章节。order 同项目唯一（数据结构设计 §2.4 约束）。"""
+        """创建章节。order 同项目唯一（数据结构设计 §2.4 约束）。
+
+        order 缺省（None）时自动取当前最大序号 + 1，保证章节按创建顺序递增。
+        """
         if not title or not str(title).strip():
             raise bad_request("章节标题不能为空")
-        if not isinstance(order, int) or order < 0:
-            raise bad_request("order 须为非负整数")
         now = _now()
-        chapter: Dict[str, Any] = {
-            "id": new_id(),
-            "project_id": project_id,
-            "title": str(title).strip(),
-            "content": content,
-            "order": order,
-            "status": "draft",
-            "created_at": now,
-            "updated_at": now,
-        }
+        chapter_id = new_id()
         with self._lock(project_id):
             data = self._load(project_id)
             if not data.get("id"):
                 raise not_found(f"项目不存在: {project_id}")
+            if order is None:
+                order = max((c["order"] for c in data["chapters"]), default=-1) + 1
+            if not isinstance(order, int) or order < 0:
+                raise bad_request("order 须为非负整数")
             if any(c["order"] == order for c in data["chapters"]):
                 raise bad_request(f"章节顺序 order={order} 已存在")
+            chapter: Dict[str, Any] = {
+                "id": chapter_id,
+                "project_id": project_id,
+                "title": str(title).strip(),
+                "content": content,
+                "order": order,
+                "status": "draft",
+                "created_at": now,
+                "updated_at": now,
+            }
             data["chapters"].append(chapter)
             self._save(project_id, data)
         return chapter

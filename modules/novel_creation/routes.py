@@ -1,11 +1,17 @@
 # -*- coding: utf-8 -*-
-"""小说创作模块路由蓝图（P3-T4：角色 Agent API）。
+"""小说创作模块路由蓝图（P3-T4 角色 Agent API + P3-T5 项目/章节 API）。
 
-对齐接口契约 §3 角色接口（本文件实现 3.2/3.3/3.4/3.5，§3.1 创建角色属 P3-T5）：
-  POST   /api/roles/<role_id>/agents            绑定角色 Agent（§3.2）
-  PUT    /api/roles/<role_id>/agents/<bid>      更新绑定（§3.3）
-  POST   /api/roles/<role_id>/agents/invoke     按预设流程调用（§3.4）
-  GET    /api/roles/<role_id>/agents            列出角色 Agent（§3.5）
+对齐接口契约：
+  §2 项目接口（P3-T5）：
+    POST   /api/projects                         创建小说项目（2.1）
+    GET    /api/projects                         列出项目（2.2）
+    POST   /api/projects/<id>/chapters           生成章节内容（2.3）
+  §3 角色接口：
+    POST   /api/projects/<id>/roles              创建角色（3.1，P3-T5）
+    POST   /api/roles/<role_id>/agents           绑定角色 Agent（3.2）
+    PUT    /api/roles/<role_id>/agents/<bid>     更新绑定（3.3）
+    POST   /api/roles/<role_id>/agents/invoke    按预设流程调用（3.4）
+    GET    /api/roles/<role_id>/agents           列出角色 Agent（3.5）
 
 关键设计：
   角色接口路径无 project_id，而 RoleStore 全部方法需 (project_id, ...)。
@@ -19,11 +25,11 @@
 
 from __future__ import annotations
 
-from typing import Any, Callable, Dict, Optional
+from typing import Any, Dict
 
 from flask import Blueprint, jsonify, request
 
-from ..common.errors import AppError, bad_request, not_found
+from ..common.errors import bad_request, conflict, forbidden, not_found
 
 
 def create_blueprint(
@@ -145,5 +151,95 @@ def create_blueprint(
             enabled = None
         bindings = role_store.get_bindings(project["id"], role_id, enabled=enabled)
         return _ok({"bindings": bindings})
+
+    # ---------- 2.1 创建小说项目 ----------
+
+    @bp.post("/api/projects")
+    def create_project():
+        """创建小说项目（接口契约 §2.1）。
+
+        请求 {"title": "书名", "genre": "玄幻", "world_setting": {...}}。
+        错误：400 title 缺失；409 同名项目已存在。
+        """
+        payload = request.get_json(silent=True) or {}
+        title = payload.get("title")
+        if not title or not str(title).strip():
+            raise bad_request("title 不能为空")
+        # world_setting 存 description 兜底；genre 透传
+        project = project_store.create_project(
+            title,
+            genre=payload.get("genre") or "",
+            description=payload.get("world_setting") or "",
+            author=payload.get("author") or "",
+        )
+        return _ok({"id": project["id"], "title": project["title"],
+                    "current_step": 1})
+
+    # ---------- 2.2 列出项目 ----------
+
+    @bp.get("/api/projects")
+    def list_projects():
+        """列出项目（接口契约 §2.2）。
+
+        查询参数 page（默认 1）、page_size（默认 20）。
+        """
+        try:
+            page = max(1, int(request.args.get("page", 1)))
+            page_size = min(100, max(1, int(request.args.get("page_size", 20))))
+        except ValueError:
+            raise bad_request("page/page_size 须为整数")
+        all_projects = project_store.list_projects()
+        total = len(all_projects)
+        start = (page - 1) * page_size
+        items = all_projects[start:start + page_size]
+        return _ok({"items": items, "total": total})
+
+    # ---------- 2.3 生成章节内容 ----------
+
+    @bp.post("/api/projects/<project_id>/chapters")
+    def create_chapter(project_id: str):
+        """生成章节内容（接口契约 §2.3）。
+
+        请求 {"title": "章名", "content": "正文", "author_role_id": "角色ID"}。
+        错误：400 content 缺失；404 项目不存在；403 非本角色章节（越界）。
+        order 缺省自动分配（当前最大 + 1）。
+        """
+        project = project_store.get_project(project_id)  # 404 若不存在
+        payload = request.get_json(silent=True) or {}
+        title = payload.get("title")
+        content = payload.get("content")
+        author_role_id = payload.get("author_role_id")
+        if not content or not str(content).strip():
+            raise bad_request("content 不能为空")
+        # 越界校验：author_role_id 须属于本项目（接口契约 §2.3：403 非本角色章节）
+        if author_role_id:
+            role_ids = {r.get("id") for r in project.get("roles", [])}
+            if author_role_id not in role_ids:
+                raise forbidden(f"角色 {author_role_id} 不属于本项目")
+        chapter = project_store.create_chapter(
+            project_id, title or "", content=content,
+        )
+        return _ok({"id": chapter["id"], "order": chapter["order"]})
+
+    # ---------- 3.1 创建角色 ----------
+
+    @bp.post("/api/projects/<project_id>/roles")
+    def create_role(project_id: str):
+        """创建角色（接口契约 §3.1）。
+
+        请求 {"name": "角色名", "age": 25, "gender": "男"}。
+        错误：400 name 缺失；404 项目不存在。
+        """
+        project_store.get_project(project_id)  # 404 若不存在
+        payload = request.get_json(silent=True) or {}
+        name = payload.get("name")
+        if not name or not str(name).strip():
+            raise bad_request("name 不能为空")
+        role = role_store.create_role(
+            project_id, name,
+            age=payload.get("age"),
+            gender=payload.get("gender"),
+        )
+        return _ok({"id": role["id"], "name": role["name"]})
 
     return bp

@@ -23,6 +23,14 @@ def not_found(message: str = "资源不存在", detail: str = "") -> AppError:
     return AppError(404, message, detail)
 
 
+def forbidden(message: str = "禁止访问", detail: str = "") -> AppError:
+    return AppError(403, message, detail)
+
+
+def conflict(message: str = "资源冲突", detail: str = "") -> AppError:
+    return AppError(409, message, detail)
+
+
 def server_error(message: str = "服务器错误", detail: str = "") -> AppError:
     return AppError(500, message, detail)
 
