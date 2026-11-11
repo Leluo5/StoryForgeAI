@@ -325,6 +325,107 @@ class CozeClient:
         except Exception as e:
             return {"success": False, "error": str(e)}
 
+    def chat(self, bot_id, user_message, conversation_id="", parameters=None, user_id="storyforge_user", max_poll=60, poll_interval=1.0):
+        """
+        调用 Coze 对话（v3/chat），同步等待结果。
+
+        对齐 RoleAgentScheduler 契约：chat(bot_id, user_message, conversation_id, parameters)
+        -> {"success": True, "content": <str|dict>, "conversation_id": ...}。
+
+        实现：POST /v3/chat 创建会话（stream=False），随后轮询
+        GET /v3/chat/retrieve 直至 status=completed，取最后一条 assistant 消息
+        content 作为输出。失败返回 {"success": False, "error": ...}。
+
+        Args:
+            bot_id (str): Coze 智能体 ID（即角色绑定的 agent_id）。
+            user_message (str): 发送给智能体的用户消息（含身份提示词/记忆/上下文）。
+            conversation_id (str): 会话隔离 key（f"{role_id}:{agent_id}"）；空则服务端新建。
+            parameters (dict): 附加变量（预留，当前透传未用）。
+            user_id (str): Coze 要求 user_id 字段，默认固定值。
+            max_poll (int): 最大轮询次数（每 poll_interval 秒一次）。
+            poll_interval (float): 轮询间隔秒。
+
+        Returns:
+            dict: {"success": True, "content": ..., "conversation_id": ...}
+                  或 {"success": False, "error": ...}
+        """
+        if not bot_id:
+            return {"success": False, "error": "bot_id 不能为空"}
+        if not user_message:
+            return {"success": False, "error": "user_message 不能为空"}
+
+        # 1. 创建会话（异步，stream=False）
+        create_url = f"{self.COZE_API_BASE}/v3/chat"
+        body = {
+            "bot_id": bot_id,
+            "user_id": user_id,
+            "stream": False,
+            "auto_save": True,
+            "additional_messages": [
+                {"role": "user", "content": user_message, "content_type": "text"}
+            ],
+        }
+        if conversation_id:
+            body["conversation_id"] = conversation_id
+        if parameters:
+            body["custom_variables"] = parameters
+
+        try:
+            resp = requests.post(create_url, headers=self._headers(), json=body, timeout=30)
+            resp.raise_for_status()
+            data = resp.json()
+            if data.get("code") != 0:
+                return {"success": False, "error": data.get("msg", "创建会话失败")}
+        except Exception as e:
+            return {"success": False, "error": str(e)}
+
+        chat_id = data.get("data", {}).get("id", "")
+        if not chat_id:
+            return {"success": False, "error": "未返回 chat_id"}
+        conv_id = data.get("data", {}).get("conversation_id", conversation_id)
+
+        # 2. 轮询查询结果
+        retrieve_url = f"{self.COZE_API_BASE}/v3/chat/retrieve"
+        for _ in range(max_poll):
+            try:
+                resp = requests.get(retrieve_url, headers=self._headers(),
+                                    params={"chat_id": chat_id}, timeout=15)
+                resp.raise_for_status()
+                data = resp.json()
+            except Exception as e:
+                return {"success": False, "error": str(e)}
+
+            if data.get("code") != 0:
+                return {"success": False, "error": data.get("msg", "查询会话失败")}
+
+            chat_data = data.get("data", {})
+            status = chat_data.get("status", "")
+            if status == "completed":
+                # 提取最后一条 assistant 消息 content
+                messages = chat_data.get("messages", [])
+                content = None
+                for msg in reversed(messages):
+                    if msg.get("role") == "assistant" and msg.get("type") in ("answer", "function_call", ""):
+                        c = msg.get("content")
+                        if c not in (None, ""):
+                            content = c
+                            break
+                if content is None and messages:
+                    content = messages[-1].get("content", "")
+                return {
+                    "success": True,
+                    "content": content if content is not None else "",
+                    "conversation_id": conv_id,
+                }
+            if status == "failed":
+                err = chat_data.get("last_error", {}) or {}
+                return {"success": False,
+                        "error": err.get("msg", err.get("msg_text", "会话执行失败"))}
+            if status == "requires_action":
+                return {"success": False, "error": "会话需要额外操作，暂不支持"}
+
+        return {"success": False, "error": "查询超时"}
+
     def upload_file(self, file_obj, filename=None, content_type=None):
         """
         上传文件到 Coze

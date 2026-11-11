@@ -28,11 +28,21 @@ app = Flask(__name__)
 CORS(app)
 
 # 全局错误处理，防止返回 HTML 500 页面
+# 识别业务异常 AppError -> 接口契约格式 {"code": <非0>, "data": null, "message": "..."} + 对应状态码
+from modules.common.errors import AppError as _AppError
+
 @app.errorhandler(Exception)
 def handle_error(e):
     import traceback
     traceback.print_exc()
-    return jsonify({"success": False, "error": str(e)}), 500
+    if isinstance(e, _AppError):
+        # 业务异常：按契约错误格式返回对应状态码
+        return jsonify({"code": e.code, "data": None, "message": e.message}), e.code
+    # 非业务异常：HTTPException（如 404 路由）保留其状态码，其余统一 500
+    from werkzeug.exceptions import HTTPException
+    if isinstance(e, HTTPException):
+        return jsonify({"code": e.code, "data": None, "message": e.description}), e.code
+    return jsonify({"code": 500, "data": None, "message": "内部错误"}), 500
 
 DATA_DIR = os.path.join(BASE_DIR, "data")
 
@@ -1173,6 +1183,23 @@ def _build_coze_chat_request(work_config, user_message, conversation_id="", para
         body["custom_variables"] = parameters
 
     return body
+
+
+# ==================== 小说创作模块（P3） ====================
+# 依赖注入：role_store / project_store / agent_client / scheduler / flow_engine
+# 由应用层构造传入，不在模块内硬编码单例（对齐架构设计 §7 依赖注入）。
+from modules.novel_creation.project_store import ProjectStore
+from modules.novel_creation.role_store import RoleStore
+from modules.novel_creation.role_agent_scheduler import RoleAgentScheduler
+from modules.novel_creation.step_flow_engine import StepFlowEngine
+from modules.novel_creation.routes import create_blueprint
+
+_project_store = ProjectStore(os.path.join(DATA_DIR, "projects"))
+_role_store = RoleStore(os.path.join(DATA_DIR, "projects"))
+_role_scheduler = RoleAgentScheduler(_role_store, _project_store, coze_client)
+_step_flow_engine = StepFlowEngine(_role_scheduler, _role_store)
+_novel_bp = create_blueprint(_role_store, _project_store, _role_scheduler, _step_flow_engine)
+app.register_blueprint(_novel_bp)
 
 
 # ==================== 启动入口 ====================

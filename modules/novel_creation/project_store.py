@@ -118,6 +118,25 @@ class ProjectStore:
                                               "agent_sessions")})
         return projects
 
+    def find_project_by_role(self, role_id: str) -> Optional[Dict[str, Any]]:
+        """按角色 id 反查所属项目（角色接口路径无 project_id，需定位聚合根）。
+
+        遍历 data/projects/*.json，返回含该角色 id 的项目（含 roles/绑定/会话）。
+        找不到返回 None；多项目共享同一 role_id 时返回最先命中的（角色 id 全局唯一，
+        正常不应出现，取首个并记录）。
+        """
+        if not role_id or not os.path.isdir(self.data_dir):
+            return None
+        for name in os.listdir(self.data_dir):
+            if not name.endswith(".json") or name.startswith("."):
+                continue
+            project_id = name[: -len(".json")]
+            with self._lock(project_id):
+                data = self._load(project_id)
+            if any(r.get("id") == role_id for r in data.get("roles", [])):
+                return data
+        return None
+
     def update_project(self, project_id: str, **updates: Any) -> Dict[str, Any]:
         """更新项目基础字段。"""
         allowed = {"title", "description", "genre", "status", "author"}
