@@ -1205,6 +1205,14 @@ _novel_bp = create_blueprint(
 )
 app.register_blueprint(_novel_bp)
 
+# 知识库蓝图（F5）：模块级 bp，注册后挂载 /api/knowledge/* 全部接口
+from modules.knowledge_base.routes import bp as _knowledge_bp
+app.register_blueprint(_knowledge_bp)
+
+# 剧情推衍聊天室蓝图（F6）：模块级 bp，注册后挂载 /api/story/* 全部接口
+from modules.routes_story import bp as _story_bp
+app.register_blueprint(_story_bp)
+
 
 # ==================== 启动入口 ====================
 
