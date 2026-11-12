@@ -25,7 +25,9 @@ jobs:
           node-version: "18"
 
       - name: Install Python deps
-        run: pip install -r requirements.txt
+        run: |
+          pip install -r requirements.txt
+          pip install pytest
 
       - name: 合规检查（后端/安全/依赖/前端）
         run: python scripts/run_checks.py --path "${{ github.workspace }}"
