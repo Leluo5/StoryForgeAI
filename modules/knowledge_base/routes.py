@@ -10,13 +10,24 @@
 
 from __future__ import annotations
 
+import base64
+import io
 import os
+from datetime import datetime
 from typing import Any, Dict
 
-from flask import Blueprint, jsonify, request
+from flask import Blueprint, jsonify, request, send_file
 
 from modules.common.errors import AppError, bad_request, not_found
 from modules.knowledge_base.knowledge_linker import KnowledgeLinker
+from modules.knowledge_base.knowledge_markdown import render_body_html
+from modules.knowledge_base.knowledge_markdown_io import (
+    build_preview_item,
+    build_zip,
+    decode_bytes,
+    export_entries,
+    import_files,
+)
 from modules.knowledge_base.knowledge_parser import KnowledgeParser, TypeUncertain
 from modules.knowledge_base.knowledge_store import KnowledgeStore
 
@@ -39,7 +50,13 @@ def _ok(data: Any, message: str = "ok"):
 
 
 def _err(code: int, message: str, detail: str = ""):
-    return jsonify({"code": code, "data": None, "message": message if not detail else f"{message}: {detail}"}), code
+    msg = message if not detail else f"{message}: {detail}"
+    return jsonify({"code": code, "data": None, "message": msg}), code
+
+
+def _now_stamp() -> str:
+    """当前时间戳（文件名用）：YYYYMMDD_HHMMSS。"""
+    return datetime.now().strftime("%Y%m%d_%H%M%S")
 
 
 # ---- 错误处理 ----
@@ -112,8 +129,11 @@ def list_entries():
         start_time=q.get("start_time"),
         end_time=q.get("end_time"),
     )
-    page = max(1, int(q.get("page", 1) or 1))
-    page_size = max(1, int(q.get("page_size", 20) or 20))
+    try:
+        page = max(1, int(q.get("page", 1) or 1))
+        page_size = max(1, int(q.get("page_size", 20) or 20))
+    except ValueError:
+        raise bad_request("page/page_size 须为整数")
     start = (page - 1) * page_size
     items = meta_list[start : start + page_size]
     return _ok({"items": items, "total": len(meta_list)})
@@ -123,11 +143,28 @@ def list_entries():
 
 @bp.route("/entries/<entry_id>", methods=["GET"])
 def get_entry(entry_id: str):
-    """条目完整详情（含 structured / links）。"""
+    """条目完整详情（含 structured / links / body_html）。
+
+    body_html：正文 Markdown 渲染为安全 HTML 片段，供前端直接展示富文本。
+    """
     entry = _store.load_entry(entry_id)
     if entry is None:
         raise not_found("条目不存在")
+    entry["body_html"] = render_body_html(entry.get("raw_content", ""))
     return _ok(entry)
+
+
+# ---- §3.3b Markdown 渲染预览（正文语法升级）----
+
+@bp.route("/markdown/render", methods=["POST"])
+def render_markdown():
+    """Markdown 渲染预览。请求：{"text": "..."}，返回 {"html": "..."}。
+
+    供前端录入/编辑时实时预览富文本效果（不落库，纯渲染）。
+    """
+    body = request.get_json(silent=True) or {}
+    text = body.get("text", "") or ""
+    return _ok({"html": render_body_html(text)})
 
 
 # ---- §3.4 更新条目 ----
@@ -231,3 +268,154 @@ def detect_type():
     except TypeUncertain as e:
         return _err(e.code, e.message)
     return _ok({"type": detected})
+
+
+# ============================================================
+# Markdown 导入导出（F5-T14，技术方案 §9.3）
+# ============================================================
+
+# 导出范围模式
+_EXPORT_SCOPE_SINGLE = "single"      # 单条：entry_ids=[id]
+_EXPORT_SCOPE_BATCH = "batch"        # 批量：entry_ids=[...]
+_EXPORT_SCOPE_CATEGORY = "category"  # 分类：type / tag
+
+
+def _collect_export_entries(body: Dict[str, Any]) -> list:
+    """按导出范围收集条目（单条/批量/分类）。
+
+    返回完整条目列表；单条/批量按 entry_ids，分类按 type/tag 经 query_index 收集。
+    """
+    scope = body.get("scope", _EXPORT_SCOPE_SINGLE)
+    if scope in (_EXPORT_SCOPE_SINGLE, _EXPORT_SCOPE_BATCH):
+        ids = body.get("entry_ids") or []
+        entries = []
+        for eid in ids:
+            entry = _store.load_entry(eid)
+            if entry:
+                entries.append(entry)
+        return entries
+    if scope == _EXPORT_SCOPE_CATEGORY:
+        meta_list = _store.query_index(
+            type_=body.get("type"), tag=body.get("tag")
+        )
+        entries = []
+        for meta in meta_list:
+            entry = _store.load_entry(meta["id"])
+            if entry:
+                entries.append(entry)
+        return entries
+    raise bad_request(f"非法导出范围: {scope}")
+
+
+def _decode_item_content(content: Any) -> str:
+    """导入内容解码：接受 base64 字符串（前端 FileReader 转 base64）或纯文本。"""
+    if isinstance(content, str):
+        if content.startswith("data:"):
+            # data URL：data:text/markdown;base64,...
+            try:
+                header, _, payload = content.partition(",")
+                return base64.b64decode(payload).decode("utf-8")
+            except Exception:  # noqa: BLE001
+                return content
+        return content
+    if isinstance(content, (bytes, bytearray)):
+        return decode_bytes(bytes(content))
+    return str(content or "")
+
+
+@bp.route("/markdown/export", methods=["POST"])
+def export_markdown():
+    """导出知识条目为 Markdown（技术方案 §9.3）。
+
+    请求：{"scope": "single|batch|category", "entry_ids": [...]（single/batch）, "type"/"tag"（category）,
+           "as_zip": true}。
+    - 单条：直接下载 .md（`send_file`）。
+    - 批量/分类：打包 ZIP 下载。
+    - 返回：ZIP 场景下发流文件；单条场景发 .md 文件。均带 Content-Disposition 文件名。
+    """
+    body = request.get_json(silent=True) or {}
+    entries = _collect_export_entries(body)
+    if not entries:
+        return _ok({"total": 0, "success": 0, "failed": 0, "failed_items": [],
+                    "files": [], "zip_name": ""}, "该范围下无条目可导出")
+
+    result = export_entries(entries, with_meta=True)
+    as_zip = body.get("as_zip", False) or len(result["files"]) > 1
+
+    if as_zip:
+        zip_name = body.get("zip_name") or f"knowledge_export_{_now_stamp()}.zip"
+        data = build_zip(result["files"], zip_name)
+        buf = io.BytesIO(data)
+        buf.seek(0)
+        resp = send_file(buf, mimetype="application/zip", as_attachment=True,
+                         download_name=zip_name)
+        # 附结果统计（响应头），供前端读取
+        resp.headers["X-Export-Total"] = str(len(result["files"]))
+        resp.headers["X-Export-Failed"] = str(len(result["failed"]))
+        return resp
+
+    # 单条：直接下载 .md
+    file_item = result["files"][0]
+    buf = io.BytesIO(file_item["content"].encode("utf-8"))
+    buf.seek(0)
+    return send_file(buf, mimetype="text/markdown", as_attachment=True,
+                     download_name=file_item["file_name"])
+
+
+@bp.route("/markdown/import/preview", methods=["POST"])
+def import_preview():
+    """导入前预览（技术方案 §9.3 / 需求 MD-8）。
+
+    请求：{"files": [{"file_name": "a.md", "content": "<base64或文本>"}]}
+    返回：{"items": [import_preview_item], "total": n}。
+    """
+    body = request.get_json(silent=True) or {}
+    files = body.get("files") or []
+    items = []
+    for f in files:
+        file_name = f.get("file_name", "")
+        content = _decode_item_content(f.get("content", ""))
+        items.append(build_preview_item(file_name, content, _store))
+    return _ok({"items": items, "total": len(items)})
+
+
+@bp.route("/markdown/import", methods=["POST"])
+def do_import():
+    """执行导入（技术方案 §9.3 / 需求 MD-5~MD-11）。
+
+    请求：{"files": [{"file_name", "content"}], "target_type": "novel",
+           "conflict_strategy": "overwrite|rename|skip"}
+    返回：{total, success, failed, failed_items, created, updated, skipped}。
+    """
+    body = request.get_json(silent=True) or {}
+    files = body.get("files") or []
+    target_type = body.get("target_type", "")
+    strategy = body.get("conflict_strategy", "rename")
+    if target_type not in ("article", "paper", "novel", "inspiration"):
+        raise bad_request(f"非法目标类型: {target_type}")
+    if strategy not in ("overwrite", "rename", "skip"):
+        raise bad_request(f"非法冲突策略: {strategy}")
+
+    # 解码全部内容（保持文件名与内容一一对应）
+    decoded = []
+    for f in files:
+        decoded.append({
+            "file_name": f.get("file_name", ""),
+            "content": _decode_item_content(f.get("content", "")),
+        })
+    result = import_files(decoded, target_type, strategy, _store)
+    return _ok(result)
+
+
+@bp.route("/markdown/import/validate", methods=["POST"])
+def import_validate():
+    """单文件格式校验（技术方案 §9.3）。
+
+    请求：{"file_name": "a.md", "content": "..."}
+    返回：{valid, reason}。
+    """
+    body = request.get_json(silent=True) or {}
+    file_name = body.get("file_name", "")
+    content = _decode_item_content(body.get("content", ""))
+    preview = build_preview_item(file_name, content, _store)
+    return _ok({"valid": preview["valid"], "reason": preview["reason"]})

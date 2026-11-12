@@ -34,6 +34,23 @@
     --transition: all 0.2s ease;
     --font-sans: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei', sans-serif;
     --font-mono: 'SF Mono', 'Fira Code', 'Fira Mono', Menlo, Consolas, monospace;
+    /* 语义标签/文件预览颜色（收敛散落字面量） */
+    --badge-chat-bg: #eef2ff;    --badge-chat-text: #4f46e5;
+    --badge-form-bg: #f0fdf4;    --badge-form-text: #16a34a;
+    --badge-mixed-bg: #fef3c7;   --badge-mixed-text: #d97706;
+    --badge-dataset-bg: #ede9fe; --badge-dataset-text: #7c3aed;
+    --badge-workflow-bg: #fce7f3;--badge-workflow-text: #db2777;
+    --file-preview-bg: #f0eeff;
+    --file-preview-border: #d8d4f8;
+    --file-preview-text: #5b4c9a;
+    --file-preview-remove: #999;
+    --danger-light: #fef2f2;
+    /* 渐变/状态色（收敛散落字面量） */
+    --gradient-header: linear-gradient(135deg, #4f46e5 0%, #7c3aed 50%, #a855f7 100%);
+    --gradient-accent: linear-gradient(135deg, #4f46e5, #a855f7);
+    --ai-gen-bg: #f8f7ff;
+    --ai-gen-border: #e8e5ff;
+    --text-muted: #888;
 }
 
 [data-theme="dark"] {
@@ -55,6 +72,16 @@
     --shadow-md: 0 4px 6px -1px rgba(0, 0, 0, 0.4);
     --shadow-lg: 0 10px 15px -3px rgba(0, 0, 0, 0.4);
     --shadow-xl: 0 20px 25px -5px rgba(0, 0, 0, 0.4);
+    /* 深色主题语义标签/文件预览颜色 */
+    --badge-chat-bg: #1e1b4b;
+    --badge-form-bg: #14532d;
+    --badge-mixed-bg: #451a03;
+    --badge-dataset-bg: #2e1065;
+    --badge-workflow-bg: #500724;
+    --danger-light: #450a0a;
+    /* 深色主题 AI 生成区域 */
+    --ai-gen-bg: #1e1b4b;
+    --ai-gen-border: #334155;
 }
 
 /* ==================== Reset & Base ==================== */
@@ -97,7 +124,7 @@ body {
     align-items: center;
     justify-content: space-between;
     padding: 24px 40px;
-    background: linear-gradient(135deg, #4f46e5 0%, #7c3aed 50%, #a855f7 100%);
+    background: var(--gradient-header);
     color: white;
 }
 
@@ -183,7 +210,7 @@ body {
     width: 48px;
     height: 48px;
     border-radius: var(--radius-md);
-    background: linear-gradient(135deg, #4f46e5, #a855f7);
+    background: var(--gradient-accent);
     display: flex;
     align-items: center;
     justify-content: center;
@@ -236,17 +263,17 @@ body {
     color: var(--accent);
 }
 
-.badge-chat { background: #eef2ff; color: #4f46e5; }
-.badge-form { background: #f0fdf4; color: #16a34a; }
-.badge-mixed { background: #fef3c7; color: #d97706; }
-.badge-dataset { background: #ede9fe; color: #7c3aed; }
-.badge-workflow { background: #fce7f3; color: #db2777; }
+.badge-chat { background: var(--badge-chat-bg); color: var(--badge-chat-text); }
+.badge-form { background: var(--badge-form-bg); color: var(--badge-form-text); }
+.badge-mixed { background: var(--badge-mixed-bg); color: var(--badge-mixed-text); }
+.badge-dataset { background: var(--badge-dataset-bg); color: var(--badge-dataset-text); }
+.badge-workflow { background: var(--badge-workflow-bg); color: var(--badge-workflow-text); }
 
-[data-theme="dark"] .badge-chat { background: #1e1b4b; }
-[data-theme="dark"] .badge-form { background: #14532d; }
-[data-theme="dark"] .badge-mixed { background: #451a03; }
-[data-theme="dark"] .badge-dataset { background: #2e1065; }
-[data-theme="dark"] .badge-workflow { background: #500724; }
+[data-theme="dark"] .badge-chat { background: var(--badge-chat-bg); }
+[data-theme="dark"] .badge-form { background: var(--badge-form-bg); }
+[data-theme="dark"] .badge-mixed { background: var(--badge-mixed-bg); }
+[data-theme="dark"] .badge-dataset { background: var(--badge-dataset-bg); }
+[data-theme="dark"] .badge-workflow { background: var(--badge-workflow-bg); }
 
 .work-card-model {
     font-size: 12px;
@@ -274,8 +301,8 @@ body {
     margin-bottom: 8px;
 }
 
-.empty-hint {
-    font-size: 13px !important;
+.empty-state .empty-hint {
+    font-size: 13px;
 }
 
 /* ==================== Work Page Header ==================== */
@@ -419,11 +446,11 @@ body {
     align-items: center;
     gap: 6px;
     padding: 6px 12px;
-    background: #f0eeff;
-    border: 1px solid #d8d4f8;
+    background: var(--file-preview-bg);
+    border: 1px solid var(--file-preview-border);
     border-radius: 8px;
     font-size: 13px;
-    color: #5b4c9a;
+    color: var(--file-preview-text);
     max-width: 220px;
     overflow: hidden;
     text-overflow: ellipsis;
@@ -435,7 +462,7 @@ body {
 }
 
 .chat-message.ai .chat-message-avatar {
-    background: linear-gradient(135deg, #4f46e5, #a855f7);
+    background: var(--gradient-accent);
     color: white;
 }
 
@@ -606,11 +633,11 @@ body {
     align-items: center;
     gap: 6px;
     padding: 6px 10px;
-    background: #f0eeff;
-    border: 1px solid #d8d4f8;
+    background: var(--file-preview-bg);
+    border: 1px solid var(--file-preview-border);
     border-radius: 8px;
     font-size: 13px;
-    color: #5b4c9a;
+    color: var(--file-preview-text);
     max-width: 200px;
 }
 
@@ -629,7 +656,7 @@ body {
 .file-preview-remove {
     background: none;
     border: none;
-    color: #999;
+    color: var(--file-preview-remove);
     cursor: pointer;
     font-size: 16px;
     padding: 0 2px;
@@ -657,14 +684,15 @@ body {
     box-shadow: 0 0 0 3px rgba(79, 70, 229, 0.1);
 }
 
-.btn-upload {
-    color: var(--text-tertiary) !important;
-    background: none !important;
+.btn-icon.btn-upload {
+    color: var(--text-tertiary);
+    background: none;
     flex-shrink: 0;
 }
 
-.btn-upload:hover {
-    color: var(--accent) !important;
+.btn-icon.btn-upload:hover {
+    color: var(--accent);
+    background: none;
 }
 
 .chat-input {
@@ -1033,13 +1061,13 @@ select.form-input {
 }
 
 .btn-sm.danger:hover {
-    background: #fef2f2;
+    background: var(--danger-light);
     color: var(--danger);
     border-color: var(--danger);
 }
 
 [data-theme="dark"] .btn-sm.danger:hover {
-    background: #450a0a;
+    background: var(--danger-light);
 }
 
 /* Import Card */
@@ -1282,6 +1310,25 @@ select.form-input {
     to { opacity: 1; transform: scale(1); }
 }
 
+/* ==================== 弹窗变体（P2 合规：内联 style 提炼） ==================== */
+.modal-content.modal-content-wide { max-width: 800px; }
+.modal-content.modal-content-md { max-width: 600px; }
+
+/* 参数编辑器区块标题（提炼自内联 style） */
+.modal-body .params-section-title {
+    margin-bottom: 8px;
+}
+.modal-body .params-section-title.params-section-gap {
+    margin: 16px 0 8px;
+}
+
+/* 导入 JSON 文本域（提炼自内联 style） */
+.import-json-textarea {
+    height: 200px;
+    font-family: var(--font-mono);
+    font-size: 13px;
+}
+
 .modal-content h3 {
     font-size: 18px;
     margin-bottom: 8px;
@@ -1305,7 +1352,7 @@ select.form-input {
     position: fixed;
     top: 20px;
     right: 20px;
-    z-index: 2000;
+    z-index: 1000;
     display: flex;
     flex-direction: column;
     gap: 8px;
@@ -1630,4 +1677,100 @@ select.form-input {
     flex-shrink: 0;
     flex-wrap: wrap;
     justify-content: flex-end;
+}
+
+/* ==================== 通用工具类（P2 合规：内联 style 提炼） ==================== */
+/* 放在文件末尾以保证覆盖 .modal/.work-view/.file-upload-area 等 display 声明。
+   注意：不带 !important，确保 JS 通过内联 style.display 可以覆盖（显示/隐藏） */
+.hidden { display: none; }
+
+/* ==================== F7 剧情树入口（创作端 page-work） ==================== */
+.plot-tree-entry {
+    padding: 10px 20px 0;
+    display: flex;
+    justify-content: flex-start;
+}
+.plot-tree-entry > .ptp-trigger,
+.plot-tree-entry > button {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 8px 14px;
+    background: var(--accent, #2563eb);
+    color: var(--text-inverse);
+    border: none;
+    border-radius: var(--radius-sm, 6px);
+    font-size: 14px;
+    cursor: pointer;
+    transition: var(--transition, 0.2s);
+}
+.plot-tree-entry > .ptp-trigger:hover,
+.plot-tree-entry > button:hover {
+    background: var(--accent-dark, #1d4ed8);
+}
+
+/* AI 生成参数区域（提炼自内联 style） */
+.ai-gen-area {
+    margin: 8px 0;
+    padding: 10px;
+    background: var(--ai-gen-bg);
+    border-radius: 8px;
+    border: 1px solid var(--ai-gen-border);
+}
+[data-theme="dark"] .ai-gen-area {
+    background: var(--ai-gen-bg);
+    border-color: var(--ai-gen-border);
+}
+.ai-gen-area .ai-gen-row {
+    display: flex;
+    gap: 8px;
+    align-items: center;
+    flex-wrap: wrap;
+}
+.ai-gen-area .ai-gen-file {
+    font-size: 13px;
+}
+.ai-gen-area .ai-gen-status {
+    font-size: 13px;
+    color: var(--text-muted);
+}
+.ai-gen-area .ai-gen-preview {
+    margin-top: 6px;
+}
+.ai-gen-area h4 {
+    margin: 16px 0 8px;
+}
+.ai-gen-area h4:first-child {
+    margin-top: 0;
+}
+
+/* 参数编辑器按钮行（提炼自内联 style） */
+.param-btn-row {
+    display: flex;
+    gap: 8px;
+    margin: 8px 0;
+    flex-wrap: wrap;
+}
+
+/* 大模型配置区块间距 */
+.settings-section {
+    margin-top: 24px;
+}
+.settings-section .settings-hint {
+    margin-bottom: 12px;
+}
+
+/* 作品管理工具栏（提炼自内联 style） */
+.admin-works-toolbar {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    margin-bottom: 12px;
+}
+.admin-works-toolbar .checkbox-label {
+    font-size: 13px;
+}
+.admin-works-selected-count {
+    font-size: 12px;
+    color: var(--text-tertiary);
 }

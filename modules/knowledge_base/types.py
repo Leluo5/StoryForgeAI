@@ -1,1 +1,1 @@
-# modules/knowledge_base/types.py —— 类型定义：KnowledgeEntry / Structured 等
+"""类型定义：KnowledgeEntry / Structured 等知识库数据结构。"""

@@ -93,12 +93,22 @@ class TestKnowledgeRoutes(unittest.TestCase):
         self.assertGreaterEqual(body["data"]["total"], 1)
 
     def test_get_entry_detail(self):
-        resp = self.client.post("/api/knowledge", json={"type": "auto", "title": "详情", "raw_content": "第一章 内容"})
+        resp = self.client.post("/api/knowledge", json={"type": "auto", "title": "详情", "raw_content": "## 第一章 内容"})
         entry_id = resp.get_json()["data"]["id"]
         resp2 = self.client.get(f"/api/knowledge/entries/{entry_id}")
         body = resp2.get_json()
         self.assertEqual(body["code"], 0)
         self.assertEqual(body["data"]["title"], "详情")
+        # Markdown 语法升级：详情附带渲染后的 body_html
+        self.assertIn("body_html", body["data"])
+        self.assertIn("<h2>第一章 内容</h2>", body["data"]["body_html"])
+
+    def test_markdown_render_preview(self):
+        resp = self.client.post("/api/knowledge/markdown/render", json={"text": "## 标题\n\n- 项"})
+        body = resp.get_json()
+        self.assertEqual(body["code"], 0)
+        self.assertIn("<h2>标题</h2>", body["data"]["html"])
+        self.assertIn("<li>项</li>", body["data"]["html"])
 
     def test_delete_entry(self):
         resp = self.client.post("/api/knowledge", json={"type": "auto", "title": "待删", "raw_content": "第一章 内容"})

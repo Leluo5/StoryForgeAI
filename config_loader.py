@@ -6,6 +6,16 @@
 import json
 import os
 import secrets
+import threading
+import logging
+
+from werkzeug.security import generate_password_hash
+
+# 模块级写入锁（保证 _write_json 原子性）
+_write_lock = threading.Lock()
+
+# 模块级 logger
+_logger = logging.getLogger(__name__)
 
 # 默认全局配置
 DEFAULT_GLOBAL_CONFIG = {
@@ -45,7 +55,7 @@ class ConfigLoader:
         """
         if not os.path.exists(self.global_config_path):
             default = dict(DEFAULT_GLOBAL_CONFIG)
-            default["admin_password"] = self._generate_password()
+            default["admin_password"] = self._hash_password(self._generate_password())
             self.save_global_config(default)
             return default
 
@@ -57,13 +67,19 @@ class ConfigLoader:
                 if key not in config:
                     config[key] = value
             if not config.get("admin_password"):
-                config["admin_password"] = self._generate_password()
+                config["admin_password"] = self._hash_password(self._generate_password())
                 self.save_global_config(config)
+            else:
+                # 兼容旧明文数据：若已存明文（非 werkzeug 哈希格式），迁移为哈希并回写
+                stored = config["admin_password"]
+                if not self._is_hashed(stored):
+                    config["admin_password"] = self._hash_password(stored)
+                    self.save_global_config(config)
             return config
         except (json.JSONDecodeError, IOError) as e:
-            print(f"[警告] 加载全局配置失败: {e}，使用默认配置")
+            _logger.warning(f"[警告] 加载全局配置失败: {e}，使用默认配置")
             default = dict(DEFAULT_GLOBAL_CONFIG)
-            default["admin_password"] = self._generate_password()
+            default["admin_password"] = self._hash_password(self._generate_password())
             return default
 
     def save_global_config(self, config):
@@ -86,16 +102,34 @@ class ConfigLoader:
             dict: 更新后的完整配置
         """
         config = self.load_global_config()
+        # 若传入明文 admin_password，先哈希再落库（安全整改：不存明文）
+        if "admin_password" in updates and updates.get("admin_password"):
+            updates["admin_password"] = self._hash_password(updates["admin_password"])
         config.update(updates)
         self.save_global_config(config)
         return config
 
     def _generate_password(self):
-        """生成随机管理密码"""
+        """生成随机管理密码（明文，调用方负责哈希后落库）"""
         return secrets.token_urlsafe(12)
 
+    @staticmethod
+    def _is_hashed(value: str) -> bool:
+        """判断是否已是 werkzeug 哈希格式（pbkdf2:/scrypt: 前缀）。"""
+        return isinstance(value, str) and (
+            value.startswith("pbkdf2:") or value.startswith("scrypt:")
+        )
+
+    @staticmethod
+    def _hash_password(plain: str) -> str:
+        """明文密码 → werkzeug 哈希（存库格式）。"""
+        return generate_password_hash(plain)
+
     def _write_json(self, filepath, data):
-        """写入 JSON 文件（带缩进格式化）"""
+        """写入 JSON 文件（带缩进格式化，先写 .tmp 再原子替换，线程安全）"""
         os.makedirs(os.path.dirname(filepath), exist_ok=True)
-        with open(filepath, "w", encoding="utf-8") as f:
-            json.dump(data, f, ensure_ascii=False, indent=2)
+        tmp_path = filepath + ".tmp"
+        with _write_lock:
+            with open(tmp_path, "w", encoding="utf-8") as f:
+                json.dump(data, f, ensure_ascii=False, indent=2)
+            os.replace(tmp_path, filepath)

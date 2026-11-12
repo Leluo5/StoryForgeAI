@@ -6,7 +6,17 @@
 import json
 import os
 import uuid
+import threading
+import logging
 from datetime import datetime
+
+from modules.common.mapping import map_component_type
+
+# 模块级写入锁（保证 _save_work 原子性）
+_save_lock = threading.Lock()
+
+# 模块级 logger
+_logger = logging.getLogger(__name__)
 
 
 class WorkManager:
@@ -132,8 +142,13 @@ class WorkManager:
             "plugins": plugin_info_list,
             "workflows": workflow_info_list,
             "model_name": model_name,
-            "response_format": response_format if response_format in ["text", "json", "markdown"] else "text",
+            "response_format": (
+                response_format
+                if response_format in ["text", "json", "markdown"]
+                else "text"
+            ),
             "is_public": True,
+            "project_id": "",  # 绑定的 novel_creation 项目（F8 角色版图/剧情树入口）
             "created_at": now,
             "updated_at": now
         }
@@ -183,6 +198,7 @@ class WorkManager:
                 "icon_url": "",
                 "prologue": f"你好！我是知识库「{name}」的助手，有什么可以帮你的？",
             },
+            "project_id": "",  # 绑定的 novel_creation 项目（F8 角色版图/剧情树入口）
             "created_at": now,
             "updated_at": now
         }
@@ -239,6 +255,7 @@ class WorkManager:
                 "api_key": "",
                 "model": ""
             },
+            "project_id": "",  # 绑定的 novel_creation 项目（F8 角色版图/剧情树入口）
             "created_at": now,
             "updated_at": now
         }
@@ -265,7 +282,7 @@ class WorkManager:
                         work = json.load(f)
                     works.append(work)
                 except (json.JSONDecodeError, IOError) as e:
-                    print(f"[警告] 加载作品配置失败 {filename}: {e}")
+                    _logger.warning(f"[警告] 加载作品配置失败 {filename}: {e}")
         return works
 
     def get_work(self, work_id):
@@ -286,7 +303,7 @@ class WorkManager:
             with open(filepath, "r", encoding="utf-8") as f:
                 return json.load(f)
         except (json.JSONDecodeError, IOError) as e:
-            print(f"[警告] 加载作品配置失败 {work_id}: {e}")
+            _logger.warning(f"[警告] 加载作品配置失败 {work_id}: {e}")
             return None
 
     def get_work_public(self, work_id):
@@ -309,7 +326,7 @@ class WorkManager:
             "interaction_type", "system_prompt", "prologue",
             "suggested_questions", "parameters", "model_name",
             "response_format", "is_public", "created_at", "updated_at",
-            "coze_meta"
+            "coze_meta", "project_id"
         ]
         return {k: work.get(k) for k in public_fields if k in work}
 
@@ -376,30 +393,22 @@ class WorkManager:
         return os.path.exists(self._work_filepath(work_id))
 
     def _save_work(self, work_config):
-        """保存作品配置到文件"""
+        """保存作品配置到文件（先写 .tmp 再原子替换，线程安全）"""
         filepath = self._work_filepath(work_config["id"])
-        with open(filepath, "w", encoding="utf-8") as f:
-            json.dump(work_config, f, ensure_ascii=False, indent=2)
+        tmp_path = filepath + ".tmp"
+        with _save_lock:
+            with open(tmp_path, "w", encoding="utf-8") as f:
+                json.dump(work_config, f, ensure_ascii=False, indent=2)
+            os.replace(tmp_path, filepath)
 
     def _work_filepath(self, work_id):
         """获取作品配置文件路径"""
         return os.path.join(self.works_dir, f"{work_id}.json")
 
     def _generate_id(self):
-        """生成唯一 ID"""
-        return str(uuid.uuid4())[:8]
+        """生成唯一 ID（完整 32 位 hex，规避短 ID 碰撞风险）"""
+        return uuid.uuid4().hex
 
     def _map_component_type(self, coze_type):
-        """映射 Coze 组件类型到本地参数类型"""
-        type_map = {
-            "text": "text",
-            "textarea": "textarea",
-            "number": "number",
-            "select": "select",
-            "multiselect": "multiselect",
-            "file": "file",
-            "date": "date",
-            "boolean": "boolean",
-            "dropdown": "select"
-        }
-        return type_map.get(coze_type, "text")
+        """映射 Coze 组件类型到本地参数类型（公共映射，见 modules/common/mapping.py）"""
+        return map_component_type(coze_type)

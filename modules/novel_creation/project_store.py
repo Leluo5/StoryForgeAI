@@ -50,7 +50,7 @@ class ProjectStore:
     def _lock(self, project_id: str) -> FileLock:
         return FileLock(os.path.join(self.data_dir, ".locks", f"{project_id}.lock"))
 
-    def _collab_lock(self, project_id: str) -> FileLock:
+    def collab_lock(self, project_id: str) -> FileLock:
         """协同编排专用写锁（独立锁文件，与常规项目锁分开）。
 
         多角色协同接口持锁期间会经调度器触发角色 Agent 调用，其内部审计
@@ -100,12 +100,14 @@ class ProjectStore:
             "agent_sessions": [],
         }
         if project["status"] not in _PROJECT_STATUSES:
-            raise bad_request(f"非法项目状态: {project['status']}")
+            pstatus = project["status"]
+            raise bad_request(f"非法项目状态: {pstatus}")
         with self._lock(project_id):
             # 同名项目查重（接口契约 §2.1：409 同名项目已存在）
             existing = self._load(project_id)
             if existing.get("id"):
-                raise conflict(f"项目已存在: {project['title']}")
+                ptitle = project["title"]
+                raise conflict(f"项目已存在: {ptitle}")
             for name in os.listdir(self.data_dir):
                 if not name.endswith(".json") or name.startswith("."):
                     continue
@@ -113,11 +115,13 @@ class ProjectStore:
                 with self._lock(other_id):
                     other = self._load(other_id)
                 if other.get("title") == project["title"]:
-                    raise conflict(f"项目已存在: {project['title']}")
+                    ptitle = project["title"]
+                    raise conflict(f"项目已存在: {ptitle}")
             self._save(project_id, project)
         return project
 
     def get_project(self, project_id: str) -> Dict[str, Any]:
+        """读取项目聚合根，不存在抛 404。"""
         with self._lock(project_id):
             data = self._load(project_id)
             if not data.get("id"):
@@ -175,7 +179,8 @@ class ProjectStore:
                     raise bad_request("collab_enabled 须为布尔值")
                 data[key] = value
             if data["status"] not in _PROJECT_STATUSES:
-                raise bad_request(f"非法项目状态: {data['status']}")
+                dstatus = data["status"]
+                raise bad_request(f"非法项目状态: {dstatus}")
             data["updated_at"] = _now()
             self._save(project_id, data)
             return data
@@ -229,7 +234,7 @@ class ProjectStore:
                 raise not_found(f"项目不存在: {project_id}")
             if order is None:
                 order = max((c["order"] for c in data["chapters"]), default=-1) + 1
-            if not isinstance(order, int) or order < 0:
+            if not isinstance(order, int) or isinstance(order, bool) or order < 0:
                 raise bad_request("order 须为非负整数")
             if any(c["order"] == order for c in data["chapters"]):
                 raise bad_request(f"章节顺序 order={order} 已存在")
@@ -240,6 +245,8 @@ class ProjectStore:
                 "content": content,
                 "order": order,
                 "status": "draft",
+                "role_ids": [],        # F8：章节出场角色（角色版图联动）
+                "flagged_role_ids": [],  # F8：因角色删除被标红的角色
                 "created_at": now,
                 "updated_at": now,
             }
@@ -248,11 +255,13 @@ class ProjectStore:
         return chapter
 
     def list_chapters(self, project_id: str) -> List[Dict[str, Any]]:
+        """按 order 升序列章节。"""
         with self._lock(project_id):
             data = self._load(project_id)
         return sorted(data.get("chapters", []), key=lambda c: c["order"])
 
     def get_chapter(self, project_id: str, chapter_id: str) -> Dict[str, Any]:
+        """按 id 取章节，不存在抛 404。"""
         with self._lock(project_id):
             for chapter in self._load(project_id).get("chapters", []):
                 if chapter["id"] == chapter_id:
@@ -263,7 +272,7 @@ class ProjectStore:
         self, project_id: str, chapter_id: str, **updates: Any,
     ) -> Dict[str, Any]:
         """更新章节字段（含内容/状态/顺序）。状态变更需合法。"""
-        allowed = {"title", "content", "order", "status"}
+        allowed = {"title", "content", "order", "status", "role_ids", "flagged_role_ids"}
         with self._lock(project_id):
             data = self._load(project_id)
             for chapter in data.get("chapters", []):
@@ -274,15 +283,45 @@ class ProjectStore:
                         raise bad_request(f"非法章节字段: {key}")
                     chapter[key] = value
                 if chapter["status"] not in _CHAPTER_STATUSES:
-                    raise bad_request(f"非法章节状态: {chapter['status']}")
-                if not isinstance(chapter["order"], int) or chapter["order"] < 0:
+                    cstatus = chapter["status"]
+                    raise bad_request(f"非法章节状态: {cstatus}")
+                if (
+                    not isinstance(chapter["order"], int)
+                    or isinstance(chapter["order"], bool)
+                    or chapter["order"] < 0
+                ):
                     raise bad_request("order 须为非负整数")
                 chapter["updated_at"] = _now()
                 self._save(project_id, data)
                 return chapter
         raise not_found(f"章节不存在: {chapter_id}")
 
+    def flag_chapters_by_role(
+        self, project_id: str, role_id: str,
+    ) -> List[str]:
+        """标红章节：把角色加入所有出场该角色的章节的 flagged_role_ids（F8-T3）。
+
+        章节出场判定：chapter.role_ids 含 role_id。幂等（已在列表则不重复）。
+        返回被标红的章节 id 列表（前端据此显示标红提示）。
+        """
+        with self._lock(project_id):
+            data = self._load(project_id)
+            flagged: List[str] = []
+            for chapter in data.get("chapters", []):
+                role_ids = chapter.get("role_ids", [])
+                if role_id not in role_ids:
+                    continue
+                flagged_list = chapter.setdefault("flagged_role_ids", [])
+                if role_id not in flagged_list:
+                    flagged_list.append(role_id)
+                    chapter["updated_at"] = _now()
+                flagged.append(chapter["id"])
+            if flagged:
+                self._save(project_id, data)
+            return flagged
+
     def delete_chapter(self, project_id: str, chapter_id: str) -> None:
+        """删除章节，不存在抛 404。"""
         with self._lock(project_id):
             data = self._load(project_id)
             before = len(data.get("chapters", []))
@@ -295,14 +334,15 @@ class ProjectStore:
 
     def append_tool_call(
         self, project_id: str, tool_name: str, request: Dict[str, Any],
-        response: Dict[str, Any], status: str = "success",
-        role_id: Optional[str] = None,
+        response: Dict[str, Any], **extra: Any,
     ) -> Dict[str, Any]:
         """记录工具调用（数据结构设计 §2.5）。
 
-        status: success/failed/pending（pending 供长任务排队后补 status）。
-        role_id: 联动角色（可选，数据结构设计 §2.5）。
+        extra 聚合可选字段：status（success/failed/pending）、
+        role_id（联动角色，数据结构设计 §2.5）。
         """
+        status = extra.get("status", "success")
+        role_id = extra.get("role_id")
         if status not in {"success", "failed", "pending"}:
             raise bad_request("工具调用状态须为 success/failed/pending")
         record: Dict[str, Any] = {

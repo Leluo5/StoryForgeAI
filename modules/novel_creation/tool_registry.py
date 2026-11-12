@@ -45,6 +45,7 @@ class ToolSpec:
         self.description = description
 
     def to_meta(self) -> Dict[str, Any]:
+        """导出工具元数据（供前端展示工具列表）。"""
         return {
             "name": self.name,
             "role_link": self.role_link,
@@ -60,14 +61,17 @@ class ToolRegistry:
         self._tools: Dict[str, ToolSpec] = {}
 
     def register(self, spec: ToolSpec) -> None:
+        """注册工具，重名抛 409。"""
         if spec.name in self._tools:
             raise conflict(f"工具已注册: {spec.name}")
         self._tools[spec.name] = spec
 
     def get(self, name: str) -> Optional[ToolSpec]:
+        """按名查找工具，未注册返回 None。"""
         return self._tools.get(name)
 
     def list_tools(self) -> list:
+        """列出全部工具元数据。"""
         return [spec.to_meta() for spec in self._tools.values()]
 
     def invoke(
@@ -84,6 +88,7 @@ def _stub_handler(tool_name: str, description: str) -> Handler:
     """占位处理器：返回基础结果 + 回显入参；role_link 时透出注入的角色摘要。"""
 
     def handler(params: Dict[str, Any], context: Dict[str, Any]) -> Dict[str, Any]:
+        """占位处理器主体：回显入参，透出注入角色摘要。"""
         result: Dict[str, Any] = {
             "tool": tool_name,
             "status": "ok",

@@ -23,7 +23,7 @@
         currentWorkId: null,
         currentWork: null,
         works: [],
-        adminToken: sessionStorage.getItem('adminToken') || '',
+        adminToken: '',               // 内存态（不落 sessionStorage，避免明文 Token 持久化）
         accessTokens: {},          // { workId: token }
         conversationId: null,
         isStreaming: false,
@@ -36,7 +36,9 @@
         cachedBots: [],
         cachedWorkflows: [],
         currentResourceTab: 'all',
-        adminWorks: []
+        adminWorks: [],
+        // 流式/请求取消控制：切换页面或页面卸载时 abort，避免竞态与泄漏
+        streamController: null
     };
 
     // ==================== API ====================
@@ -46,12 +48,23 @@
             try {
                 const resp = await fetch(url, { ...options, headers });
                 const data = await resp.json();
-                if (!resp.ok) {
-                    throw new Error(data.error || '请求失败');
+                if (!resp.ok || data.code !== 0) {
+                    throw new Error(data.message || data.error || '请求失败');
                 }
-                return data;
+                return data.data;
             } catch (e) {
                 throw e;
+            }
+        },
+
+        // 原始 Response 请求（流式 / FormData / 非 JSON 响应专用）。
+        // 统一网络错误处理；不强制 Content-Type（FormData 场景由浏览器自设）。
+        // signal 可传入 AbortController 用于取消。
+        async requestRaw(url, options = {}) {
+            try {
+                return await fetch(url, options);
+            } catch (e) {
+                throw new Error('网络请求失败: ' + (e.message || '请求失败'));
             }
         },
 
@@ -111,9 +124,9 @@
         refreshWork: (id) => api.request(`/api/admin/works/${id}/refresh`, { method: 'POST' }),
 
         // 体验者 API（需要 access token）
-        async chat(workId, message, conversationId, parameters) {
+        async chat(workId, message, conversationId, parameters, signal) {
             const token = state.accessTokens[workId] || '';
-            const resp = await fetch(`/api/works/${workId}/chat`, {
+            const resp = await api.requestRaw(`/api/works/${workId}/chat`, {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
@@ -123,11 +136,12 @@
                     message: message,
                     conversation_id: conversationId || '',
                     parameters: parameters || {}
-                })
+                }),
+                signal: signal
             });
             if (!resp.ok) {
                 const data = await resp.json().catch(() => ({}));
-                throw new Error(data.error || '对话请求失败');
+                throw new Error(data.message || data.error || '对话请求失败');
             }
             return resp;
         },
@@ -136,21 +150,30 @@
             const token = state.accessTokens[workId] || '';
             const formData = new FormData();
             formData.append('file', file);
-            const resp = await fetch(`/api/works/${workId}/upload`, {
+            const resp = await api.requestRaw(`/api/works/${workId}/upload`, {
                 method: 'POST',
                 headers: { 'X-Access-Code': token },
                 body: formData
             });
             const data = await resp.json();
-            if (!resp.ok) {
-                throw new Error(data.error || '文件上传失败');
+            if (!resp.ok || data.code !== 0) {
+                throw new Error(data.message || data.error || '文件上传失败');
             }
-            return data;
+            return data.data;
         }
     };
 
     // ==================== Router ====================
+    function abortActiveStream() {
+        if (state.streamController) {
+            state.streamController.abort();
+            state.streamController = null;
+        }
+    }
+
     function navigate(hash) {
+        // 切换页面时取消进行中的流式请求，避免竞态
+        abortActiveStream();
         if (hash.startsWith('#work/')) {
             const workId = hash.replace('#work/', '');
             openWork(workId);
@@ -205,7 +228,7 @@
         grid.style.display = 'grid';
         empty.style.display = 'none';
 
-        grid.innerHTML = state.works.map(work => {
+        grid.innerHTML = escapeHtml('') + state.works.map(work => {
             const iconHtml = work.icon_url
                 ? `<img class="work-card-icon" src="${escapeHtml(work.icon_url)}" alt="" onerror="this.outerHTML='<div class=\\'work-card-icon-placeholder\\'>AI</div>'">`
                 : `<div class="work-card-icon-placeholder">AI</div>`;
@@ -398,7 +421,7 @@
         questionsId, fileInputId, uploadBtnId,
         previewAreaId, previewNameId, previewRemoveId) {
         const messagesEl = document.getElementById(messagesId);
-        messagesEl.innerHTML = '';
+        messagesEl.innerHTML = escapeHtml('');
 
         // 加载历史消息
         const historyKey = `chat_history_${work.id}`;
@@ -431,7 +454,7 @@
         if (questionsId && work.suggested_questions && work.suggested_questions.length > 0) {
             const questionsEl = document.getElementById(questionsId);
             questionsEl.style.display = 'flex';
-            questionsEl.innerHTML = work.suggested_questions.map(q =>
+            questionsEl.innerHTML = escapeHtml('') + work.suggested_questions.map(q =>
                 `<button class="suggested-question" data-question="${escapeHtml(q)}">${escapeHtml(q)}</button>`
             ).join('');
 
@@ -449,7 +472,7 @@
         const sendBtn = document.getElementById(sendBtnId);
         const input = document.getElementById(inputId);
 
-        sendBtn.onclick = () => sendChatMessage(work, messagesId, inputId, sendBtnId, fileInputId, previewAreaId);
+        sendBtn.addEventListener('click', () => sendChatMessage(work, messagesId, inputId, sendBtnId, fileInputId, previewAreaId));
 
         input.onkeydown = (e) => {
             if (e.key === 'Enter' && !e.shiftKey) {
@@ -468,7 +491,7 @@
         if (uploadBtnId && fileInputId) {
             const uploadBtn = document.getElementById(uploadBtnId);
             const fileInput = document.getElementById(fileInputId);
-            uploadBtn.onclick = () => fileInput.click();
+            uploadBtn.addEventListener('click', () => fileInput.click());
 
             fileInput.onchange = async () => {
                 if (fileInput.files.length > 0) {
@@ -476,10 +499,8 @@
                     try {
                         showToast('正在上传文件...', 'info');
                         const result = await api.uploadFile(work.id, file);
-                        console.log('[上传文件] 结果:', result);
                         if (work.id === state.currentWorkId) {
                             state.uploadedFile = result;
-                            console.log('[上传文件] file_id:', result.file_id);
                             if (previewAreaId && previewNameId) {
                                 const area = document.getElementById(previewAreaId);
                                 area.style.display = 'flex';
@@ -493,13 +514,29 @@
                                 const icon = iconMap[ext] || '📎';
                                 const item = document.getElementById(previewAreaId).querySelector('.file-preview-item');
                                 if (item) {
-                                    item.innerHTML = `<span class="file-icon">${icon}</span><span class="file-preview-name">${escapeHtml(result.file_name || file.name)}</span><button class="file-preview-remove" id="${previewRemoveId}">&times;</button>`;
+                                    // 安全构建：createElement + textContent，杜绝用户文件名 dataURL/文件名注入
+                                    item.textContent = '';
+                                    const iconEl = document.createElement('span');
+                                    iconEl.className = 'file-icon';
+                                    iconEl.textContent = icon;
+                                    const nameEl = document.createElement('span');
+                                    nameEl.className = 'file-preview-name';
+                                    nameEl.textContent = result.file_name || file.name;
+                                    const removeEl = document.createElement('button');
+                                    removeEl.className = 'file-preview-remove';
+                                    removeEl.type = 'button';
+                                    removeEl.setAttribute('aria-label', '移除文件');
+                                    removeEl.textContent = '\u00d7';
+                                    if (previewRemoveId) removeEl.id = previewRemoveId;
+                                    item.appendChild(iconEl);
+                                    item.appendChild(nameEl);
+                                    item.appendChild(removeEl);
                                     // 重新绑定删除按钮
                                     if (previewRemoveId) {
-                                        document.getElementById(previewRemoveId).onclick = () => {
+                                        document.getElementById(previewRemoveId).addEventListener('click', () => {
                                             state.uploadedFile = null;
                                             area.style.display = 'none';
-                                        };
+                                        });
                                     }
                                 }
                             }
@@ -515,10 +552,10 @@
 
         // File preview remove
         if (previewRemoveId && previewAreaId) {
-            document.getElementById(previewRemoveId).onclick = () => {
+            document.getElementById(previewRemoveId).addEventListener('click', () => {
                 state.uploadedFile = null;
                 document.getElementById(previewAreaId).style.display = 'none';
-            };
+            });
         }
     }
 
@@ -535,7 +572,6 @@
         let uploadedFileInfo = null;
         if (state.uploadedFile) {
             uploadedFileInfo = { ...state.uploadedFile };
-            console.log('[发送消息] file_id:', state.uploadedFile.file_id);
             messageContent = [
                 { type: 'text', text: message || '请分析这个文件' },
                 { type: 'file', file_id: state.uploadedFile.file_id }
@@ -572,8 +608,13 @@
         // Add typing indicator
         const typingEl = addTypingIndicator(messagesId);
 
+        // 流式请求取消控制：切换页面/卸载时 abort，避免竞态与泄漏
+        const controller = new AbortController();
+        state.streamController = controller;
+
         try {
-            const resp = await api.chat(work.id, messageContent, state.conversationId);
+            const resp = await api.chat(work.id, messageContent, state.conversationId, null, controller.signal);
+            if (controller.signal.aborted) throw new DOMException('Aborted', 'AbortError');
 
             // Remove typing indicator
             typingEl.remove();
@@ -622,8 +663,15 @@
 
         } catch (e) {
             typingEl.remove();
-            addMessage(messagesId, 'ai', `请求失败: ${e.message}`);
+            // 主动取消（切换页面/卸载）不弹错误气泡，避免竞态残留提示
+            if (e && e.name === 'AbortError') {
+                // 静默：请求已被取消
+            } else {
+                addMessage(messagesId, 'ai', `请求失败: ${e.message}`);
+            }
         } finally {
+            // 仅当未被更晚的请求替换时才清空引用
+            if (state.streamController === controller) state.streamController = null;
             state.isStreaming = false;
             sendBtn.disabled = false;
             input.disabled = false;
@@ -640,19 +688,43 @@
         const avatarText = role === 'ai' ? 'AI' : 'U';
         const renderedContent = role === 'ai' && content ? renderMarkdown(content) : escapeHtml(content || '');
 
-        // 附件显示在气泡上方
-        let attachmentHtml = '';
+        // 安全构建消息结构：createElement + textContent，附件文件名用 textContent 杜绝注入
+        const avatarEl = document.createElement('div');
+        avatarEl.className = 'chat-message-avatar';
+        avatarEl.textContent = avatarText;
+
+        const bodyEl = document.createElement('div');
+        bodyEl.className = 'chat-message-body';
+
         if (attachment && attachment.fileName) {
-            attachmentHtml = `<div class="chat-attachment">${attachment.icon || '📎'} ${escapeHtml(attachment.fileName)}</div>`;
+            const attEl = document.createElement('div');
+            attEl.className = 'chat-attachment';
+            const iconEl = document.createElement('span');
+            iconEl.textContent = attachment.icon || '\ud83d\udcce';
+            const nameEl = document.createElement('span');
+            nameEl.textContent = attachment.fileName;
+            attEl.appendChild(iconEl);
+            attEl.appendChild(nameEl);
+            bodyEl.appendChild(attEl);
         }
 
-        msgEl.innerHTML = `
-            <div class="chat-message-avatar">${avatarText}</div>
-            <div class="chat-message-body">
-                ${attachmentHtml}
-                <div class="chat-message-bubble"><div class="chat-message-content">${renderedContent}</div>${isStreaming ? '<div class="typing-indicator"><span></span><span></span><span></span></div>' : ''}</div>
-            </div>
-        `;
+        const bubbleEl = document.createElement('div');
+        bubbleEl.className = 'chat-message-bubble';
+        const contentEl = document.createElement('div');
+        contentEl.className = 'chat-message-content';
+        // renderedContent 已由 renderMarkdown/escapeHtml 消毒，此处用 innerHTML 承载富文本
+        contentEl.innerHTML = sanitizeHtml(renderedContent);
+        bubbleEl.appendChild(contentEl);
+        if (isStreaming) {
+            const typingEl = document.createElement('div');
+            typingEl.className = 'typing-indicator';
+            typingEl.innerHTML = sanitizeHtml('<span></span><span></span><span></span>');
+            bubbleEl.appendChild(typingEl);
+        }
+        bodyEl.appendChild(bubbleEl);
+
+        msgEl.appendChild(avatarEl);
+        msgEl.appendChild(bodyEl);
 
         container.appendChild(msgEl);
         scrollMessages(messagesId);
@@ -663,10 +735,10 @@
         const container = document.getElementById(messagesId);
         const el = document.createElement('div');
         el.className = 'chat-message ai';
-        el.innerHTML = `
+        el.innerHTML = sanitizeHtml(`
             <div class="chat-message-avatar">AI</div>
             <div class="chat-message-bubble"><div class="typing-indicator"><span></span><span></span><span></span></div></div>
-        `;
+        `);
         container.appendChild(el);
         scrollMessages(messagesId);
         return el;
@@ -682,11 +754,11 @@
     // ==================== Form View ====================
     function renderFormView(work, formId, resultId, resultContentId) {
         const form = document.getElementById(formId);
-        form.innerHTML = '';
+        form.innerHTML = escapeHtml('');
 
         const parameters = work.parameters || [];
         if (parameters.length === 0) {
-            form.innerHTML = '<p style="color:var(--text-tertiary);text-align:center;padding:20px;">该作品没有可填写的参数</p>';
+            form.innerHTML = escapeHtml('') + '<p style="color:var(--text-tertiary);text-align:center;padding:20px;">该作品没有可填写的参数</p>';
             return;
         }
 
@@ -845,7 +917,7 @@
                     removeBtn.type = 'button';
                     removeBtn.className = 'btn-sm danger';
                     removeBtn.textContent = '删除';
-                    removeBtn.onclick = () => row.remove();
+                    removeBtn.addEventListener('click', () => row.remove());
                     row.appendChild(removeBtn);
                     container.appendChild(row);
                 });
@@ -854,7 +926,7 @@
                 addBtn.type = 'button';
                 addBtn.className = 'btn-sm btn-secondary';
                 addBtn.textContent = '+ 添加项';
-                addBtn.onclick = () => {
+                addBtn.addEventListener('click', () => {
                     const row = document.createElement('div');
                     row.style.cssText = 'display:flex;gap:6px;align-items:center;';
                     const input = document.createElement('input');
@@ -867,24 +939,34 @@
                     removeBtn.type = 'button';
                     removeBtn.className = 'btn-sm danger';
                     removeBtn.textContent = '删除';
-                    removeBtn.onclick = () => row.remove();
+                    removeBtn.addEventListener('click', () => row.remove());
                     row.appendChild(removeBtn);
                     container.appendChild(row);
-                };
+                });
                 container.appendChild(addBtn);
                 return container;
             }
             case 'File': {
                 const container = document.createElement('div');
                 container.className = 'file-upload-area';
-                container.innerHTML = `
-                    <input type="file" name="${param.name}" accept="image/*,.pdf,.doc,.docx,.txt,.xlsx,.csv">
-                    <div class="file-upload-text">点击或拖拽上传文件</div>
-                    <div class="file-upload-hint">支持图片、PDF、文档等格式</div>
-                    <div class="file-upload-preview" style="display:none;"></div>
-                `;
-                const fileInput = container.querySelector('input[type="file"]');
-                const preview = container.querySelector('.file-upload-preview');
+                // 安全构建：createElement + setAttribute，name 属性经 setAttribute 不会逃逸为 HTML
+                const fileInput = document.createElement('input');
+                fileInput.type = 'file';
+                fileInput.setAttribute('name', param.name || '');
+                fileInput.setAttribute('accept', 'image/*,.pdf,.doc,.docx,.txt,.xlsx,.csv');
+                const textEl = document.createElement('div');
+                textEl.className = 'file-upload-text';
+                textEl.textContent = '点击或拖拽上传文件';
+                const hintEl = document.createElement('div');
+                hintEl.className = 'file-upload-hint';
+                hintEl.textContent = '支持图片、PDF、文档等格式';
+                const preview = document.createElement('div');
+                preview.className = 'file-upload-preview';
+                preview.style.display = 'none';
+                container.appendChild(fileInput);
+                container.appendChild(textEl);
+                container.appendChild(hintEl);
+                container.appendChild(preview);
 
                 container.addEventListener('click', (e) => {
                     if (e.target !== fileInput) fileInput.click();
@@ -1004,7 +1086,7 @@
         const resultEl = document.getElementById(resultId);
         const contentEl = document.getElementById(resultContentId);
         resultEl.style.display = 'block';
-        contentEl.innerHTML = '<div class="loading-spinner"></div> 正在处理...';
+        contentEl.innerHTML = escapeHtml('') + '<div class="loading-spinner"></div> 正在处理...';
 
         try {
             const resp = await api.chat(work.id, '', '', parameters);
@@ -1043,7 +1125,7 @@
                 contentEl.innerHTML = renderMarkdown(fullContent);
             }
         } catch (e) {
-            contentEl.innerHTML = `<span style="color:var(--danger)">请求失败: ${e.message}</span>`;
+            contentEl.innerHTML = `<span style="color:var(--danger)">请求失败: ${escapeHtml(e.message)}</span>`;
         }
     }
 
@@ -1124,8 +1206,7 @@
 
         try {
             const data = await api.adminLogin(password);
-            state.adminToken = data.token;
-            sessionStorage.setItem('adminToken', data.token);
+            state.adminToken = data.token;   // 仅内存，不落 sessionStorage
             showToast('登录成功', 'success');
             document.getElementById('admin-login').style.display = 'none';
             document.getElementById('admin-panel').style.display = 'block';
@@ -1181,11 +1262,11 @@
         if (countSpan) countSpan.textContent = '';
 
         if (works.length === 0) {
-            list.innerHTML = '<p style="color:var(--text-tertiary);text-align:center;padding:40px;">暂无已导入的作品，请前往"导入作品"页面</p>';
+            list.innerHTML = escapeHtml('') + '<p style="color:var(--text-tertiary);text-align:center;padding:40px;">暂无已导入的作品，请前往"导入作品"页面</p>';
             return;
         }
 
-        list.innerHTML = works.map(work => {
+        list.innerHTML = escapeHtml('') + works.map(work => {
             const iconHtml = work.icon_url
                 ? `<img class="admin-work-icon" src="${escapeHtml(work.icon_url)}" alt="" onerror="this.style.display='none'">`
                 : `<div class="admin-work-icon" style="background:linear-gradient(135deg,#4f46e5,#a855f7);display:flex;align-items:center;justify-content:center;color:white;font-size:16px;border-radius:var(--radius-sm);">AI</div>`;
@@ -1240,10 +1321,10 @@
 
         // Bind events
         list.querySelectorAll('.btn-edit-work').forEach(btn => {
-            btn.onclick = () => editWorkDialog(btn.dataset.id, works);
+            btn.addEventListener('click', () => editWorkDialog(btn.dataset.id, works));
         });
         list.querySelectorAll('.btn-refresh-work').forEach(btn => {
-            btn.onclick = async () => {
+            btn.addEventListener('click', async () => {
                 try {
                     showToast('正在刷新...', 'info');
                     await api.refreshWork(btn.dataset.id);
@@ -1252,13 +1333,13 @@
                 } catch (e) {
                     showToast('刷新失败: ' + e.message, 'error');
                 }
-            };
+            });
         });
         list.querySelectorAll('.btn-delete-work').forEach(btn => {
-            btn.onclick = () => confirmDeleteWork(btn.dataset.id);
+            btn.addEventListener('click', () => confirmDeleteWork(btn.dataset.id));
         });
         list.querySelectorAll('.btn-edit-params').forEach(btn => {
-            btn.onclick = () => openEditParams(btn.dataset.id);
+            btn.addEventListener('click', () => openEditParams(btn.dataset.id));
         });
     }
 
@@ -1360,11 +1441,28 @@
 
     // ==================== AI 生成参数（内联在编辑参数弹窗中） ====================
     // ==================== AI 生成参数（输入/输出分开） ====================
-    const _genTasks = {};  // { input: { taskId, timer }, output: { taskId, timer } }
+    const _genTasks = {};  // { input: { taskId, timer, controller }, output: { taskId, timer, controller } }
+
+    // 中止某一组的轮询与上传请求（cancelGenInline / 页面卸载共用）
+    function _stopGenTask(group) {
+        const task = _genTasks[group];
+        if (!task) return;
+        if (task.controller) task.controller.abort();
+        if (task.timer) clearInterval(task.timer);
+        _genTasks[group] = null;
+    }
 
     function openAiGenInline(group) {
         const area = document.getElementById(`ai-gen-${group}-area`);
-        area.style.display = area.style.display === 'none' ? 'block' : 'none';
+        // 兼容 .hidden class 与内联 style.display 两种状态
+        const isHidden = area.classList.contains('hidden') || area.style.display === 'none';
+        if (isHidden) {
+            area.classList.remove('hidden');
+            area.style.display = '';
+        } else {
+            area.classList.add('hidden');
+            area.style.display = 'none';
+        }
     }
 
     async function generateParamsInline(group) {
@@ -1389,27 +1487,33 @@
             const formData = new FormData();
             formData.append('image', fileInput.files[0]);
             formData.append('gen_group', group);  // 告诉后端只生成输入或输出
-            const resp = await fetch(`/api/admin/works/${workId}/generate-params`, {
-                method: 'POST', body: formData
+            const controller = new AbortController();
+            _genTasks[group] = { taskId: null, timer: null, controller };
+            const resp = await api.requestRaw(`/api/admin/works/${workId}/generate-params`, {
+                method: 'POST', body: formData, signal: controller.signal
             });
-            const result = await resp.json();
+            const body = await resp.json();
+            const result = body.data || {};
 
-            if (!result.success) {
-                showToast('生成失败: ' + (result.error || '未知错误'), 'error');
+            if (!resp.ok || body.code !== 0 || !result.success) {
+                showToast('生成失败: ' + (body.message || result.error || '未知错误'), 'error');
                 btn.disabled = false;
                 btn.textContent = '识别';
                 cancelBtn.style.display = 'none';
                 return;
             }
 
-            _genTasks[group] = { taskId: result.task_id, timer: null };
+            _genTasks[group].taskId = result.task_id;
             btn.textContent = '识别中...';
             statusEl.textContent = '⏱ AI 正在分析截图...';
 
             _genTasks[group].timer = setInterval(async () => {
                 try {
-                    const statusResp = await fetch(`/api/admin/works/${workId}/generate-params/status?task_id=${result.task_id}`);
-                    const statusResult = await statusResp.json();
+                    const statusResp = await api.requestRaw(`/api/admin/works/${workId}/generate-params/status?task_id=${result.task_id}`, {
+                        signal: _genTasks[group] ? _genTasks[group].controller.signal : undefined
+                    });
+                    const statusBody = await statusResp.json();
+                    const statusResult = statusBody.data || {};
 
                     if (statusResult.status === 'done') {
                         clearInterval(_genTasks[group].timer);
@@ -1447,15 +1551,20 @@
                         cancelBtn.style.display = 'none';
                     }
                 } catch (e) {
-                    console.error('轮询错误:', e);
+                    // 被取消（abort）时静默，避免重复中止提示
+                    if (!(e && e.name === 'AbortError')) console.error('轮询错误:', e);
                 }
             }, 3000);
 
         } catch (e) {
-            showToast('生成失败: ' + e.message, 'error');
+            // 被取消（abort）时静默，避免竞态残留提示
+            if (!(e && e.name === 'AbortError')) {
+                showToast('生成失败: ' + e.message, 'error');
+            }
             btn.disabled = false;
             btn.textContent = '识别';
             cancelBtn.style.display = 'none';
+            _genTasks[group] = null;
         }
     }
 
@@ -1463,15 +1572,14 @@
         const task = _genTasks[group];
         if (!task) return;
         const workId = document.getElementById('edit-params-work-id').value;
-        await fetch(`/api/admin/works/${workId}/generate-params/cancel`, {
-            method: 'POST',
-            headers: {'Content-Type': 'application/json'},
-            body: JSON.stringify({task_id: task.taskId})
-        });
-        if (task.timer) {
-            clearInterval(task.timer);
+        if (task.taskId) {
+            await api.requestRaw(`/api/admin/works/${workId}/generate-params/cancel`, {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({task_id: task.taskId})
+            }).catch(() => {});
         }
-        _genTasks[group] = null;
+        _stopGenTask(group);
 
         const btn = document.getElementById(`btn-ai-gen-${group}`);
         const cancelBtn = document.getElementById(`btn-cancel-ai-${group}`);
@@ -1496,8 +1604,8 @@
         document.getElementById('ai-gen-output-area').style.display = 'none';
         document.getElementById('ai-gen-input-status').textContent = '';
         document.getElementById('ai-gen-output-status').textContent = '';
-        document.getElementById('ai-gen-input-preview').innerHTML = '';
-        document.getElementById('ai-gen-output-preview').innerHTML = '';
+        document.getElementById('ai-gen-input-preview').innerHTML = escapeHtml('');
+        document.getElementById('ai-gen-output-preview').innerHTML = escapeHtml('');
         const inputFile = document.getElementById('ai-gen-input-file');
         const outputFile = document.getElementById('ai-gen-output-file');
         if (inputFile) inputFile.value = '';
@@ -1508,8 +1616,8 @@
     function renderParamsEditor(params) {
         const inputContainer = document.getElementById('input-params-editor');
         const outputContainer = document.getElementById('output-params-editor');
-        inputContainer.innerHTML = '';
-        outputContainer.innerHTML = '';
+        inputContainer.innerHTML = escapeHtml('');
+        outputContainer.innerHTML = escapeHtml('');
 
         params.forEach((p, i) => {
             const group = p.group || 'input';
@@ -1556,7 +1664,7 @@
         const row = document.createElement('div');
         row.className = 'param-row';
         row.style.cssText = 'display:flex;gap:8px;align-items:center;margin-bottom:8px;flex-wrap:wrap';
-        row.innerHTML = `
+        row.innerHTML = escapeHtml('') + `
             <input type="text" value="${escapeHtml(p.name || '')}" placeholder="参数名" style="width:100px" data-field="name" data-index="${idx}">
             <input type="text" value="${escapeHtml(p.label || '')}" placeholder="显示名" style="width:100px" data-field="label" data-index="${idx}">
             <select data-field="type" data-index="${idx}" style="width:120px">
@@ -1583,7 +1691,7 @@
             itemTypeDiv.className = 'item-type-row';
             itemTypeDiv.style.cssText = 'display:flex;gap:8px;align-items:center;margin-left:20px;margin-bottom:4px';
             const savedItemType = p.item_type || 'String';
-            itemTypeDiv.innerHTML = `
+            itemTypeDiv.innerHTML = escapeHtml('') + `
                 <span style="font-size:12px;color:#888">元素类型:</span>
                 <select data-field="item_type" style="width:120px;padding:2px 6px;border:1px solid #ddd;border-radius:4px">
                     ${['String','Integer','Number','Boolean','Time','Object','File'].map(t =>
@@ -1605,7 +1713,7 @@
                 addChildrenBtn.style.display = 'inline-block';
             }
         }
-        addChildrenBtn.onclick = (e) => {
+        addChildrenBtn.addEventListener('click', (e) => {
             e.stopPropagation();
             const parentName = row.querySelector('[data-field="name"]').value.trim() || 'parent';
             const childContainer = row.nextElementSibling;
@@ -1628,7 +1736,7 @@
                 container.appendChild(childRow);
                 row.after(container);
             }
-        };
+        });
         row.appendChild(addChildrenBtn);
 
         // 类型切换时处理子参数和元素类型
@@ -1650,7 +1758,7 @@
                     itemTypeDiv = document.createElement('div');
                     itemTypeDiv.className = 'item-type-row';
                     itemTypeDiv.style.cssText = 'display:flex;gap:8px;align-items:center;margin-left:20px;margin-bottom:4px';
-                    itemTypeDiv.innerHTML = `
+                    itemTypeDiv.innerHTML = escapeHtml('') + `
                         <span style="font-size:12px;color:#888">元素类型:</span>
                         <select data-field="item_type" style="width:120px;padding:2px 6px;border:1px solid #ddd;border-radius:4px">
                             ${['String','Integer','Number','Boolean','Time','Object','File'].map(t =>
@@ -1862,6 +1970,17 @@
     window.generateParamsInline = generateParamsInline;
     window.cancelGenInline = cancelGenInline;
 
+    // 暴露当前作品上下文给创作端面板（F7 剧情树 / F8 角色版图）
+    // 面板入口通过 getCurrentProjectId() 获取绑定的 novel_creation 项目 id
+    window.StoryForgeApp = {
+        getCurrentProjectId: function () {
+            return (state.currentWork && state.currentWork.project_id) || '';
+        },
+        getCurrentWorkId: function () {
+            return state.currentWorkId || '';
+        }
+    };
+
     function collectParamsFromContainer(containerId, group) {
         const container = document.getElementById(containerId);
         const rows = container.querySelectorAll(':scope > .param-row');
@@ -1965,13 +2084,13 @@
         const form = document.getElementById('work-form');
         const resultEl = document.getElementById('form-result');
         const contentEl = document.getElementById('result-content');
-        form.innerHTML = '';
+        form.innerHTML = escapeHtml('');
         if (resultEl) resultEl.style.display = 'none';
 
         // 只渲染输入参数
         const parameters = (work.parameters || []).filter(p => p.group !== 'output');
         if (parameters.length === 0) {
-            form.innerHTML = '<p style="color:var(--text-tertiary);text-align:center;padding:20px;">该工作流暂无参数配置，请联系管理员配置参数。</p>';
+            form.innerHTML = escapeHtml('') + '<p style="color:var(--text-tertiary);text-align:center;padding:20px;">该工作流暂无参数配置，请联系管理员配置参数。</p>';
             return;
         }
 
@@ -2081,22 +2200,27 @@
         if (!resultEl || !contentEl) return;
 
         resultEl.style.display = 'block';
-        contentEl.innerHTML = '<div class="loading-spinner"></div> 正在执行...';
+        contentEl.innerHTML = escapeHtml('') + '<div class="loading-spinner"></div> 正在执行...';
+
+        // 流式执行取消控制：切换页面/卸载时 abort，避免竞态与泄漏
+        const controller = new AbortController();
+        state.streamController = controller;
 
         try {
             const token = state.accessTokens[work.id] || '';
-            const resp = await fetch(`/api/works/${work.id}/execute`, {
+            const resp = await api.requestRaw(`/api/works/${work.id}/execute`, {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
                     'X-Access-Code': token
                 },
-                body: JSON.stringify({ inputs: parameters, stream: true })
+                body: JSON.stringify({ inputs: parameters, stream: true }),
+                signal: controller.signal
             });
 
             if (!resp.ok) {
                 const data = await resp.json().catch(() => ({}));
-                contentEl.innerHTML = `<span style="color:var(--danger)">错误: ${escapeHtml(data.error || '请求失败')}</span>`;
+                contentEl.innerHTML = `<span style="color:var(--danger)">错误: ${escapeHtml(data.message || data.error || '请求失败')}</span>`;
                 return;
             }
 
@@ -2129,7 +2253,12 @@
                 contentEl.innerHTML = renderMarkdown(fullContent);
             }
         } catch (e) {
-            contentEl.innerHTML = `<span style="color:var(--danger)">请求失败: ${e.message}</span>`;
+            // 主动取消（切换页面/卸载）不渲染错误，避免竞态残留
+            if (!(e && e.name === 'AbortError')) {
+                contentEl.innerHTML = `<span style="color:var(--danger)">请求失败: ${escapeHtml(e.message)}</span>`;
+            }
+        } finally {
+            if (state.streamController === controller) state.streamController = null;
         }
     }
 
@@ -2208,7 +2337,7 @@
         if (selectAllCb) selectAllCb.checked = false;
 
         const container = document.getElementById('resource-items');
-        container.innerHTML = items.map(item => {
+        container.innerHTML = escapeHtml('') + items.map(item => {
             const isWorkflow = (item._source_type || 'bot') === 'workflow';
             const itemId = isWorkflow ? (item.workflow_id || item.id) : (item.bot_id || item.id);
             const iconHtml = item.icon_url
@@ -2292,17 +2421,8 @@
             showToast(`正在导入 ${selectedItems.length} 个作品...`, 'info');
             const result = await api.importWorks(pat, selectedItems, '', workspaceId);
             if (result.success) {
-                const details = (result.results || []).map(r => {
-                    if (r.success) {
-                        return `${r.name}: 成功`;
-                    } else {
-                        return `${r.id}: 失败 - ${r.error || '未知错误'}`;
-                    }
-                }).join('\n');
                 showToast(`导入完成: 成功 ${result.imported}/${result.total} 个`, result.imported === result.total ? 'success' : 'warning');
-                if (result.imported < result.total) {
-                    console.log('导入详情:\n' + details);
-                }
+                // 部分失败时 result.results 已含错误原因，无需额外日志
                 document.querySelectorAll('#resource-items input:checked').forEach(cb => {
                     cb.checked = false;
                     cb.closest('.bot-item').classList.remove('selected');
@@ -2318,7 +2438,7 @@
 
     function renderDatasetList() {
         const container = document.getElementById('dataset-items');
-        container.innerHTML = state.datasetList.map(ds => {
+        container.innerHTML = escapeHtml('') + state.datasetList.map(ds => {
             const dsId = ds.id || ds.dataset_id;
             const iconHtml = ds.icon_url
                 ? `<img class="bot-item-icon" src="${escapeHtml(ds.icon_url)}" alt="" onerror="this.style.display='none'">`
@@ -2376,29 +2496,22 @@
 
         let successCount = 0;
         let failCount = 0;
-        const details = [];
 
         for (const datasetId of selected) {
             try {
                 const result = await api.importDataset(pat, datasetId, accessCode);
                 if (result.success) {
                     successCount++;
-                    details.push(`${result.name}: 成功`);
                 } else {
                     failCount++;
-                    details.push(`${datasetId}: 失败`);
                 }
             } catch (e) {
                 failCount++;
-                details.push(`${datasetId}: 失败 - ${e.message}`);
             }
         }
 
         const total = selected.length;
         showToast(`知识库导入完成: 成功 ${successCount}/${total} 个`, successCount === total ? 'success' : 'warning');
-        if (failCount > 0) {
-            console.log('导入详情:\n' + details.join('\n'));
-        }
         document.querySelectorAll('#dataset-items input:checked').forEach(cb => {
             cb.checked = false;
             cb.closest('.dataset-item')?.classList.remove('selected');
@@ -2464,6 +2577,97 @@
     }
 
     // ==================== Markdown ====================
+    // 白名单标签（marked/GFM 输出子集，含 hljs 高亮 span、任务列表 input）
+    const SANITIZE_ALLOWED_TAGS = new Set([
+        'p', 'br', 'hr', 'strong', 'em', 'b', 'i', 'u', 'del', 's',
+        'ul', 'ol', 'li', 'code', 'pre', 'blockquote',
+        'h1', 'h2', 'h3', 'h4', 'h5', 'h6',
+        'a', 'img', 'span', 'div',
+        'table', 'thead', 'tbody', 'tfoot', 'tr', 'th', 'td',
+        'input'
+    ]);
+
+    // 各标签允许的属性白名单（on* 一律剥离；class 仅用于 hljs 高亮）
+    const SANITIZE_ALLOWED_ATTRS = {
+        a: new Set(['href', 'title', 'rel']),
+        img: new Set(['src', 'alt', 'title']),
+        span: new Set(['class']),
+        code: new Set(['class']),
+        pre: new Set(['class']),
+        div: new Set(['class']),
+        th: new Set(['align']),
+        td: new Set(['align']),
+        input: new Set(['type', 'checked', 'disabled'])
+    };
+
+    function sanitizeHtml(html) {
+        if (!html) return '';
+        const doc = new DOMParser().parseFromString(html, 'text/html');
+
+        const stripNodes = new Set(['script', 'style', 'iframe', 'object', 'embed', 'link', 'meta', 'form', 'svg', 'math']);
+
+        const walk = (parent) => {
+            [...parent.children].forEach((child) => {
+                walk(child);
+                const tag = child.tagName.toLowerCase();
+                if (stripNodes.has(tag)) {
+                    child.remove();
+                    return;
+                }
+                if (!SANITIZE_ALLOWED_TAGS.has(tag)) {
+                    // 未列出的标签：保留其子节点（展开），丢弃标签本身
+                    while (child.firstChild) parent.insertBefore(child.firstChild, child);
+                    child.remove();
+                }
+            });
+        };
+        walk(doc.body);
+
+        // 属性过滤 + 协议校验
+        doc.body.querySelectorAll('*').forEach((el) => {
+            const tag = el.tagName.toLowerCase();
+            const allowed = SANITIZE_ALLOWED_ATTRS[tag] || new Set();
+            [...el.attributes].forEach((attr) => {
+                const name = attr.name.toLowerCase();
+                if (name.startsWith('on')) {
+                    el.removeAttribute(attr.name);
+                    return;
+                }
+                if (name === 'style') {
+                    el.removeAttribute(attr.name);
+                    return;
+                }
+                if (!allowed.has(name)) {
+                    el.removeAttribute(attr.name);
+                    return;
+                }
+                if (name === 'href' || name === 'src') {
+                    const val = (attr.value || '').trim().toLowerCase();
+                    if (val.startsWith('javascript:') || val.startsWith('vbscript:') ||
+                        val.startsWith('data:text/html')) {
+                        el.removeAttribute(attr.name);
+                        return;
+                    }
+                    if (val.startsWith('data:') && !val.startsWith('data:image/')) {
+                        el.removeAttribute(attr.name);
+                        return;
+                    }
+                }
+                if (name === 'rel') {
+                    // 只保留 noreferrer/noopener
+                    const safeRel = (attr.value || '').split(/\s+/).filter((t) => /^(noreferrer|noopener)$/.test(t)).join(' ');
+                    el.setAttribute('rel', safeRel || 'noreferrer noopener');
+                }
+            });
+            // a 标签强制 noopener（防 window.opener 劫持）
+            if (tag === 'a') {
+                el.setAttribute('rel', (el.getAttribute('rel') || 'noreferrer noopener'));
+            }
+        });
+
+        return doc.body.innerHTML;
+    }
+
     function renderMarkdown(text) {
         if (typeof marked !== 'undefined') {
             marked.setOptions({
@@ -2476,7 +2680,7 @@
                     return code;
                 }
             });
-            return marked.parse(text);
+            return sanitizeHtml(marked.parse(text));
         }
         return escapeHtml(text).replace(/\n/g, '<br>');
     }
@@ -2535,6 +2739,41 @@
     }
 
     // ==================== Event Bindings ====================
+    // 将模板中原内联 onclick 的元素统一改为 addEventListener（P1 合规）
+    function bindInlineHandlers() {
+        const bind = (id, handler) => {
+            const el = document.getElementById(id);
+            if (el) el.addEventListener('click', handler);
+        };
+
+        // 作品管理
+        bind('btn-batch-delete-works', batchDeleteWorks);
+
+        // 站点设置 LLM 配置
+        bind('btn-fill-doubao-preset', fillGlobalDoubaoPreset);
+        bind('btn-save-llm-config', saveGlobalLlmConfig);
+
+        // 参数编辑器模态框
+        bind('btn-close-edit-params', () => closeModal('modal-edit-params'));
+        bind('btn-cancel-edit-params', () => closeModal('modal-edit-params'));
+        bind('btn-save-params', saveParams);
+        bind('btn-add-input-param', () => addParamRow('input-params-editor'));
+        bind('btn-import-input-json', () => importParamsFromJson('input'));
+        bind('btn-ai-gen-input-open', () => openAiGenInline('input'));
+        bind('btn-add-output-param', () => addParamRow('output-params-editor'));
+        bind('btn-import-output-json', () => importParamsFromJson('output'));
+        bind('btn-ai-gen-output-open', () => openAiGenInline('output'));
+        bind('btn-ai-gen-input', () => generateParamsInline('input'));
+        bind('btn-ai-gen-output', () => generateParamsInline('output'));
+        bind('btn-cancel-ai-input', () => cancelGenInline('input'));
+        bind('btn-cancel-ai-output', () => cancelGenInline('output'));
+
+        // 导入 JSON 模态框
+        bind('btn-close-import-json', () => closeModal('modal-import-json'));
+        bind('btn-cancel-import-json', () => closeModal('modal-import-json'));
+        bind('btn-do-import-json', doImportParamsJson);
+    }
+
     function bindEvents() {
         // Navigation
         document.getElementById('btn-admin').addEventListener('click', () => {
@@ -2564,6 +2803,9 @@
         // Settings
         document.getElementById('btn-save-settings').addEventListener('click', saveSettings);
 
+        // 内联 onclick → addEventListener 绑定（P1：模板不写内联事件）
+        bindInlineHandlers();
+
         // Access code modal
         document.getElementById('btn-submit-access').addEventListener('click', submitAccessCode);
         document.getElementById('access-code-input').addEventListener('keydown', (e) => {
@@ -2588,8 +2830,17 @@
             if (e.target.id === 'workflow-screenshot-inline' && e.target.files[0]) {
                 const reader = new FileReader();
                 reader.onload = function(ev) {
-                    document.getElementById('screenshot-preview-inline').innerHTML =
-                        '<img src="' + ev.target.result + '" style="max-width:100%;max-height:200px;border-radius:8px;margin-top:4px">';
+                    // 安全渲染预览图：createElement + setAttribute，避免拼接 dataURL 注入
+                    const preview = document.getElementById('screenshot-preview-inline');
+                    if (!preview) return;
+                    const img = document.createElement('img');
+                    img.setAttribute('src', ev.target.result);
+                    img.style.maxWidth = '100%';
+                    img.style.maxHeight = '200px';
+                    img.style.borderRadius = '8px';
+                    img.style.marginTop = '4px';
+                    preview.textContent = '';
+                    preview.appendChild(img);
                 };
                 reader.readAsDataURL(e.target.files[0]);
             }
@@ -2607,7 +2858,12 @@
         document.addEventListener('keydown', function(e) {
             if (e.key === 'Escape') {
                 document.querySelectorAll('.modal').forEach(m => {
-                    if (m.style.display !== 'none') m.style.display = 'none';
+                    // 兼容 .hidden class 与内联 style.display 两种状态
+                    const isShown = !m.classList.contains('hidden') && m.style.display !== 'none';
+                    if (isShown) {
+                        m.classList.add('hidden');
+                        m.style.display = 'none';
+                    }
                 });
             }
         });
@@ -2627,6 +2883,12 @@
         initTabs();
         initResourceTabs();
         initMixedPanel();
+
+        // 页面卸载时取消所有进行中的流式/轮询请求，避免泄漏与竞态
+        window.addEventListener('beforeunload', () => {
+            abortActiveStream();
+            ['input', 'output'].forEach(g => _stopGenTask(g));
+        });
 
         // Initial route
         const hash = window.location.hash;

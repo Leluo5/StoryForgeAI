@@ -29,6 +29,9 @@ from __future__ import annotations
 
 from typing import Any, Dict
 
+from ..common.errors import AppError as _AppError
+from ..common.storage import new_id as _new_id
+
 from flask import Blueprint, jsonify, request
 
 from ..common.errors import bad_request, conflict, forbidden, not_found
@@ -40,7 +43,7 @@ def create_blueprint(
     project_store: Any,
     scheduler: Any,
     flow_engine: Any,
-    tool_registry: Any = None,
+    **extra: Any,
 ) -> Blueprint:
     """创建小说创作模块蓝图（依赖注入）。
 
@@ -49,9 +52,12 @@ def create_blueprint(
         project_store: ProjectStore 实例（聚合根反查 / 工具调用审计）。
         scheduler: RoleAgentScheduler 实例（有序调用绑定 Agent）。
         flow_engine: StepFlowEngine 实例（11 步流程配置与触发）。
-        tool_registry: ToolRegistry 实例（工具注册/派发，§4 工具接口）。
+        extra 聚合：tool_registry（工具注册/派发，§4 工具接口）、
+        import_engine（F5→P3 知识库角色同步导入，§5 接口）。
     """
-    bp = Blueprint("novel_creation", __name__)
+    tool_registry = extra.get("tool_registry")
+    import_engine = extra.get("import_engine")
+    bp = Blueprint("novel_creation", __name__, url_prefix="/api")
 
     # ---------- 辅助 ----------
 
@@ -70,7 +76,7 @@ def create_blueprint(
 
     # ---------- 3.2 绑定角色 Agent ----------
 
-    @bp.post("/api/roles/<role_id>/agents")
+    @bp.post("/roles/<role_id>/agents")
     def bind_agent(role_id: str):
         """绑定角色 Agent（接口契约 §3.2）。"""
         project, _role = _resolve_role(role_id)
@@ -81,7 +87,8 @@ def create_blueprint(
         enabled = payload.get("enabled", True)
         if not agent_id:
             raise bad_request("agent_id 不能为空")
-        if not isinstance(step_order, int) or not (1 <= step_order <= 11):
+        if not isinstance(step_order, int) or isinstance(step_order, bool) \
+                or not (1 <= step_order <= 11):
             raise bad_request("step_order 须为 1-11 整数")
         binding = role_store.create_binding(
             project["id"], role_id, agent_id,
@@ -91,7 +98,7 @@ def create_blueprint(
 
     # ---------- 3.3 更新绑定 ----------
 
-    @bp.put("/api/roles/<role_id>/agents/<binding_id>")
+    @bp.put("/roles/<role_id>/agents/<binding_id>")
     def update_agent(role_id: str, binding_id: str):
         """更新角色 Agent 绑定（接口契约 §3.3）。"""
         project, _role = _resolve_role(role_id)
@@ -102,6 +109,7 @@ def create_blueprint(
             raise bad_request("无可更新字段")
         if "step_order" in updates and (
             not isinstance(updates["step_order"], int)
+            or isinstance(updates["step_order"], bool)
             or not (1 <= updates["step_order"] <= 11)
         ):
             raise bad_request("step_order 须为 1-11 整数")
@@ -116,7 +124,7 @@ def create_blueprint(
 
     # ---------- 3.4 按预设流程调用 ----------
 
-    @bp.post("/api/roles/<role_id>/agents/invoke")
+    @bp.post("/roles/<role_id>/agents/invoke")
     def invoke_agent(role_id: str):
         """按预设流程调用角色 Agent（接口契约 §3.4）。
 
@@ -128,7 +136,8 @@ def create_blueprint(
         payload = request.get_json(silent=True) or {}
         step_order = payload.get("step_order")
         context = payload.get("context") or {}
-        if not isinstance(step_order, int) or not (1 <= step_order <= 11):
+        if not isinstance(step_order, int) or isinstance(step_order, bool) \
+                or not (1 <= step_order <= 11):
             raise bad_request("step_order 须为 1-11 整数")
         if not isinstance(context, dict):
             raise bad_request("context 须为对象")
@@ -136,14 +145,13 @@ def create_blueprint(
         has_hit = any(b["step_order"] <= step_order for b in bindings)
         if not has_hit:
             # 条件触发：无命中绑定，按契约返回 409
-            from ..common.errors import AppError as _A
-            raise _A(409, f"step_order={step_order} 无匹配绑定", "")
+            raise _AppError(409, f"step_order={step_order} 无匹配绑定", "")
         merged = flow_engine.trigger_step(project["id"], role_id, step_order, context)
         return _ok({"merged_context": merged, "role_id": role_id})
 
     # ---------- 3.5 列出角色 Agent ----------
 
-    @bp.get("/api/roles/<role_id>/agents")
+    @bp.get("/roles/<role_id>/agents")
     def list_agents(role_id: str):
         """列出角色绑定的全部 Agent（接口契约 §3.5）。"""
         project, _role = _resolve_role(role_id)
@@ -159,7 +167,7 @@ def create_blueprint(
 
     # ---------- 2.1 创建小说项目 ----------
 
-    @bp.post("/api/projects")
+    @bp.post("/projects")
     def create_project():
         """创建小说项目（接口契约 §2.1）。
 
@@ -182,7 +190,7 @@ def create_blueprint(
 
     # ---------- 2.2 列出项目 ----------
 
-    @bp.get("/api/projects")
+    @bp.get("/projects")
     def list_projects():
         """列出项目（接口契约 §2.2）。
 
@@ -201,7 +209,7 @@ def create_blueprint(
 
     # ---------- 2.3 生成章节内容 ----------
 
-    @bp.post("/api/projects/<project_id>/chapters")
+    @bp.post("/projects/<project_id>/chapters")
     def create_chapter(project_id: str):
         """生成章节内容（接口契约 §2.3）。
 
@@ -228,7 +236,7 @@ def create_blueprint(
 
     # ---------- 3.1 创建角色 ----------
 
-    @bp.post("/api/projects/<project_id>/roles")
+    @bp.post("/projects/<project_id>/roles")
     def create_role(project_id: str):
         """创建角色（接口契约 §3.1）。
 
@@ -249,7 +257,7 @@ def create_blueprint(
 
     # ---------- 2.4 多角色协同 ----------
 
-    @bp.post("/api/projects/<project_id>/collab")
+    @bp.post("/projects/<project_id>/collab")
     def collab_invoke(project_id: str):
         """多角色协同调用（接口契约 §2.4）。
 
@@ -270,7 +278,8 @@ def create_blueprint(
             raise bad_request("roles 不能为空")
         if any(not isinstance(r, str) or not r.strip() for r in roles):
             raise bad_request("roles 须为字符串数组")
-        if not isinstance(step_order, int) or not (1 <= step_order <= 11):
+        if not isinstance(step_order, int) or isinstance(step_order, bool) \
+                or not (1 <= step_order <= 11):
             raise bad_request("step_order 须为 1-11 整数")
         if not isinstance(context, dict):
             raise bad_request("context 须为对象")
@@ -287,7 +296,7 @@ def create_blueprint(
             role_store.get_role(project_id, role_id)
 
         # 获取协同写锁（非阻塞，未获抛 409）
-        collab_lock = project_store._collab_lock(project_id)
+        collab_lock = project_store.collab_lock(project_id)
         if not collab_lock.try_acquire():
             raise conflict("写锁未获取")
         try:
@@ -323,7 +332,7 @@ def create_blueprint(
 
     # ---------- 4.1 调用写作工具 ----------
 
-    @bp.post("/api/projects/<project_id>/tools/<tool>")
+    @bp.post("/projects/<project_id>/tools/<tool>")
     def invoke_tool(project_id: str, tool: str):
         """调用写作工具（接口契约 §4.1）。
 
@@ -377,7 +386,6 @@ def create_blueprint(
 
         # 长任务：落 pending 审计，返回排队语义（task_id 暂用新 UUID）
         if spec.long_task:
-            from ..common.storage import new_id as _new_id
             task_id = _new_id()
             project_store.append_tool_call(
                 project_id, tool, params, {"task_id": task_id},
@@ -390,5 +398,57 @@ def create_blueprint(
             project_id, tool, params, result, status="success", role_id=role_id,
         )
         return _ok({"result": result})
+
+    # ---------- §5 知识库角色同步导入（F5→P3） ----------
+
+    def _require_import_engine():
+        """确保导入引擎已注入；未注入抛 500（应用层装配遗漏）。"""
+        if import_engine is None:
+            raise bad_request("知识库角色导入功能未初始化")
+        return import_engine
+
+    @bp.get("/projects/<project_id>/kb-roles/candidates")
+    def list_kb_roles(project_id: str):
+        """列出知识库 novel 候选角色（§5.1）。
+
+        查询参数 keyword（可选，按关键词过滤知识库条目）。
+        响应 data: {"items": [candidate, ...]}；每项含
+        {entry_id, entry_title, type, role_index, name, identity, personality,
+        relation_edges, available}。
+        """
+        engine = _require_import_engine()
+        project_store.get_project(project_id)  # 404 若不存在
+        keyword = request.args.get("keyword") or None
+        candidates = engine.list_candidate_roles(project_id, keyword=keyword)
+        return _ok({"items": candidates})
+
+    @bp.post("/projects/<project_id>/kb-roles/import")
+    def import_kb_roles(project_id: str):
+        """批量导入知识库角色（§5.2）。
+
+        请求 {"candidates": [candidate, ...], "preview": false}。
+        preview=true 仅预览不落库（返回每条的 payload + field_mapping 标红）；
+        preview=false 创建角色 + 写导入历史。
+        响应 data: {"total", "success", "failed", "imported", "failed_items"}。
+        """
+        engine = _require_import_engine()
+        project_store.get_project(project_id)  # 404 若不存在
+        payload = request.get_json(silent=True) or {}
+        candidates = payload.get("candidates")
+        preview = payload.get("preview", False)
+        if not isinstance(candidates, list):
+            raise bad_request("candidates 须为数组")
+        if not isinstance(preview, bool):
+            raise bad_request("preview 须为布尔值")
+        result = engine.import_roles(project_id, candidates, preview=preview)
+        return _ok(result)
+
+    @bp.get("/projects/<project_id>/kb-roles/history")
+    def list_import_history(project_id: str):
+        """查询导入历史（§5.3，可回溯）。"""
+        engine = _require_import_engine()
+        project_store.get_project(project_id)  # 404 若不存在
+        history = engine.get_import_history(project_id)
+        return _ok({"items": history})
 
     return bp

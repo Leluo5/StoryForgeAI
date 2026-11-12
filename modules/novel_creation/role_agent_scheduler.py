@@ -18,7 +18,8 @@
 from __future__ import annotations
 
 import copy
-from concurrent.futures import Executor
+import json
+from concurrent.futures import Executor, ThreadPoolExecutor
 from typing import Any, Callable, Dict, List, Optional
 
 from ..common.errors import bad_gateway, bad_request, server_error
@@ -75,8 +76,6 @@ class RoleAgentScheduler:
         self.max_workers = max_workers
         self.tool_name = tool_name
         if executor is None:
-            from concurrent.futures import ThreadPoolExecutor
-
             executor = ThreadPoolExecutor(max_workers=max_workers)
         self.executor: Executor = executor
 
@@ -189,8 +188,6 @@ class RoleAgentScheduler:
         }
 
     def _safe_json(self, obj: Any) -> str:
-        import json
-
         try:
             return json.dumps(obj, ensure_ascii=False)
         except (TypeError, ValueError):
@@ -227,7 +224,8 @@ class RoleAgentScheduler:
         异常：AppError（400 step_order 非法；404 角色不存在；502 Agent 上游失败；
               500 未知内部错误）。
         """
-        if not isinstance(step_order, int) or not (1 <= step_order <= 11):
+        if not isinstance(step_order, int) or isinstance(step_order, bool) \
+                or not (1 <= step_order <= 11):
             raise bad_request("step_order 须为 1-11 整数")
 
         # 1. 读取启用的绑定并按 step_order 排序（RoleStore 已按 step_order 排序，兜底再排）

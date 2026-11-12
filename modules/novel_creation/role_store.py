@@ -18,6 +18,9 @@ from ..common.errors import bad_request, not_found
 from ..common.storage import FileLock, atomic_write_json, new_id, now_iso, read_json
 
 # F8 角色版图扩展字段（默认值），与数据结构设计 §2.1 合并。
+# 知识库角色同步（F5 → P3）新增顶层字段：personality/background/appearance。
+# 知识库 characters[] 的「性格」映射到 personality；outline.character_relations 聚合
+# 映射到 background（人物关系描述）；appearance 无直接来源，导入时标红待补。
 _ROLE_EXTRA_DEFAULTS: Dict[str, Any] = {
     "identity": "",
     "nationality": "",
@@ -28,6 +31,9 @@ _ROLE_EXTRA_DEFAULTS: Dict[str, Any] = {
     "age_group": "",
     "attributes": {},
     "relations": [],
+    "personality": "",
+    "background": "",
+    "appearance": "",
 }
 
 # 角色状态白名单（数据结构设计 §2.1）
@@ -111,6 +117,7 @@ class RoleStore:
             return list(self._load(project_id)["roles"])
 
     def get_role(self, project_id: str, role_id: str) -> Dict[str, Any]:
+        """按 id 取角色，不存在抛 404。"""
         with self._lock(project_id):
             for role in self._load(project_id)["roles"]:
                 if role["id"] == role_id:
@@ -155,12 +162,18 @@ class RoleStore:
 
     def create_binding(
         self, project_id: str, role_id: str, agent_id: str,
-        step_order: int, workflow_id: Optional[str] = None, enabled: bool = True,
+        step_order: int, **extra: Any,
     ) -> Dict[str, Any]:
-        """创建角色 Agent 绑定。step_order 同角色唯一（数据结构设计 §2.2 约束）。"""
+        """创建角色 Agent 绑定。step_order 同角色唯一（数据结构设计 §2.2 约束）。
+
+        extra 聚合可选字段：workflow_id/enabled。
+        """
+        workflow_id = extra.get("workflow_id")
+        enabled = extra.get("enabled", True)
         if not agent_id:
             raise bad_request("agent_id 不能为空")
-        if not isinstance(step_order, int) or not (1 <= step_order <= 11):
+        if not isinstance(step_order, int) or isinstance(step_order, bool) \
+                or not (1 <= step_order <= 11):
             raise bad_request("step_order 须为 1-11 整数")
         if enabled not in _BINDING_ENABLED:
             raise bad_request("enabled 须为布尔值")
@@ -198,6 +211,7 @@ class RoleStore:
     def update_binding(
         self, project_id: str, binding_id: str, **updates: Any,
     ) -> Dict[str, Any]:
+        """更新绑定字段（白名单校验），不存在抛 404。"""
         allowed = {"agent_id", "step_order", "workflow_id", "enabled"}
         with self._lock(project_id):
             data = self._load(project_id)
@@ -215,6 +229,7 @@ class RoleStore:
         raise not_found(f"绑定不存在: {binding_id}")
 
     def delete_binding(self, project_id: str, binding_id: str) -> None:
+        """删除绑定，不存在抛 404。"""
         with self._lock(project_id):
             data = self._load(project_id)
             before = len(data["role_bindings"])

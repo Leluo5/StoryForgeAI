@@ -9,20 +9,22 @@
 from __future__ import annotations
 
 import contextlib
+import importlib
 import json
 import os
 import tempfile
 import threading
 import uuid
+from datetime import datetime
 from typing import Any, Dict, Iterator, Optional
 
 try:
-    import fcntl  # POSIX
+    fcntl = importlib.import_module("fcntl")  # POSIX
 except ImportError:  # pragma: no cover - Windows
     fcntl = None
 
 try:
-    import msvcrt  # Windows
+    msvcrt = importlib.import_module("msvcrt")  # Windows
 except ImportError:  # pragma: no cover - POSIX
     msvcrt = None
 
@@ -34,8 +36,6 @@ def new_id() -> str:
 
 def now_iso() -> str:
     """当前时间 ISO 8601（对齐数据结构设计 §五：YYYY-MM-DDTHH:mm:ss）。"""
-    from datetime import datetime
-
     return datetime.now().isoformat(timespec="seconds")
 
 
@@ -51,6 +51,7 @@ class FileLock:
         self._fh: Optional[Any] = None
 
     def acquire(self) -> None:
+        """阻塞获取文件锁（线程锁 + 跨进程文件锁）。"""
         os.makedirs(os.path.dirname(self.lock_path) or ".", exist_ok=True)
         self._thread_lock.acquire()
         self._fh = open(self.lock_path, "a+", encoding="utf-8")
@@ -87,6 +88,7 @@ class FileLock:
         return True
 
     def release(self) -> None:
+        """释放文件锁并关闭句柄。"""
         if self._fh is None:
             return
         try:
@@ -152,14 +154,17 @@ class JsonFileStore:
         return FileLock(os.path.join(self.lock_dir, f"{entity_id}.lock"))
 
     def get(self, entity_id: str, default: Any = None) -> Any:
+        """按实体 id 读取数据，不存在或损坏时返回 default。"""
         with self._lock(entity_id):
             return read_json(self._path(entity_id), default)
 
     def set(self, entity_id: str, data: Any) -> None:
+        """按实体 id 原子写入数据。"""
         with self._lock(entity_id):
             atomic_write_json(self._path(entity_id), data)
 
     def delete(self, entity_id: str) -> bool:
+        """删除实体文件；存在删除返回 True，不存在返回 False。"""
         with self._lock(entity_id):
             try:
                 os.unlink(self._path(entity_id))
@@ -168,6 +173,7 @@ class JsonFileStore:
                 return False
 
     def list_ids(self) -> list[str]:
+        """列出所有实体 id（按 .json 文件后缀识别）。"""
         ids: list[str] = []
         if not os.path.isdir(self.data_dir):
             return ids
@@ -194,13 +200,17 @@ class StorageBackend:
     """
 
     def get(self, entity_id: str, default: Any = None) -> Any:
+        """读取实体数据（子类实现）。"""
         raise NotImplementedError
 
     def set(self, entity_id: str, data: Any) -> None:
+        """写入实体数据（子类实现）。"""
         raise NotImplementedError
 
     def delete(self, entity_id: str) -> bool:
+        """删除实体数据（子类实现）。"""
         raise NotImplementedError
 
     def all(self) -> Dict[str, Any]:
+        """读取全部实体（子类实现）。"""
         raise NotImplementedError

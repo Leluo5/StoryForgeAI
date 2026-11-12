@@ -1,0 +1,49 @@
+name: CI
+
+on:
+  push:
+    branches: [main, master, develop]
+  pull_request:
+    branches: [main, master, develop]
+
+jobs:
+  compliance:
+    name: 合规性检查（四脚本）
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.9"
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "18"
+
+      - name: Install Python deps
+        run: pip install -r requirements.txt
+
+      - name: 合规检查（后端/安全/依赖/前端）
+        run: python scripts/run_checks.py --path "${{ github.workspace }}"
+
+      - name: 全量测试
+        run: python -m pytest -q
+
+  compile:
+    name: 后端语法编译检查
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.9"
+
+      - name: compileall
+        run: python -m compileall -q .

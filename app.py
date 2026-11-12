@@ -8,11 +8,16 @@ import sys
 import json
 import uuid
 import threading
+import hmac
+import re
+import base64
 import requests
 
 from flask import Flask, render_template, jsonify, request, Response, stream_with_context
 from flask_cors import CORS
 from functools import wraps
+from werkzeug.security import check_password_hash
+from werkzeug.exceptions import HTTPException
 
 # 确保项目根目录在路径中
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -33,16 +38,15 @@ from modules.common.errors import AppError as _AppError
 
 @app.errorhandler(Exception)
 def handle_error(e):
-    import traceback
-    traceback.print_exc()
+    """全局异常处理：业务异常按契约返回，HTTP 异常保留状态码，其余统一 500。"""
+    app.logger.exception(e)
     if isinstance(e, _AppError):
         # 业务异常：按契约错误格式返回对应状态码
-        return jsonify({"code": e.code, "data": None, "message": e.message}), e.code
+        return respond(e.code, None, e.message)
     # 非业务异常：HTTPException（如 404 路由）保留其状态码，其余统一 500
-    from werkzeug.exceptions import HTTPException
     if isinstance(e, HTTPException):
-        return jsonify({"code": e.code, "data": None, "message": e.description}), e.code
-    return jsonify({"code": 500, "data": None, "message": "内部错误"}), 500
+        return respond(e.code, None, e.description)
+    return respond(500, None, "内部错误")
 
 DATA_DIR = os.path.join(BASE_DIR, "data")
 
@@ -50,6 +54,12 @@ DATA_DIR = os.path.join(BASE_DIR, "data")
 config_loader = ConfigLoader(DATA_DIR)
 work_manager = WorkManager(DATA_DIR)
 coze_client = CozeClient()
+
+# 统一响应契约辅助函数
+def respond(code, data=None, message="ok"):
+    """统一响应契约：{"code": <int>, "data": <any>, "message": "<可读>"}"""
+    return jsonify({"code": code, "data": data, "message": message}), code
+
 
 # 管理员会话存储（简易实现，生产环境应使用数据库）
 _admin_sessions = {}
@@ -61,9 +71,13 @@ _gen_tasks = {}
 # ==================== 装饰器 ====================
 
 def require_admin(f):
-    """管理员验证装饰器（已禁用密码验证）"""
+    """管理员验证装饰器（从 _admin_sessions 校验 token）"""
     @wraps(f)
     def decorated(*args, **kwargs):
+        """校验管理员会话 token，未授权返回 401。"""
+        token = request.headers.get("X-Admin-Token", "") or request.cookies.get("admin_token", "")
+        if not token or _admin_sessions.get(token) != "admin":
+            return respond(401, None, "未授权，请先登录管理员")
         return f(*args, **kwargs)
     return decorated
 
@@ -72,13 +86,14 @@ def require_work_access(f):
     """作品访问验证装饰器"""
     @wraps(f)
     def decorated(work_id, *args, **kwargs):
+        """校验作品公开/访问码，通过后注入 request.work_config。"""
         work = work_manager.get_work(work_id)
         if work is None:
-            return jsonify({"error": "作品不存在"}), 404
+            return respond(404, None, "作品不存在")
 
         # 检查是否公开
         if not work.get("is_public", True):
-            return jsonify({"error": "该作品未公开"}), 403
+            return respond(403, None, "该作品未公开")
 
         # 检查访问码
         access_code = work.get("access_code", "")
@@ -86,7 +101,7 @@ def require_work_access(f):
             token = request.headers.get("X-Access-Token", "")
             session_key = f"work_{work_id}"
             if not token or _admin_sessions.get(token) != session_key:
-                return jsonify({"error": "需要验证访问码"}), 403
+                return respond(403, None, "需要验证访问码")
 
         request.work_config = work
         return f(work_id, *args, **kwargs)
@@ -110,46 +125,57 @@ def admin_login():
     password = data.get("password", "")
 
     config = config_loader.load_global_config()
-    if password != config.get("admin_password"):
-        return jsonify({"error": "管理密码错误"}), 403
+    stored = config.get("admin_password", "")
+
+    # 兼容现有明文密码：若存储值非 werkzeug 哈希格式，回退明文比较
+    if isinstance(stored, str) and (stored.startswith("pbkdf2:") or stored.startswith("scrypt:")):
+        valid = check_password_hash(stored, password)
+    else:
+        valid = hmac.compare_digest(str(stored), str(password))
+
+    if not valid:
+        return respond(403, None, "管理密码错误")
 
     # 生成会话 token
     token = str(uuid.uuid4())
     _admin_sessions[token] = "admin"
-    return jsonify({"success": True, "token": token})
+    return respond(0, {"token": token}, "ok")
 
 
-@app.route("/api/admin/config", methods=["GET"])
-@require_admin
-def get_admin_config():
-    """获取全局配置"""
-    config = config_loader.load_global_config()
-    # 返回配置（密码部分掩码处理）
+def _config_view(config):
+    """返回配置的脱敏视图（剥离 api_key 等敏感字段）"""
     result = {
         "version": config.get("version", "2.0.0"),
         "site_name": config.get("site_name", "StoryForgeAI"),
         "site_description": config.get("site_description", "AI 作品展示平台"),
         "theme": config.get("theme", "light"),
-        "llm_config": config.get("llm_config", {})
+        "llm_config": {}
     }
-    return jsonify(result)
+    llm = config.get("llm_config", {}) or {}
+    # 仅保留非敏感字段
+    for key in ("base_url", "model"):
+        if key in llm:
+            result["llm_config"][key] = llm[key]
+    return result
+
+
+@app.route("/api/admin/config", methods=["GET"])
+@require_admin
+def get_admin_config():
+    """获取全局配置（脱敏，不含 api_key 等敏感字段）"""
+    config = config_loader.load_global_config()
+    return respond(0, _config_view(config), "ok")
 
 
 @app.route("/api/admin/config", methods=["PUT"])
 @require_admin
 def update_admin_config():
-    """更新全局配置"""
+    """更新全局配置（返回脱敏视图）"""
     data = request.get_json(force=True) or {}
     allowed_fields = ["site_name", "site_description", "theme", "admin_password", "llm_config"]
     updates = {k: v for k, v in data.items() if k in allowed_fields}
     config = config_loader.update_global_config(updates)
-    return jsonify({
-        "version": config.get("version", "2.0.0"),
-        "site_name": config.get("site_name", "StoryForgeAI"),
-        "site_description": config.get("site_description", "AI 作品展示平台"),
-        "theme": config.get("theme", "light"),
-        "llm_config": config.get("llm_config", {})
-    })
+    return respond(0, _config_view(config), "ok")
 
 
 @app.route("/api/admin/coze/test", methods=["POST"])
@@ -160,11 +186,11 @@ def coze_test():
     pat_token = data.get("pat_token", "")
     workspace_id = data.get("workspace_id", "")
     if not pat_token:
-        return jsonify({"success": False, "error": "请输入 PAT Token"}), 400
+        return respond(400, None, "请输入 PAT Token")
 
     coze_client.pat_token = pat_token
     result = coze_client.test_connection(workspace_id)
-    return jsonify(result)
+    return respond(0, result, "ok")
 
 
 @app.route("/api/admin/coze/bots", methods=["POST"])
@@ -175,11 +201,11 @@ def coze_bot_list():
     pat_token = data.get("pat_token", "")
     workspace_id = data.get("workspace_id", "")
     if not pat_token:
-        return jsonify({"success": False, "error": "请输入 PAT Token"}), 400
+        return respond(400, None, "请输入 PAT Token")
 
     coze_client.pat_token = pat_token
     result = coze_client.get_all_resources(workspace_id)
-    return jsonify(result)
+    return respond(0, result, "ok")
 
 
 @app.route("/api/admin/works/import", methods=["POST"])
@@ -193,9 +219,9 @@ def import_works():
     workspace_id = data.get("workspace_id", "")
 
     if not pat_token:
-        return jsonify({"success": False, "error": "请输入 PAT Token"}), 400
+        return respond(400, None, "请输入 PAT Token")
     if not bot_ids:
-        return jsonify({"success": False, "error": "请选择要导入的作品"}), 400
+        return respond(400, None, "请选择要导入的作品")
 
     coze_client.pat_token = pat_token
     results = []
@@ -206,9 +232,19 @@ def import_works():
 
         if source_type == "workflow":
             # 导入工作流
-            wf_info = {"id": actual_id, "name": bid.get("name", ""), "description": bid.get("description", ""), "icon_url": bid.get("icon_url", "")}
+            wf_info = {
+                "id": actual_id,
+                "name": bid.get("name", ""),
+                "description": bid.get("description", ""),
+                "icon_url": bid.get("icon_url", ""),
+            }
             work = work_manager.import_workflow(wf_info, pat_token, workspace_id, access_code)
-            results.append({"success": True, "work_id": work["id"], "name": work["name"], "type": "workflow"})
+            results.append({
+                "success": True,
+                "work_id": work["id"],
+                "name": work["name"],
+                "type": "workflow",
+            })
         else:
             # 导入智能体
             result = coze_client.get_bot_info(actual_id, is_published=True)
@@ -216,17 +252,26 @@ def import_works():
                 result = coze_client.get_bot_info(actual_id, is_published=False)
             if result.get("success"):
                 work = work_manager.import_from_coze(result["data"], pat_token, access_code)
-                results.append({"success": True, "work_id": work["id"], "name": work["name"], "type": "bot"})
+                results.append({
+                    "success": True,
+                    "work_id": work["id"],
+                    "name": work["name"],
+                    "type": "bot",
+                })
             else:
-                results.append({"success": False, "id": actual_id, "error": result.get("error", "导入失败")})
+                results.append({
+                    "success": False,
+                    "id": actual_id,
+                    "error": result.get("error", "导入失败"),
+                })
 
     success_count = sum(1 for r in results if r.get("success"))
-    return jsonify({
+    return respond(0, {
         "success": True,
         "total": len(bot_ids),
         "imported": success_count,
         "results": results
-    })
+    }, "ok")
 
 
 @app.route("/api/admin/coze/datasets", methods=["POST"])
@@ -236,11 +281,11 @@ def coze_dataset_list():
     data = request.get_json(force=True) or {}
     pat_token = data.get("pat_token", "")
     if not pat_token:
-        return jsonify({"success": False, "error": "请输入 PAT Token"}), 400
+        return respond(400, None, "请输入 PAT Token")
 
     coze_client.pat_token = pat_token
     result = coze_client.get_dataset_list()
-    return jsonify(result)
+    return respond(0, result, "ok")
 
 
 @app.route("/api/admin/coze/workflows", methods=["POST"])
@@ -251,11 +296,11 @@ def coze_workflow_list():
     pat_token = data.get("pat_token", "")
     workspace_id = data.get("workspace_id", "")
     if not pat_token:
-        return jsonify({"success": False, "error": "请输入 PAT Token"}), 400
+        return respond(400, None, "请输入 PAT Token")
 
     coze_client.pat_token = pat_token
     result = coze_client.get_workflow_list(workspace_id)
-    return jsonify(result)
+    return respond(0, result, "ok")
 
 
 @app.route("/api/admin/works/import-dataset", methods=["POST"])
@@ -268,16 +313,16 @@ def import_dataset():
     access_code = data.get("access_code", "")
 
     if not pat_token:
-        return jsonify({"success": False, "error": "请输入 PAT Token"}), 400
+        return respond(400, None, "请输入 PAT Token")
     if not dataset_id:
-        return jsonify({"success": False, "error": "请指定知识库 ID"}), 400
+        return respond(400, None, "请指定知识库 ID")
 
     coze_client.pat_token = pat_token
 
     # 先获取知识库列表找到对应的知识库信息
     list_result = coze_client.get_dataset_list()
     if not list_result.get("success"):
-        return jsonify({"success": False, "error": list_result.get("error", "获取知识库列表失败")}), 400
+        return respond(400, None, list_result.get("error", "获取知识库列表失败"))
 
     dataset_info = None
     for item in list_result.get("items", []):
@@ -286,10 +331,10 @@ def import_dataset():
             break
 
     if not dataset_info:
-        return jsonify({"success": False, "error": "未找到指定的知识库"}), 404
+        return respond(404, None, "未找到指定的知识库")
 
     work = work_manager.import_dataset(dataset_info, pat_token, access_code)
-    return jsonify({"success": True, "work_id": work["id"], "name": work["name"]})
+    return respond(0, {"success": True, "work_id": work["id"], "name": work["name"]}, "ok")
 
 
 @app.route("/api/admin/works/import-workflow", methods=["POST"])
@@ -303,16 +348,16 @@ def import_workflow():
     access_code = data.get("access_code", "")
 
     if not pat_token:
-        return jsonify({"success": False, "error": "请输入 PAT Token"}), 400
+        return respond(400, None, "请输入 PAT Token")
     if not workflow_id:
-        return jsonify({"success": False, "error": "请指定工作流 ID"}), 400
+        return respond(400, None, "请指定工作流 ID")
 
     coze_client.pat_token = pat_token
 
     # 先获取工作流列表找到对应的工作流信息
     list_result = coze_client.get_workflow_list(workspace_id)
     if not list_result.get("success"):
-        return jsonify({"success": False, "error": list_result.get("error", "获取工作流列表失败")}), 400
+        return respond(400, None, list_result.get("error", "获取工作流列表失败"))
 
     workflow_info = None
     for item in list_result.get("items", []):
@@ -321,18 +366,23 @@ def import_workflow():
             break
 
     if not workflow_info:
-        return jsonify({"success": False, "error": "未找到指定的工作流"}), 404
+        return respond(404, None, "未找到指定的工作流")
 
     work = work_manager.import_workflow(workflow_info, pat_token, workspace_id, access_code)
-    return jsonify({"success": True, "work_id": work["id"], "name": work["name"]})
+    return respond(0, {"success": True, "work_id": work["id"], "name": work["name"]}, "ok")
 
 
 @app.route("/api/admin/works", methods=["GET"])
 @require_admin
 def list_admin_works():
-    """获取所有已导入作品（含敏感信息）"""
+    """获取所有已导入作品（脱敏，不含敏感字段）"""
     works = work_manager.list_works()
-    return jsonify({"works": works})
+    public_works = []
+    for work in works:
+        public = work_manager.get_work_public(work["id"])
+        if public is not None:
+            public_works.append(public)
+    return respond(0, {"works": public_works}, "ok")
 
 
 @app.route("/api/admin/works/<work_id>", methods=["PUT"])
@@ -343,14 +393,14 @@ def update_work(work_id):
     allowed_fields = [
         "name", "description", "access_code", "is_public",
         "interaction_type", "prologue", "suggested_questions",
-        "parameters", "system_prompt"
+        "parameters", "system_prompt", "project_id"
     ]
     updates = {k: v for k, v in data.items() if k in allowed_fields}
 
     work = work_manager.update_work(work_id, updates)
     if work is None:
-        return jsonify({"error": "作品不存在"}), 404
-    return jsonify(work)
+        return respond(404, None, "作品不存在")
+    return respond(0, work_manager.get_work_public(work_id), "ok")
 
 
 @app.route("/api/admin/works/<work_id>", methods=["DELETE"])
@@ -359,8 +409,8 @@ def delete_work(work_id):
     """删除作品"""
     success = work_manager.delete_work(work_id)
     if not success:
-        return jsonify({"error": "作品不存在"}), 404
-    return jsonify({"success": True})
+        return respond(404, None, "作品不存在")
+    return respond(0, {"success": True}, "ok")
 
 
 @app.route("/api/admin/works/<work_id>/llm-config", methods=["PUT"])
@@ -369,7 +419,7 @@ def update_llm_config(work_id):
     """更新工作流的 LLM 配置"""
     work = work_manager.get_work(work_id)
     if work is None:
-        return jsonify({"error": "作品不存在"}), 404
+        return respond(404, None, "作品不存在")
     data = request.get_json(force=True) or {}
     llm_config = {
         "base_url": data.get("base_url", ""),
@@ -377,7 +427,7 @@ def update_llm_config(work_id):
         "model": data.get("model", "")
     }
     work_manager.update_work(work_id, {"llm_config": llm_config})
-    return jsonify({"success": True})
+    return respond(0, {"success": True}, "ok")
 
 
 @app.route("/api/admin/works/<work_id>/generate-params", methods=["POST"])
@@ -386,7 +436,7 @@ def generate_params_from_image(work_id):
     """上传图片让 LLM 生成参数结构（异步）"""
     work = work_manager.get_work(work_id)
     if work is None:
-        return jsonify({"error": "作品不存在"}), 404
+        return respond(404, None, "作品不存在")
 
     llm_config = work.get("llm_config", {})
     global_config = config_loader.load_global_config()
@@ -396,14 +446,23 @@ def generate_params_from_image(work_id):
     model = llm_config.get("model") or global_llm.get("model", "")
 
     if not base_url or not api_key or not model:
-        return jsonify({"success": False, "error": "请先配置大模型（base_url、api_key、model）"}), 400
+        return respond(400, None, "请先配置大模型（base_url、api_key、model）")
 
     # 获取上传的图片
     if "image" not in request.files:
-        return jsonify({"success": False, "error": "请上传图片"}), 400
+        return respond(400, None, "请上传图片")
 
-    import base64
     image_file = request.files["image"]
+    # 安全校验：图片扩展名白名单 + 大小上限（10MB）
+    image_ext = os.path.splitext(image_file.filename or "")[1].lower()
+    image_allowed_exts = {".png", ".jpg", ".jpeg", ".gif", ".webp", ".bmp"}
+    if image_ext not in image_allowed_exts:
+        return respond(400, None, f"不支持的图片格式: {image_ext or '无扩展名'}")
+    image_max_bytes = 10 * 1024 * 1024
+    image_file.stream.seek(0, os.SEEK_END)
+    if image_file.stream.tell() > image_max_bytes:
+        return respond(400, None, "图片大小不能超过 10MB")
+    image_file.stream.seek(0)
     image_data = image_file.read()
     image_base64 = base64.b64encode(image_data).decode("utf-8")
 
@@ -415,13 +474,12 @@ def generate_params_from_image(work_id):
     _gen_tasks[task_id] = {"status": "running", "result": None, "error": None}
 
     def run_generation():
+        """后台线程：调用 LLM 从截图提取参数结构，结果写回 _gen_tasks。"""
         try:
             # 检查是否已取消
             if _gen_tasks.get(task_id, {}).get("status") == "cancelled":
                 return
 
-            import requests as req_lib
-            import re
             base_url_clean = base_url.rstrip("/")
             # 如果 base_url 已以 /v1 结尾，不再追加
             if base_url_clean.endswith("/v1"):
@@ -524,7 +582,10 @@ def generate_params_from_image(work_id):
                         "role": "user",
                         "content": [
                             {"type": "text", "text": prompt},
-                            {"type": "image_url", "image_url": {"url": f"data:image/png;base64,{image_base64}"}}
+                            {
+                                "type": "image_url",
+                                "image_url": {"url": f"data:image/png;base64,{image_base64}"},
+                            }
                         ]
                     }
                 ],
@@ -532,7 +593,7 @@ def generate_params_from_image(work_id):
                 "max_tokens": 4096
             }
 
-            resp = req_lib.post(url, headers=headers, json=body, timeout=60)
+            resp = requests.post(url, headers=headers, json=body, timeout=60)
             resp.raise_for_status()
             result = resp.json()
 
@@ -595,9 +656,17 @@ def generate_params_from_image(work_id):
 
                 work_manager.update_work(work_id, {"parameters": all_params})
 
-                _gen_tasks[task_id] = {"status": "done", "result": {"parameters": parameters}, "error": None}
+                _gen_tasks[task_id] = {
+                    "status": "done",
+                    "result": {"parameters": parameters},
+                    "error": None,
+                }
             else:
-                _gen_tasks[task_id] = {"status": "error", "error": "无法从 LLM 响应中提取参数结构", "result": None}
+                _gen_tasks[task_id] = {
+                    "status": "error",
+                    "error": "无法从 LLM 响应中提取参数结构",
+                    "result": None,
+                }
 
         except Exception as e:
             if _gen_tasks.get(task_id, {}).get("status") != "cancelled":
@@ -606,7 +675,7 @@ def generate_params_from_image(work_id):
     thread = threading.Thread(target=run_generation, daemon=True)
     thread.start()
 
-    return jsonify({"success": True, "task_id": task_id})
+    return respond(0, {"success": True, "task_id": task_id}, "ok")
 
 
 @app.route("/api/admin/works/<work_id>/generate-params/status", methods=["GET"])
@@ -615,7 +684,7 @@ def get_gen_params_status(work_id):
     """查询生成任务状态"""
     task_id = request.args.get("task_id", "")
     if not task_id or task_id not in _gen_tasks:
-        return jsonify({"status": "not_found"}), 404
+        return respond(404, None, "任务不存在")
 
     task = _gen_tasks[task_id]
     result = {"status": task["status"]}
@@ -628,7 +697,7 @@ def get_gen_params_status(work_id):
     if task["status"] in ("done", "error"):
         del _gen_tasks[task_id]
 
-    return jsonify(result)
+    return respond(0, result, "ok")
 
 
 @app.route("/api/admin/works/<work_id>/generate-params/cancel", methods=["POST"])
@@ -638,8 +707,8 @@ def cancel_gen_params(work_id):
     task_id = (request.get_json(force=True) or {}).get("task_id", "")
     if task_id and task_id in _gen_tasks:
         _gen_tasks[task_id]["status"] = "cancelled"
-        return jsonify({"success": True})
-    return jsonify({"success": False, "error": "任务不存在"}), 404
+        return respond(0, {"success": True}, "ok")
+    return respond(404, None, "任务不存在")
 
 
 @app.route("/api/admin/works/<work_id>/refresh", methods=["POST"])
@@ -648,7 +717,7 @@ def refresh_work(work_id):
     """刷新作品信息（重新从 Coze 拉取，更新原作品而不是创建新作品）"""
     work = work_manager.get_work(work_id)
     if work is None:
-        return jsonify({"error": "作品不存在"}), 404
+        return respond(404, None, "作品不存在")
 
     coze_meta = work.get("coze_meta", {})
     work_type = coze_meta.get("type", "bot")
@@ -658,16 +727,16 @@ def refresh_work(work_id):
         pat_token = work.get("pat_token", "")
         workflow_id = work.get("coze_workflow_id", "") or coze_meta.get("workflow_id", "")
         if not pat_token or not workflow_id:
-            return jsonify({"success": False, "error": "工作流缺少 PAT Token 或 Workflow ID"}), 400
+            return respond(400, None, "工作流缺少 PAT Token 或 Workflow ID")
 
         # TODO: Coze 没有获取单个工作流详情的 API，暂时直接返回成功
-        return jsonify({"success": True, "message": "工作流信息已是最新的"})
+        return respond(0, {"success": True, "message": "工作流信息已是最新的"}, "ok")
 
     # 智能体刷新（原有逻辑）
     pat_token = work.get("pat_token", "")
     bot_id = work.get("coze_bot_id", "")
     if not pat_token or not bot_id:
-        return jsonify({"success": False, "error": "作品缺少 PAT Token 或 Bot ID"}), 400
+        return respond(400, None, "作品缺少 PAT Token 或 Bot ID")
 
     coze_client.pat_token = pat_token
     result = coze_client.get_bot_info(bot_id, is_published=True)
@@ -675,7 +744,7 @@ def refresh_work(work_id):
         result = coze_client.get_bot_info(bot_id, is_published=False)
 
     if not result.get("success"):
-        return jsonify({"success": False, "error": result.get("error", "刷新失败")}), 400
+        return respond(400, None, result.get("error", "刷新失败"))
 
     bot_info = result["data"]
 
@@ -744,12 +813,14 @@ def refresh_work(work_id):
         "plugins": bot_info.get("plugin_info_list", []),
         "workflows": bot_info.get("workflow_info_list", []),
         "model_name": model_info.get("model_name", ""),
-        "response_format": response_format if response_format in ["text", "json", "markdown"] else "text",
+        "response_format": (
+            response_format if response_format in ["text", "json", "markdown"] else "text"
+        ),
         "is_public": is_public
     }
 
     updated = work_manager.update_work(work_id, updates)
-    return jsonify({"success": True, "work": updated})
+    return respond(0, {"success": True, "work": work_manager.get_work_public(work_id)}, "ok")
 
 
 # ==================== 体验者 API ====================
@@ -774,7 +845,7 @@ def list_public_works():
             "updated_at": work.get("updated_at", ""),
             "coze_meta": work.get("coze_meta", {})
         })
-    return jsonify({"works": public_works})
+    return respond(0, {"works": public_works}, "ok")
 
 
 @app.route("/api/works/<work_id>", methods=["GET"])
@@ -782,10 +853,10 @@ def get_public_work(work_id):
     """获取作品公开信息"""
     work = work_manager.get_work_public(work_id)
     if work is None:
-        return jsonify({"error": "作品不存在"}), 404
+        return respond(404, None, "作品不存在")
     if not work.get("is_public", True):
-        return jsonify({"error": "该作品未公开"}), 403
-    return jsonify(work)
+        return respond(403, None, "该作品未公开")
+    return respond(0, work, "ok")
 
 
 @app.route("/api/works/<work_id>/verify", methods=["POST"])
@@ -793,7 +864,7 @@ def verify_work_access(work_id):
     """验证访问码"""
     work = work_manager.get_work(work_id)
     if work is None:
-        return jsonify({"error": "作品不存在"}), 404
+        return respond(404, None, "作品不存在")
 
     data = request.get_json(force=True) or {}
     code = data.get("access_code", "")
@@ -802,9 +873,9 @@ def verify_work_access(work_id):
         # 生成访问 token
         token = str(uuid.uuid4())
         _admin_sessions[token] = f"work_{work_id}"
-        return jsonify({"success": True, "token": token})
+        return respond(0, {"success": True, "token": token}, "ok")
     else:
-        return jsonify({"success": False, "error": "访问码错误"}), 403
+        return respond(403, None, "访问码错误")
 
 
 @app.route("/api/works/<work_id>/chat", methods=["POST"])
@@ -819,7 +890,7 @@ def chat_work(work_id):
     parameters = data.get("parameters", {})
 
     if not user_message and not parameters:
-        return jsonify({"error": "请输入消息或填写参数"}), 400
+        return respond(400, None, "请输入消息或填写参数")
 
     # 构建 Coze 对话请求
     chat_body = _build_coze_chat_request(work, user_message, conversation_id, parameters)
@@ -828,6 +899,8 @@ def chat_work(work_id):
     coze_client.pat_token = pat_token
 
     def generate():
+        """SSE 生成器：转发 Coze 对话流为 delta/done/error 事件。"""
+        resp = None
         try:
             url = f"{coze_client.COZE_API_BASE}/v3/chat"
             headers = {
@@ -835,7 +908,6 @@ def chat_work(work_id):
                 "Content-Type": "application/json"
             }
 
-            import requests
             resp = requests.post(url, headers=headers, json=chat_body, stream=True, timeout=120)
             resp.encoding = "utf-8"
             resp.raise_for_status()
@@ -878,27 +950,41 @@ def chat_work(work_id):
                     if current_event == "conversation.message.delta" or msg_type == "answer":
                         content = msg_data.get("content", "")
                         if content:
-                            yield f"data: {json.dumps({'type': 'delta', 'content': content}, ensure_ascii=False)}\n\n"
-                    elif current_event == "conversation.message.completed":
-                        content = msg_data.get("content", "")
-                        if content:
-                            yield f"data: {json.dumps({'type': 'delta', 'content': content}, ensure_ascii=False)}\n\n"
+                            yield "data: " + json.dumps(
+                                {"type": "delta", "content": content}, ensure_ascii=False
+                            ) + "\n\n"
                     elif current_event == "conversation.chat.completed":
                         conv_id = msg_data.get("conversation_id", "") or msg_data.get("id", "")
-                        yield f"data: {json.dumps({'type': 'done', 'conversation_id': conv_id}, ensure_ascii=False)}\n\n"
+                        yield "data: " + json.dumps(
+                            {
+                                "type": "done",
+                                "conversation_id": conv_id,
+                            },
+                            ensure_ascii=False,
+                        ) + "\n\n"
                     elif current_event == "conversation.chat.failed":
                         error_msg = msg_data.get("msg", msg_data.get("error_msg", "对话失败"))
-                        yield f"data: {json.dumps({'type': 'error', 'content': error_msg}, ensure_ascii=False)}\n\n"
+                        yield "data: " + json.dumps(
+                            {"type": "error", "content": error_msg}, ensure_ascii=False
+                        ) + "\n\n"
                     elif current_event == "error":
                         error_msg = msg_data.get("msg", "未知错误")
-                        yield f"data: {json.dumps({'type': 'error', 'content': error_msg}, ensure_ascii=False)}\n\n"
+                        yield "data: " + json.dumps(
+                            {"type": "error", "content": error_msg}, ensure_ascii=False
+                        ) + "\n\n"
                     elif current_event == "done":
                         break
 
-            yield f"data: {json.dumps({'type': 'stream_end'}, ensure_ascii=False)}\n\n"
+            yield "data: " + json.dumps({"type": "stream_end"}, ensure_ascii=False) + "\n\n"
+            yield "data: {\"done\": true}\n\n"
 
         except Exception as e:
-            yield f"data: {json.dumps({'type': 'error', 'content': str(e)}, ensure_ascii=False)}\n\n"
+            yield "data: " + json.dumps(
+                {"type": "error", "content": str(e)}, ensure_ascii=False
+            ) + "\n\n"
+        finally:
+            if resp is not None:
+                resp.close()
 
     return Response(
         stream_with_context(generate()),
@@ -915,40 +1001,66 @@ def upload_file(work_id):
     """上传文件到 Coze（用于工作流 File 类型参数）"""
     work = work_manager.get_work(work_id)
     if work is None:
-        return jsonify({"error": "作品不存在"}), 404
+        return respond(404, None, "作品不存在")
 
     pat_token = work.get("pat_token", "")
     if not pat_token:
-        return jsonify({"error": "未配置 PAT Token"}), 400
+        return respond(400, None, "未配置 PAT Token")
 
     if "file" not in request.files:
-        return jsonify({"error": "请选择文件"}), 400
+        return respond(400, None, "请选择文件")
 
     file = request.files["file"]
+
+    # 扩展名白名单校验（P1 安全合规）
+    allowed_exts = {
+        ".md", ".txt", ".json", ".csv", ".xml", ".yaml", ".yml",
+        ".pdf", ".doc", ".docx", ".xls", ".xlsx", ".ppt", ".pptx",
+        ".png", ".jpg", ".jpeg", ".gif", ".webp", ".svg",
+    }
+    original_name = file.filename or ""
+    ext = os.path.splitext(original_name)[1].lower()
+    if ext not in allowed_exts:
+        allowed_str = ", ".join(sorted(allowed_exts))
+        ext_label = ext or "无扩展名"
+        return respond(400, None, f"不支持的文件类型: {ext_label}，仅允许: {allowed_str}")
+
+    # 大小上限（5MB）
+    max_size = 5 * 1024 * 1024
+    file.stream.seek(0, os.SEEK_END)
+    file_size = file.stream.tell()
+    file.stream.seek(0)
+    if file_size > max_size:
+        return respond(400, None, "文件大小超过限制（最大 5MB）")
+
+    # 清洗文件名，仅取 basename，防路径穿越
+    safe_name = os.path.basename(original_name) or "upload.bin"
+
     try:
         url = f"{coze_client.COZE_API_BASE}/v1/files/upload"
         headers = {"Authorization": f"Bearer {pat_token}"}
-        files = {"file": (file.filename, file.stream, file.content_type)}
+        files = {"file": (safe_name, file.stream, file.content_type)}
         resp = requests.post(url, headers=headers, files=files, timeout=60)
         resp.raise_for_status()
         result = resp.json()
 
-        print(f"[上传文件] 响应: code={result.get('code')}, data={result.get('data', {})}")
+        resp_code = result.get("code")
+        app.logger.info(f"[上传文件] 响应: code={resp_code}")
 
         if result.get("code") == 0:
             file_info = result.get("data", {})
             file_id = file_info.get("id", "")
-            file_name = file_info.get("file_name", file.filename)
-            print(f"[上传文件] 成功: file_id={file_id}, file_name={file_name}")
+            file_name = file_info.get("file_name", safe_name)
+            app.logger.info(f"[上传文件] 成功: file_id={file_id}")
             if not file_id:
-                return jsonify({"success": False, "error": "上传成功但未获取到 file_id"}), 500
-            return jsonify({"success": True, "file_id": file_id, "file_name": file_name})
+                return respond(500, None, "上传成功但未获取到 file_id")
+            return respond(0, {"success": True, "file_id": file_id, "file_name": file_name}, "ok")
         else:
             error_msg = result.get("msg", "上传失败")
-            print(f"[上传文件] 失败: {error_msg}")
-            return jsonify({"success": False, "error": error_msg}), 500
+            app.logger.info(f"[上传文件] 失败: {error_msg}")
+            return respond(500, None, error_msg)
     except Exception as e:
-        return jsonify({"success": False, "error": str(e)}), 500
+        return respond(500, None, str(e))
 
 
 @app.route("/api/works/<work_id>/execute", methods=["POST"])
@@ -956,18 +1068,20 @@ def execute_workflow(work_id):
     """执行工作流（通过 Coze API）"""
     work = work_manager.get_work(work_id)
     if work is None:
-        return jsonify({"error": "作品不存在"}), 404
+        return respond(404, None, "作品不存在")
 
     # 验证访问码
     access_code = request.headers.get("X-Access-Code", "") or request.args.get("access_code", "")
     if work.get("access_code") and access_code != work.get("access_code"):
-        return jsonify({"error": "访问码错误"}), 403
+        return respond(403, None, "访问码错误")
 
     pat_token = work.get("pat_token", "")
-    workflow_id = work.get("coze_workflow_id", "") or work.get("coze_meta", {}).get("workflow_id", "")
+    workflow_id = work.get("coze_workflow_id", "") or work.get(
+        "coze_meta", {}
+    ).get("workflow_id", "")
 
     if not pat_token or not workflow_id:
-        return jsonify({"error": "该工作流未正确配置，请联系管理员"}), 400
+        return respond(400, None, "该工作流未正确配置，请联系管理员")
 
     data = request.get_json(force=True) or {}
     user_inputs = data.get("inputs", {})
@@ -995,7 +1109,7 @@ def execute_workflow(work_id):
 
         if param_type == "File" and value:
             # File 类型：包装为 {"file_id": "xxx"}
-            if not value.startswith("{"):
+            if not (isinstance(value, str) and value.startswith("{")):
                 value = json.dumps({"file_id": value})
             parameters[name] = value
         elif param_type == "Object":
@@ -1052,6 +1166,8 @@ def execute_workflow(work_id):
     if stream:
         # 流式执行
         def generate():
+            """SSE 生成器：转发 Coze 工作流流式执行为增量事件。"""
+            resp = None
             try:
                 url = f"{coze_client.COZE_API_BASE}/v1/workflow/stream_run"
                 headers = {
@@ -1072,7 +1188,7 @@ def execute_workflow(work_id):
                         continue
                     try:
                         line_str = line.decode("utf-8")
-                    except:
+                    except UnicodeDecodeError:
                         continue
 
                     # Coze 工作流 SSE 格式：
@@ -1091,30 +1207,52 @@ def execute_workflow(work_id):
                             continue
                         try:
                             event_data = json.loads(data_str)
-                        except:
+                        except json.JSONDecodeError:
                             continue
 
                         if current_event == "Message":
                             content = event_data.get("content", "")
                             if content:
-                                yield f"data: {json.dumps({'type': 'delta', 'content': content}, ensure_ascii=False)}\n\n"
+                                yield "data: " + json.dumps(
+                                    {"type": "delta", "content": content}, ensure_ascii=False
+                                ) + "\n\n"
                         elif current_event == "Done":
-                            yield f"data: {json.dumps({'type': 'done'}, ensure_ascii=False)}\n\n"
+                            yield "data: " + json.dumps(
+                                {"type": "done"}, ensure_ascii=False
+                            ) + "\n\n"
                         elif current_event == "Error":
                             error_msg = event_data.get("error_message", "执行失败")
                             # 添加类型不匹配的友好提示
                             if "can't convert" in error_msg:
-                                error_msg += "\n\n提示：这通常是因为参数类型配置与 Coze 工作流定义不一致。请检查编辑参数中的类型是否和 Coze 工作流开始节点的参数类型匹配。"
-                            yield f"data: {json.dumps({'type': 'error', 'content': error_msg}, ensure_ascii=False)}\n\n"
+                                error_msg += (
+                                    "\n\n提示：这通常是因为参数类型配置与 Coze 工作流定义不一致。"
+                                    "请检查编辑参数中的类型是否和 Coze 工作流开始节点的参数类型匹配。"
+                                )
+                            yield "data: " + json.dumps(
+                                {"type": "error", "content": error_msg}, ensure_ascii=False
+                            ) + "\n\n"
                         elif current_event == "Interrupt":
                             interrupt_data = event_data.get("interrupt_data", {})
-                            yield f"data: {json.dumps({'type': 'interrupt', 'content': interrupt_data}, ensure_ascii=False)}\n\n"
+                            yield "data: " + json.dumps(
+                                {"type": "interrupt", "content": interrupt_data},
+                                ensure_ascii=False,
+                            ) + "\n\n"
 
-                yield f"data: {json.dumps({'type': 'stream_end'}, ensure_ascii=False)}\n\n"
+                yield "data: " + json.dumps({"type": "stream_end"}, ensure_ascii=False) + "\n\n"
+                yield "data: {\"done\": true}\n\n"
             except Exception as e:
-                yield f"data: {json.dumps({'type': 'error', 'content': str(e)}, ensure_ascii=False)}\n\n"
+                yield "data: " + json.dumps(
+                    {"type": "error", "content": str(e)}, ensure_ascii=False
+                ) + "\n\n"
+            finally:
+                if resp is not None:
+                    resp.close()
 
-        return Response(stream_with_context(generate()), mimetype="text/event-stream")
+        return Response(
+            stream_with_context(generate()),
+            mimetype="text/event-stream",
+            headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"}
+        )
     else:
         # 非流式执行
         try:
@@ -1133,15 +1271,23 @@ def execute_workflow(work_id):
 
             if result.get("code") == 0:
                 output_data = result.get("data", "")
-                return jsonify({"success": True, "content": output_data, "debug_url": result.get("debug_url", "")})
+                return respond(
+                    0,
+                    {
+                        "success": True,
+                        "content": output_data,
+                        "debug_url": result.get("debug_url", ""),
+                    },
+                    "ok",
+                )
             else:
                 error_msg = result.get("msg", "执行失败")
                 # 添加类型不匹配的友好提示
                 if "can't convert" in error_msg:
                     error_msg += "（参数类型可能与 Coze 工作流定义不一致，请检查参数配置）"
-                return jsonify({"success": False, "error": error_msg}), 500
+                return respond(500, None, error_msg)
         except Exception as e:
-            return jsonify({"success": False, "error": str(e)}), 500
+            return respond(500, None, str(e))
 
 
 # ==================== 工具函数 ====================
@@ -1165,7 +1311,7 @@ def _build_coze_chat_request(work_config, user_message, conversation_id="", para
         if isinstance(user_message, list):
             # object_string 格式
             content_str = json.dumps(user_message, ensure_ascii=False)
-            print(f"[对话] 多模态消息: {content_str[:200]}")
+            app.logger.info(f"[对话] 多模态消息: {content_str[:200]}")
             body["additional_messages"].append({
                 "role": "user",
                 "content": content_str,
@@ -1200,18 +1346,55 @@ _role_store = RoleStore(os.path.join(DATA_DIR, "projects"))
 _role_scheduler = RoleAgentScheduler(_role_store, _project_store, coze_client)
 _step_flow_engine = StepFlowEngine(_role_scheduler, _role_store)
 _tool_registry = create_default_registry()
-_novel_bp = create_blueprint(
-    _role_store, _project_store, _role_scheduler, _step_flow_engine, _tool_registry,
-)
-app.register_blueprint(_novel_bp)
 
 # 知识库蓝图（F5）：模块级 bp，注册后挂载 /api/knowledge/* 全部接口
 from modules.knowledge_base.routes import bp as _knowledge_bp
+from modules.knowledge_base.routes import _store as _kb_store
+
+# F5→P3 知识库角色同步导入引擎（依赖注入，避免 role_store 硬耦合知识库符号）
+from modules.novel_creation.role_import import RoleImportEngine
+_role_import_engine = RoleImportEngine(
+    _kb_store, _role_store, os.path.join(DATA_DIR, "projects"),
+)
+
+_novel_bp = create_blueprint(
+    _role_store, _project_store, _role_scheduler, _step_flow_engine,
+    tool_registry=_tool_registry, import_engine=_role_import_engine,
+)
+app.register_blueprint(_novel_bp)
 app.register_blueprint(_knowledge_bp)
 
 # 剧情推衍聊天室蓝图（F6）：模块级 bp，注册后挂载 /api/story/* 全部接口
 from modules.routes_story import bp as _story_bp
 app.register_blueprint(_story_bp)
+
+# 剧情树蓝图（F7）：模块级 bp，注册后挂载 /api/plot/* 全部接口
+from modules.plot.routes import bp as _plot_bp
+app.register_blueprint(_plot_bp)
+
+# 角色版图蓝图（F8）：依赖注入装配，挂载 /api/role-map/* 全部接口
+from modules.plot.routes_role_map import (
+    create_role_map_blueprint, set_workflow_id as _set_role_map_workflow_id,
+)
+from modules.plot.role_map_service import RoleMapStore
+from modules.plot.plot_tree import PlotTreeStore
+
+_role_map_store = RoleMapStore(
+    os.path.join(DATA_DIR, "projects"),
+    role_store=_role_store,
+    project_store=_project_store,
+    plot_store=PlotTreeStore(os.path.join(DATA_DIR, "plot")),
+)
+_role_map_bp = create_role_map_blueprint(
+    _role_map_store, _role_store, _project_store,
+    plot_store=_role_map_store._plot_store,
+    llm_fn=None,  # 生产由 _set_role_map_workflow_id + coze 包装；当前用 extractor 默认占位
+)
+app.register_blueprint(_role_map_bp)
+# 注入抽取 workflow id（从配置读取；默认空则 AI generate 报错，不阻断手动图谱）
+_role_map_workflow_cfg = getattr(coze_client, "role_map_workflow_id", "")
+if _role_map_workflow_cfg:
+    _set_role_map_workflow_id(_role_map_workflow_cfg)
 
 
 # ==================== 启动入口 ====================
@@ -1224,9 +1407,10 @@ if __name__ == "__main__":
     admin_password = config.get("admin_password", "")
     site_name = config.get("site_name", "StoryForgeAI")
 
-    print(f"\n{'='*50}")
-    print(f"  {site_name} - Coze 作品展示平台")
-    print(f"  访问地址: http://localhost:{port}")
-    print(f"{'='*50}\n")
+    sep = "=" * 50
+    app.logger.info(f"\n{sep}")
+    app.logger.info(f"  {site_name} - Coze 作品展示平台")
+    app.logger.info(f"  访问地址: http://localhost:{port}")
+    app.logger.info(f"{sep}\n")
 
     app.run(host="0.0.0.0", port=port, debug=False)

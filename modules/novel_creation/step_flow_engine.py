@@ -70,7 +70,8 @@ class StepFlowEngine:
         if len(orders) != len(set(orders)):
             raise bad_request("step_order 存在重复")
         for order in orders:
-            if not isinstance(order, int) or not (_MIN_ORDER <= order <= _MAX_ORDER):
+            if not isinstance(order, int) or isinstance(order, bool) \
+                    or not (_MIN_ORDER <= order <= _MAX_ORDER):
                 raise bad_request(f"step_order 越界: {order}（须 1-11）")
         expected = list(range(_MIN_ORDER, _MIN_ORDER + len(self._steps)))
         if sorted(orders) != expected:
@@ -82,7 +83,8 @@ class StepFlowEngine:
 
     def get_step(self, step_order: int) -> Dict[str, Any]:
         """取单个步骤。不存在抛 400。"""
-        if not isinstance(step_order, int) or not (_MIN_ORDER <= step_order <= _MAX_ORDER):
+        if not isinstance(step_order, int) or isinstance(step_order, bool) \
+                or not (_MIN_ORDER <= step_order <= _MAX_ORDER):
             raise bad_request(f"step_order 越界: {step_order}")
         for s in self._steps:
             if s["step_order"] == step_order:

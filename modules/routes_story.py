@@ -43,6 +43,7 @@ def _room_or_404(room_id: str) -> Dict[str, Any]:
 
 @bp.route("/rooms", methods=["POST"])
 def create_room():
+    """创建剧情推衍聊天室，返回新聊天室 id。"""
     body = request.get_json(silent=True) or {}
     room = story_engine.init_room(body)
     story_thread.create_room(room)
@@ -53,6 +54,7 @@ def create_room():
 
 @bp.route("/rooms", methods=["GET"])
 def list_rooms():
+    """列出所有聊天室摘要。"""
     rooms = story_thread.list_rooms()
     return _ok({"rooms": rooms})
 
@@ -61,6 +63,7 @@ def list_rooms():
 
 @bp.route("/rooms/<room_id>", methods=["GET"])
 def room_detail(room_id: str):
+    """获取聊天室详情（含历史记录）。"""
     with story_thread.with_room(room_id, "r") as room:
         return _ok(room)
 
@@ -69,6 +72,7 @@ def room_detail(room_id: str):
 
 @bp.route("/rooms/<room_id>/step", methods=["POST"])
 def advance_step(room_id: str):
+    """同步推衍一步，支持 override_content / branch_choice 覆盖。"""
     body = request.get_json(silent=True) or {}
     with story_thread.with_room(room_id, "w") as room:
         if body.get("random_enabled") is not None:
@@ -87,6 +91,7 @@ def advance_step(room_id: str):
 
 @bp.route("/rooms/<room_id>/continue", methods=["POST"])
 def continue_room(room_id: str):
+    """确认本步并进入 running 状态，供前端随后触发 SSE 或 step。"""
     body = request.get_json(silent=True) or {}
     with story_thread.with_room(room_id, "w") as room:
         if room.get("status") == "finished":
@@ -111,6 +116,7 @@ def continue_room(room_id: str):
 
 @bp.route("/rooms/<room_id>/stream", methods=["POST"])
 def stream_step(room_id: str):
+    """推衍流式反馈（SSE）：分片推送 delta，最终回 done 与完整 step。"""
     def _gen():
         yield _sse({"stage": "generating"})
         try:
@@ -118,15 +124,15 @@ def stream_step(room_id: str):
                 if room.get("status") == "finished":
                     raise bad_request("聊天室已结束")
                 ctx = _engine.build_context(room)
-                content = _engine._gen_step(ctx)
+                content = _engine.gen_step(ctx)
                 event = _random.roll_event(room)
                 new_char = _random.roll_enter(room)
                 if event:
                     yield _sse({"stage": "rolling", "event": event.get("id", "")})
-                    content = _engine._apply_event(content, event)
+                    content = _engine.apply_event(content, event)
                 if new_char and new_char not in room.get("characters", []):
                     room["characters"].append(new_char)
-                branches = _engine._gen_branches(ctx, content)
+                branches = _engine.gen_branches(ctx, content)
                 step = {
                     "step_no": room.get("step_index", 0) + 1,
                     "content": content,
@@ -143,6 +149,7 @@ def stream_step(room_id: str):
                 for i in range(0, len(content), chunk):
                     yield _sse({"delta": content[i:i + chunk]})
                 yield _sse({"done": True, "step": step, "status": "paused"})
+                yield "event: done\n\n"
         except AppError as e:
             yield _sse({"error": {"code": e.code, "message": e.message, "detail": e.detail}})
         except Exception as e:  # noqa: BLE001
@@ -159,6 +166,7 @@ def _sse(payload: Dict[str, Any]) -> str:
 
 @bp.route("/rooms/<room_id>/characters", methods=["POST"])
 def pull_characters(room_id: str):
+    """拉入角色（可附带随机入场），返回当前角色列表。"""
     body = request.get_json(silent=True) or {}
     chars = body.get("characters") or []
     with story_thread.with_room(room_id, "w") as room:
@@ -178,6 +186,7 @@ def pull_characters(room_id: str):
 
 @bp.route("/rooms/<room_id>", methods=["PUT"])
 def update_room(room_id: str):
+    """实时编辑聊天室配置。"""
     body = request.get_json(silent=True) or {}
     with story_thread.with_room(room_id, "w") as room:
         story_engine.apply_config_updates(room, body)
@@ -188,6 +197,7 @@ def update_room(room_id: str):
 
 @bp.route("/rooms/<room_id>", methods=["DELETE"])
 def delete_room(room_id: str):
+    """销毁聊天室，返回是否删除成功。"""
     _room_or_404(room_id)
     deleted = story_thread.drop_room(room_id)
     return _ok({"deleted": bool(deleted)})

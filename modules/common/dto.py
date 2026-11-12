@@ -1,5 +1,8 @@
-# modules/common/dto.py —— 模块间共享类型
-# RoleContextDTO：知识库条目注入角色上下文（只读）的公共载体，知识库 -> 小说创作单向传递，无代码依赖。
+"""模块间共享类型。
+
+RoleContextDTO：知识库条目注入角色上下文（只读）的公共载体，
+知识库 -> 小说创作单向传递，无代码依赖。
+"""
 
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional

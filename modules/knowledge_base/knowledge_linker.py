@@ -63,6 +63,7 @@ class KnowledgeLinker:
         self.top_k = top_k
 
     def set_store(self, store) -> None:
+        """注入条目存储（延迟注入，避免循环依赖）。"""
         self._store = store
 
     # ---- 相似度检索 ----
@@ -107,7 +108,12 @@ class KnowledgeLinker:
             score = _cosine(query_vec, Counter(_tokenize(haystack)))
             if score > 0:
                 scored.append(
-                    {"id": meta["id"], "type": meta.get("type"), "title": meta.get("title"), "score": round(score, 4)}
+                    {
+                        "id": meta["id"],
+                        "type": meta.get("type"),
+                        "title": meta.get("title"),
+                        "score": round(score, 4),
+                    }
                 )
         scored.sort(key=lambda x: x["score"], reverse=True)
         return scored[:top]
@@ -169,30 +175,39 @@ class KnowledgeLinker:
         """在条目 links 中追加目标引用（去重），返回更新后的 links。
 
         同步回写目标条目 links（双向引用，对齐技术方案 §3.5 DELETE 清理引用）。
+        经 store.update_entry 锁内读-改-写原子更新，避免并发丢链。
         """
         store = self._store
         if store is None:
             raise AppError(500, "store 未注入")
-        entry = store.load_entry(entry_id)
-        if entry is None:
-            raise AppError(404, f"条目不存在: {entry_id}")
-        target = store.load_entry(target_id)
-        if target is None:
-            raise AppError(404, f"目标条目不存在: {target_id}")
         if target_id == entry_id:
             raise AppError(400, "不能关联自身")
+        # 预检目标存在（保持原语义：target 缺失抛 404 且不改动 entry）
+        if store.load_entry(target_id) is None:
+            raise AppError(404, f"目标条目不存在: {target_id}")
 
-        entry_links = entry.get("links", [])
-        if target_id not in entry_links:
-            entry_links.append(target_id)
-            entry["links"] = entry_links
-            store.save_entry(entry)
+        entry_links: List[str] = []
 
-        target_links = target.get("links", [])
-        if entry_id not in target_links:
-            target_links.append(entry_id)
-            target["links"] = target_links
-            store.save_entry(target)
+        def _mutate_entry(entry: Dict[str, Any]) -> None:
+            links = list(entry.get("links", []))
+            if target_id not in links:
+                links.append(target_id)
+                entry["links"] = links
+
+        updated = store.update_entry(entry_id, _mutate_entry)
+        if updated is None:
+            raise AppError(404, f"条目不存在: {entry_id}")
+        entry_links = updated.get("links", [])
+
+        def _mutate_target(target: Dict[str, Any]) -> None:
+            links = list(target.get("links", []))
+            if entry_id not in links:
+                links.append(entry_id)
+                target["links"] = links
+
+        target_updated = store.update_entry(target_id, _mutate_target)
+        if target_updated is None:
+            raise AppError(404, f"目标条目不存在: {target_id}")
 
         return entry_links
 
@@ -201,16 +216,17 @@ class KnowledgeLinker:
         store = self._store
         if store is None:
             raise AppError(500, "store 未注入")
-        entry = store.load_entry(entry_id)
-        if entry is None:
-            raise AppError(404, f"条目不存在: {entry_id}")
-        entry_links = [l for l in entry.get("links", []) if l != target_id]
-        entry["links"] = entry_links
-        store.save_entry(entry)
 
-        target = store.load_entry(target_id)
-        if target is not None:
-            target_links = [l for l in target.get("links", []) if l != entry_id]
-            target["links"] = target_links
-            store.save_entry(target)
+        def _mutate_entry(entry: Dict[str, Any]) -> None:
+            entry["links"] = [l for l in entry.get("links", []) if l != target_id]
+
+        updated = store.update_entry(entry_id, _mutate_entry)
+        if updated is None:
+            raise AppError(404, f"条目不存在: {entry_id}")
+        entry_links = updated.get("links", [])
+
+        def _mutate_target(target: Dict[str, Any]) -> None:
+            target["links"] = [l for l in target.get("links", []) if l != entry_id]
+
+        store.update_entry(target_id, _mutate_target)
         return entry_links

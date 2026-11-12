@@ -6,6 +6,23 @@ Coze API 客户端
 import requests
 import json
 import os
+import logging
+from dataclasses import dataclass, field
+
+from modules.common.mapping import map_component_type
+
+# 模块级 logger
+_logger = logging.getLogger(__name__)
+
+
+@dataclass
+class ChatOptions:
+    """chat() 可选参数聚合（降低函数参数个数，保持向后兼容）。"""
+    user_id: str = "storyforge_user"
+    max_poll: int = 60
+    poll_interval: float = 1.0
+    # 预留：未来可扩展其他可选参数
+    extra: dict = field(default_factory=dict)
 
 
 class CozeClient:
@@ -44,9 +61,9 @@ class CozeClient:
             if bot_result.get("success"):
                 _add_items(bot_result.get("bots", []), "bot")
             else:
-                print(f"[get_all_resources] bots failed: {bot_result.get('error')}")
+                _logger.warning(f"[get_all_resources] bots failed: {bot_result.get('error')}")
         except Exception as e:
-            print(f"[get_all_resources] bots error: {e}")
+            _logger.warning(f"[get_all_resources] bots error: {e}")
 
         # 2. 工作流
         try:
@@ -54,11 +71,11 @@ class CozeClient:
             if wf_result.get("success"):
                 _add_items(wf_result.get("items", []), "workflow")
             else:
-                print(f"[get_all_resources] workflows failed: {wf_result.get('error')}")
+                _logger.warning(f"[get_all_resources] workflows failed: {wf_result.get('error')}")
         except Exception as e:
-            print(f"[get_all_resources] workflows error: {e}")
+            _logger.warning(f"[get_all_resources] workflows error: {e}")
 
-        print(f"[get_all_resources] total: {len(all_items)} items")
+        _logger.info(f"[get_all_resources] total: {len(all_items)} items")
         return {"success": True, "bots": all_items, "total": len(all_items)}
 
     def get_bot_list(self, workspace_id=""):
@@ -75,7 +92,11 @@ class CozeClient:
             data = resp.json()
             if data.get("code") == 0:
                 bot_data = data.get("data", {})
-                return {"success": True, "bots": bot_data.get("items", []), "total": bot_data.get("total", 0)}
+                return {
+                    "success": True,
+                    "bots": bot_data.get("items", []),
+                    "total": bot_data.get("total", 0),
+                }
             return {"success": False, "error": data.get("msg", "获取失败")}
         except Exception as e:
             return {"success": False, "error": str(e)}
@@ -244,13 +265,19 @@ class CozeClient:
             "system_prompt": system_prompt,
             "parameters": parameters,
             "output_format": {
-                "type": response_format if response_format in ["text", "json", "markdown"] else "text",
+                "type": (
+                    response_format
+                    if response_format in ["text", "json", "markdown"]
+                    else "text"
+                ),
                 "stream": True
             },
             "api_config": {
                 "provider": "coze",
                 "base_url": self.COZE_API_BASE,
-                "api_key": self.pat_token,
+                # 安全：不落真实 token（PAT 属敏感凭据）。出站请求时由调用方
+                # 从 work.pat_token 注入 Authorization 头，此处仅存占位标记。
+                "api_key": "",  # 占位，勿存 token
                 "model": "",
                 "bot_id": bot_info.get("bot_id", ""),
                 "use_coze_api": True
@@ -271,19 +298,8 @@ class CozeClient:
         return agent_config
 
     def _map_component_type(self, coze_type):
-        """映射 Coze 组件类型到本地参数类型"""
-        type_map = {
-            "text": "text",
-            "textarea": "textarea",
-            "number": "number",
-            "select": "select",
-            "multiselect": "multiselect",
-            "file": "file",
-            "date": "date",
-            "boolean": "boolean",
-            "dropdown": "select"
-        }
-        return type_map.get(coze_type, "text")
+        """映射 Coze 组件类型到本地参数类型（公共映射，见 modules/common/mapping.py）"""
+        return map_component_type(coze_type)
 
     def run_workflow(self, workflow_id, parameters=None, stream=False):
         """
@@ -296,7 +312,8 @@ class CozeClient:
 
         Returns:
             dict: 非流式返回 {"success": True, "data": "...", "debug_url": "..."}
-                  流式返回 requests.Response 对象（streaming）
+                  流式返回 {"success": True, "data": "", "response": requests.Response}
+                  失败返回 {"success": False, "error": "..."}
         """
         if stream:
             url = f"{self.COZE_API_BASE}/v1/workflow/stream_run"
@@ -309,9 +326,13 @@ class CozeClient:
         }
 
         try:
-            resp = requests.post(url, headers=self._headers(), json=body, stream=stream, timeout=120)
+            resp = requests.post(
+                url, headers=self._headers(), json=body, stream=stream, timeout=120
+            )
             if stream:
-                return {"success": True, "response": resp}
+                # 流式：response 保留原始响应对象（调用方逐行读取），
+                # data 置空占位以统一返回契约（success/data 恒存在）。
+                return {"success": True, "data": "", "response": resp}
             else:
                 resp.raise_for_status()
                 data = resp.json()
@@ -325,7 +346,14 @@ class CozeClient:
         except Exception as e:
             return {"success": False, "error": str(e)}
 
-    def chat(self, bot_id, user_message, conversation_id="", parameters=None, user_id="storyforge_user", max_poll=60, poll_interval=1.0):
+    def chat(
+        self,
+        bot_id,
+        user_message,
+        conversation_id="",
+        parameters=None,
+        **kwargs,
+    ):
         """
         调用 Coze 对话（v3/chat），同步等待结果。
 
@@ -341,14 +369,26 @@ class CozeClient:
             user_message (str): 发送给智能体的用户消息（含身份提示词/记忆/上下文）。
             conversation_id (str): 会话隔离 key（f"{role_id}:{agent_id}"）；空则服务端新建。
             parameters (dict): 附加变量（预留，当前透传未用）。
-            user_id (str): Coze 要求 user_id 字段，默认固定值。
-            max_poll (int): 最大轮询次数（每 poll_interval 秒一次）。
-            poll_interval (float): 轮询间隔秒。
+            options (ChatOptions|dict): 可选参数聚合（user_id/max_poll/poll_interval）。
 
         Returns:
             dict: {"success": True, "content": ..., "conversation_id": ...}
                   或 {"success": False, "error": ...}
         """
+        # 解析可选参数（支持 ChatOptions 对象或 dict，兼容旧关键字调用）
+        options = kwargs.get("options")
+        opts = ChatOptions()
+        if isinstance(options, ChatOptions):
+            opts = options
+        elif isinstance(options, dict):
+            for key in ("user_id", "max_poll", "poll_interval"):
+                if key in options:
+                    setattr(opts, key, options[key])
+        # 兼容旧式关键字传参（user_id/max_poll/poll_interval 直接传入）
+        for key in ("user_id", "max_poll", "poll_interval"):
+            if key in kwargs and kwargs.get(key) is not None:
+                setattr(opts, key, kwargs[key])
+
         if not bot_id:
             return {"success": False, "error": "bot_id 不能为空"}
         if not user_message:
@@ -358,7 +398,7 @@ class CozeClient:
         create_url = f"{self.COZE_API_BASE}/v3/chat"
         body = {
             "bot_id": bot_id,
-            "user_id": user_id,
+            "user_id": opts.user_id,
             "stream": False,
             "auto_save": True,
             "additional_messages": [
@@ -386,7 +426,7 @@ class CozeClient:
 
         # 2. 轮询查询结果
         retrieve_url = f"{self.COZE_API_BASE}/v3/chat/retrieve"
-        for _ in range(max_poll):
+        for _ in range(opts.max_poll):
             try:
                 resp = requests.get(retrieve_url, headers=self._headers(),
                                     params={"chat_id": chat_id}, timeout=15)
@@ -405,7 +445,11 @@ class CozeClient:
                 messages = chat_data.get("messages", [])
                 content = None
                 for msg in reversed(messages):
-                    if msg.get("role") == "assistant" and msg.get("type") in ("answer", "function_call", ""):
+                    if msg.get("role") == "assistant" and msg.get("type") in (
+                        "answer",
+                        "function_call",
+                        "",
+                    ):
                         c = msg.get("content")
                         if c not in (None, ""):
                             content = c
@@ -442,12 +486,22 @@ class CozeClient:
         headers = {"Authorization": f"Bearer {self.pat_token}"}
 
         if isinstance(file_obj, str):
-            # 文件路径
-            files = {"file": (filename or os.path.basename(file_obj), open(file_obj, "rb"), content_type)}
+            # 文件路径：用 with 确保文件句柄被关闭
+            _fh = None
+            try:
+                _fh = open(file_obj, "rb")
+                files = {"file": (filename or os.path.basename(file_obj), _fh, content_type)}
+                return self._do_upload(url, headers, files, filename)
+            finally:
+                if _fh is not None:
+                    _fh.close()
         else:
             # file-like object
             files = {"file": (filename or "file", file_obj, content_type)}
+            return self._do_upload(url, headers, files, filename)
 
+    def _do_upload(self, url, headers, files, filename):
+        """上传并解析响应（内部辅助）"""
         try:
             resp = requests.post(url, headers=headers, files=files, timeout=60)
             resp.raise_for_status()

@@ -1,0 +1,40 @@
+# StoryForgeAI pre-commit 钩子配置
+# 安装: pip install pre-commit && pre-commit install
+# 手动触发全部: pre-commit run --all-files
+#
+# 说明:
+# - 用 language: system 直接复用当前 Python/Node 环境（项目依赖 flask 等已在系统环境，
+#   避免 pre-commit 创建隔离 venv 导致依赖缺失）。
+# - run_checks.py 内部扫描全仓库（后端/安全/依赖/前端四脚本），不按文件过滤，
+#   故 pass_filenames: false + always_run: true，保证每次提交都执行。
+# - 前端检查依赖 node（check_frontend.js），本地需已安装 Node。
+
+repos:
+  # 合规检查（四脚本统一入口，退出码非 0 即失败）
+  - repo: local
+    hooks:
+      - id: compliance-check
+        name: 合规检查（后端/安全/依赖/前端）
+        entry: python scripts/run_checks.py
+        language: system
+        pass_filenames: false
+        always_run: true
+        verbose: true
+
+      # 全量测试（防止提交带回归）
+      - id: pytest
+        name: 全量测试
+        entry: python -m pytest -q
+        language: system
+        pass_filenames: false
+        always_run: true
+        verbose: true
+
+      # 后端语法编译检查
+      - id: compileall
+        name: 后端语法编译
+        entry: python -m compileall -q .
+        language: system
+        pass_filenames: false
+        always_run: true
+        verbose: true

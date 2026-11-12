@@ -18,12 +18,36 @@ import re
 from typing import Any, Callable, Dict, List, Optional
 
 from modules.common.errors import AppError
+from coze_client import CozeClient
 
 # 拆分分块阈值（字符），对齐技术方案 §4.6「超大文本 8000 字分块」
 CHUNK_SIZE = 8000
 
+# 单次结构化 LLM 提示词正文上限（对齐 parse_* 现有 raw[:6000]/raw[:8000] 截断）。
+# 超过此长度时 parse_entry 走分块合并，避免截断丢内容（DoD #14 适配）。
+_STRUCT_PROMPT_LIMIT = 6000
+
 # 合法知识类型（对齐 types.py / 技术方案 §2.2）
 VALID_TYPES = ("article", "paper", "novel", "inspiration")
+
+
+def _dedup(items: List[Any]) -> List[Any]:
+    """保序去重，兼容不可哈希元素（如 dict）。
+
+    用 JSON 序列化（排序键）作去重键，保证 dict 内容相同即视为重复。
+    """
+    seen: set = set()
+    out: List[Any] = []
+    for item in items:
+        key = (
+            json.dumps(item, sort_keys=True, ensure_ascii=False)
+            if isinstance(item, dict)
+            else item
+        )
+        if key not in seen:
+            seen.add(key)
+            out.append(item)
+    return out
 
 
 class TypeUncertain(AppError):
@@ -36,8 +60,6 @@ class TypeUncertain(AppError):
 # LLM 调用器签名：llm(prompt, bot_id="") -> {"success": bool, "content": str|dict, "error": str}
 # 默认经 coze_client.chat(bot_id, user_message)，bot_id 为空时用全局配置的拆分智能体。
 def _default_llm(prompt: str, bot_id: str = "") -> Dict[str, Any]:
-    from coze_client import CozeClient
-
     client = CozeClient()
     return client.chat(bot_id, prompt)
 
@@ -107,17 +129,18 @@ class KnowledgeParser:
         """按类型拆分，返回结构化结果 structured。
 
         拆分失败（LLM 异常）降级为原文存储：{ "fallback": true, "raw_text": ... }。
-        超大文本分块逐块送 LLM，结果合并。
+        超大文本分块逐块送 LLM，结果按类型合并（对齐技术方案 §4.6）。
+        单块（≤ 单次 LLM 上限）路径与直接调 parse_* 行为一致。
         """
         type_ = entry.get("type")
         raw_content = entry.get("raw_content", "")
         try:
             if type_ == "article":
-                return self.parse_article(raw_content)
+                return self._parse_chunked(raw_content, self.parse_article, self._merge_article)
             if type_ == "paper":
-                return self.parse_paper(raw_content)
+                return self._parse_chunked(raw_content, self.parse_paper, self._merge_paper)
             if type_ == "novel":
-                return self.parse_novel(raw_content)
+                return self._parse_chunked(raw_content, self.parse_novel, self._merge_novel)
             if type_ == "inspiration":
                 return self.parse_inspiration(raw_content)
             raise AppError(400, f"未知类型: {type_}")
@@ -125,14 +148,68 @@ class KnowledgeParser:
             # LLM 失败：降级原文存储（对齐技术方案 §5「拆分失败」）
             return {"fallback": True, "raw_text": raw_content}
 
-    def _split_chunks(self, text: str) -> List[str]:
-        """按 chunk_size 分块；长度不足返回单块。"""
-        if len(text) <= self.chunk_size:
+    def _parse_chunked(
+        self,
+        raw_content: str,
+        parser: Callable[[str], Dict[str, Any]],
+        merger: Callable[[List[Dict[str, Any]]], Dict[str, Any]],
+        limit: int = _STRUCT_PROMPT_LIMIT,
+    ) -> Dict[str, Any]:
+        """超大文本分块解析：每块 ≤ limit，逐块送 LLM，merger 合并。
+
+        长度不足 limit 时直接单块解析（与直接调 parse_* 等价，零回归）。
+        """
+        if len(raw_content) <= limit:
+            return parser(raw_content)
+        parts = [parser(chunk) for chunk in self._split_chunks(raw_content, limit)]
+        return merger(parts)
+
+    @staticmethod
+    def _merge_article(parts: List[Dict[str, Any]]) -> Dict[str, Any]:
+        """文章多块合并：数组拼接，tag_list 去重，summary 拼接。"""
+        return {
+            "paragraphs": [p for part in parts for p in part.get("paragraphs", [])],
+            "key_points": [k for part in parts for k in part.get("key_points", [])],
+            "summary": " ".join(p.get("summary", "") for p in parts if p.get("summary")).strip(),
+            "tag_list": _dedup([t for part in parts for t in part.get("tag_list", [])]),
+        }
+
+    @staticmethod
+    def _merge_paper(parts: List[Dict[str, Any]]) -> Dict[str, Any]:
+        """论文多块合并：五要素字符串按块拼接（保留各块提取结果）。"""
+
+        def join(key: str) -> str:
+            """合并指定键在各块的取值（非空块以换行拼接）。"""
+            return "\n".join(p.get(key, "") for p in parts if p.get(key)).strip()
+
+        return {
+            "research_question": join("research_question"),
+            "research_method": join("research_method"),
+            "core_conclusion": join("core_conclusion"),
+            "limitation": join("limitation"),
+            "design_insight": join("design_insight"),
+        }
+
+    @staticmethod
+    def _merge_novel(parts: List[Dict[str, Any]]) -> Dict[str, Any]:
+        """小说多块合并：characters/narrative_style 去重，plot_lines 拼接，世界观拼接。"""
+        return {
+            "characters": _dedup([c for part in parts for c in part.get("characters", [])]),
+            "plot_lines": [l for part in parts for l in part.get("plot_lines", [])],
+            "narrative_style": _dedup(
+                [n for part in parts for n in part.get("narrative_style", [])]
+            ),
+            "world_setting": "\n".join(
+                p.get("world_setting", "") for p in parts if p.get("world_setting")
+            ).strip(),
+        }
+
+    def _split_chunks(self, text: str, size: Optional[int] = None) -> List[str]:
+        """按 size（默认 self.chunk_size）分块；长度不足返回单块。"""
+        size = size or self.chunk_size
+        if len(text) <= size:
             return [text]
-        chunks = []
-        for i in range(0, len(text), self.chunk_size):
-            chunks.append(text[i : i + self.chunk_size])
-        return chunks
+        return [text[i : i + size] for i in range(0, len(text), size)]
 
     def parse_article(self, raw_content: str) -> Dict[str, Any]:
         """文章结构化：paragraphs / key_points / summary / tag_list。"""
@@ -271,8 +348,11 @@ class KnowledgeParser:
     def _prompt_outline(raw: str) -> str:
         return (
             "你是小说大纲提取助手。请从以下小说文本提取四维度大纲："
-            "chapters（章节数组，含 title/summary/order）、plot_nodes（情节节点数组，含 id/label/type，type 为 main|branch|turn）、"
-            "character_relations（人物关系数组，含 a/b/relation/camp）、core_storylines（核心故事线，含 main/branches/hidden）。"
-            "以 JSON 返回 {\"chapters\":[],\"plot_nodes\":[],\"character_relations\":[],\"core_storylines\":{}}。"
+            "chapters（章节数组，含 title/summary/order）、"
+            "plot_nodes（情节节点数组，含 id/label/type，type 为 main|branch|turn）、"
+            "character_relations（人物关系数组，含 a/b/relation/camp）、"
+            "core_storylines（核心故事线，含 main/branches/hidden）。"
+            '以 JSON 返回 {"chapters":[],"plot_nodes":[],"character_relations":[],'
+            '"core_storylines":{}}。'
             "\n\n小说：\n" + raw[:8000]
         )

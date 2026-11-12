@@ -85,7 +85,8 @@ def with_room(room_id: str, mode: str = "r"):
 
     lock = entry["lock"]
 
-    class _Ctx:
+    class Ctx:
+        """聊天室上下文管理器：进入持锁，退出释放。"""
         def __enter__(self):
             lock.acquire()
             return entry["room"]
@@ -94,4 +95,4 @@ def with_room(room_id: str, mode: str = "r"):
             lock.release()
             return False
 
-    return _Ctx()
+    return Ctx()

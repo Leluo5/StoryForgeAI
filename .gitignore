@@ -6,10 +6,8 @@ __pycache__/
 venv/
 .pytest_cache/
 
-# 敏感配置（含明文密码，不推送）
-data/global_config.json
-data/projects/
-data/knowledge/
+# 运行时数据（项目/知识库/锁/测试工作区，均不进库）
+data/
 
 # 上传临时目录
 .uploads/
