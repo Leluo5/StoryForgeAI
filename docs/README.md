@@ -1,7 +1,7 @@
 ﻿# StoryForgeAI · 文档中心
 
 > 版本：v1.0 · 状态：生效（2026-11-10）
-> 项目：StoryForgeAI —— Coze（扣子）作品展示与在线体验平台
+> 项目：StoryForgeAI —— 专业小说 AI 写作软件
 > 技术栈：Python 3.10+ / Flask / requests / flask-cors + 原生 JS（IIFE SPA）+ JSON 文件存储
 
 ---
