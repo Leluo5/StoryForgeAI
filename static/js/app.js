@@ -1273,7 +1273,7 @@
         list.innerHTML = escapeHtml('') + works.map(work => {
             const iconHtml = work.icon_url
                 ? `<img class="admin-work-icon" src="${escapeHtml(work.icon_url)}" alt="" onerror="this.style.display='none'">`
-                : `<div class="admin-work-icon" style="background:linear-gradient(135deg,#4f46e5,#a855f7);display:flex;align-items:center;justify-content:center;color:white;font-size:16px;border-radius:var(--radius-sm);">AI</div>`;
+                : `<div class="admin-work-icon" style="background:linear-gradient(135deg,var(--brand-500,#4f46e5),var(--violet-500,#a855f7));display:flex;align-items:center;justify-content:center;color:var(--text-inverse,#fff);font-size:16px;border-radius:var(--radius-sm);">AI</div>`;
 
             const isWorkflow = work.coze_meta && work.coze_meta.type === 'workflow';
             const workflowBtns = isWorkflow ? `
@@ -1532,7 +1532,7 @@
                         });
 
                         statusEl.textContent = `✅ 识别完成：${params.length} 个${group === 'input' ? '输入' : '输出'}参数`;
-                        statusEl.style.color = '#22c55e';
+                        statusEl.style.color = 'var(--success,#22c55e)';
                         btn.disabled = false;
                         btn.textContent = '识别';
                         cancelBtn.style.display = 'none';
@@ -1541,7 +1541,7 @@
                         clearInterval(_genTasks[group].timer);
                         _genTasks[group] = null;
                         statusEl.textContent = '❌ ' + (statusResult.error || '生成失败');
-                        statusEl.style.color = '#ef4444';
+                        statusEl.style.color = 'var(--danger,#ef4444)';
                         btn.disabled = false;
                         btn.textContent = '识别';
                         cancelBtn.style.display = 'none';
@@ -2882,7 +2882,42 @@
     }
 
     // ==================== Init ====================
+    // ==================== 主题切换（UI 设计规范 §10 主题切换） ====================
+    function initTheme() {
+        const body = document.body;
+        const toggle = document.getElementById('btn-theme-toggle');
+        const STORAGE_KEY = 'storyforge-theme';
+
+        // 恢复上次主题（默认浅色）
+        const saved = localStorage.getItem(STORAGE_KEY);
+        if (saved === 'dark') {
+            body.setAttribute('data-theme', 'dark');
+        } else {
+            body.setAttribute('data-theme', 'light');
+        }
+        syncThemeToggle();
+
+        if (toggle) {
+            toggle.addEventListener('click', () => {
+                const isDark = body.getAttribute('data-theme') === 'dark';
+                const next = isDark ? 'light' : 'dark';
+                body.setAttribute('data-theme', next);
+                localStorage.setItem(STORAGE_KEY, next);
+                syncThemeToggle();
+            });
+        }
+
+        function syncThemeToggle() {
+            if (!toggle) return;
+            const isDark = body.getAttribute('data-theme') === 'dark';
+            toggle.setAttribute('aria-pressed', String(isDark));
+            toggle.setAttribute('title', isDark ? '切换到浅色主题' : '切换到深色主题');
+            toggle.setAttribute('aria-label', isDark ? '切换到浅色主题' : '切换到深色主题');
+        }
+    }
+
     function init() {
+        initTheme();
         bindEvents();
         initTabs();
         initResourceTabs();
