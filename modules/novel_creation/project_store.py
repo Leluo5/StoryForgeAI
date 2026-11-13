@@ -112,8 +112,10 @@ class ProjectStore:
                 if not name.endswith(".json") or name.startswith("."):
                     continue
                 other_id = name[: -len(".json")]
-                with self._lock(other_id):
-                    other = self._load(other_id)
+                # 标题查重只读不写：_save 用原子写 os.replace，read_json 读到
+                # 的永远是完整一致文件，无需逐文件加锁（加锁是 O(N) 打开开销，
+                # 项目数大时拖慢 P95；读一致性由原子写保证）。
+                other = self._load(other_id)
                 if other.get("title") == project["title"]:
                     ptitle = project["title"]
                     raise conflict(f"项目已存在: {ptitle}")

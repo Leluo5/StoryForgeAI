@@ -11,6 +11,7 @@ import logging
 from datetime import datetime
 
 from modules.common.mapping import map_component_type
+from modules.common.crypto import encrypt_value, decrypt_value, is_encrypted
 
 # 模块级写入锁（保证 _save_work 原子性）
 _save_lock = threading.Lock()
@@ -301,7 +302,12 @@ class WorkManager:
 
         try:
             with open(filepath, "r", encoding="utf-8") as f:
-                return json.load(f)
+                work = json.load(f)
+            # 解密敏感字段（C-003）：pat_token 落盘为加密格式，读取时还原为明文供运行时注入
+            pat = work.get("pat_token", "")
+            if is_encrypted(pat):
+                work["pat_token"] = decrypt_value(self.data_dir, pat)
+            return work
         except (json.JSONDecodeError, IOError) as e:
             _logger.warning(f"[警告] 加载作品配置失败 {work_id}: {e}")
             return None
@@ -394,11 +400,20 @@ class WorkManager:
 
     def _save_work(self, work_config):
         """保存作品配置到文件（先写 .tmp 再原子替换，线程安全）"""
+        # C-003：落盘前对敏感字段加密，磁盘上不出现明文 Token。
+        # get_work 读取时已解密为明文，此处重新加密，保证 update_work 走
+        # 该路径也不会把明文写回磁盘。注意：拷贝后加密，不修改调用方
+        # 传入的 work_config，使 import_* 返回的 dict 保持明文 pat_token。
+        to_write = dict(work_config)
+        pat = to_write.get("pat_token", "")
+        if pat and not is_encrypted(pat):
+            to_write["pat_token"] = encrypt_value(self.data_dir, pat)
+
         filepath = self._work_filepath(work_config["id"])
         tmp_path = filepath + ".tmp"
         with _save_lock:
             with open(tmp_path, "w", encoding="utf-8") as f:
-                json.dump(work_config, f, ensure_ascii=False, indent=2)
+                json.dump(to_write, f, ensure_ascii=False, indent=2)
             os.replace(tmp_path, filepath)
 
     def _work_filepath(self, work_id):

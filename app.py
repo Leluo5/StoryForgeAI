@@ -10,6 +10,7 @@ import uuid
 import threading
 import hmac
 import re
+import time
 import base64
 import requests
 
@@ -26,6 +27,7 @@ sys.path.insert(0, BASE_DIR)
 from config_loader import ConfigLoader
 from work_manager import WorkManager
 from coze_client import CozeClient
+from modules.common.storage import atomic_write_json, read_json
 
 # ==================== 初始化 ====================
 
@@ -66,8 +68,62 @@ def respond(code, data=None, message="ok"):
     return jsonify({"code": code, "data": data, "message": message}), http_status
 
 
-# 管理员会话存储（简易实现，生产环境应使用数据库）
+# ==================== 会话存储（C-001 过期 + C-004 持久化） ====================
+# 会话结构：_admin_sessions[token] = {"role": <"admin" | "work_<id>">, "exp": <unix 秒>}
+# 满足安全基线：C-001 会话过期（require_admin 校验 TTL）、C-004 持久化（写 data/sessions.json，
+# 服务重启不失效）。会话文件含 token（敏感），位于 data/（.gitignore 保护，不提交 Git）。
+
+SESSION_FILE = os.path.join(DATA_DIR, "sessions.json")
+SESSION_TTL = 24 * 3600  # 管理员会话有效期 24 小时
+_session_lock = threading.Lock()
+
+# 管理员会话存储（value 为 {"role": str, "exp": float}）
 _admin_sessions = {}
+
+
+def _load_sessions():
+    """启动时从 data/sessions.json 加载会话（C-004 持久化恢复）。"""
+    global _admin_sessions
+    data = read_json(SESSION_FILE, default={}) or {}
+    _admin_sessions = {
+        k: v for k, v in data.items()
+        if isinstance(v, dict) and "exp" in v
+        and float(v.get("exp", 0)) > time.time()
+    }
+
+
+def _save_sessions():
+    """将有效会话持久化到 data/sessions.json（含过期清理）。"""
+    now = time.time()
+    valid = {k: v for k, v in _admin_sessions.items()
+             if isinstance(v, dict) and float(v.get("exp", 0)) > now}
+    with _session_lock:
+        _admin_sessions.clear()
+        _admin_sessions.update(valid)
+    try:
+        atomic_write_json(SESSION_FILE, _admin_sessions)
+    except OSError:
+        # 持久化失败不影响请求（会话仍有效），仅记录
+        app.logger.warning("[会话] 持久化失败: %s", SESSION_FILE)
+
+
+def _set_session(token, role, ttl=SESSION_TTL):
+    """写入会话（带过期时间）并持久化。"""
+    _admin_sessions[token] = {"role": role, "exp": time.time() + ttl}
+    _save_sessions()
+
+
+def _get_session_role(token):
+    """读取会话角色，过期或不存在返回 None（C-001 过期校验）。"""
+    entry = _admin_sessions.get(token)
+    if not isinstance(entry, dict):
+        return None
+    if float(entry.get("exp", 0)) <= time.time():
+        _admin_sessions.pop(token, None)
+        _save_sessions()
+        return None
+    return entry.get("role")
+
 
 # AI 生成参数异步任务存储
 _gen_tasks = {}
@@ -76,12 +132,12 @@ _gen_tasks = {}
 # ==================== 装饰器 ====================
 
 def require_admin(f):
-    """管理员验证装饰器（从 _admin_sessions 校验 token）"""
+    """管理员验证装饰器（从 _admin_sessions 校验 token，C-001 会话过期校验）"""
     @wraps(f)
     def decorated(*args, **kwargs):
-        """校验管理员会话 token，未授权返回 401。"""
+        """校验管理员会话 token，未授权/过期返回 401。"""
         token = request.headers.get("X-Admin-Token", "") or request.cookies.get("admin_token", "")
-        if not token or _admin_sessions.get(token) != "admin":
+        if not token or _get_session_role(token) != "admin":
             return respond(401, None, "未授权，请先登录管理员")
         return f(*args, **kwargs)
     return decorated
@@ -105,7 +161,7 @@ def require_work_access(f):
         if access_code:
             token = request.headers.get("X-Access-Token", "")
             session_key = f"work_{work_id}"
-            if not token or _admin_sessions.get(token) != session_key:
+            if not token or _get_session_role(token) != session_key:
                 return respond(403, None, "需要验证访问码")
 
         request.work_config = work
@@ -141,9 +197,9 @@ def admin_login():
     if not valid:
         return respond(403, None, "管理密码错误")
 
-    # 生成会话 token
+    # 生成会话 token（C-004 持久化 + C-001 过期）
     token = str(uuid.uuid4())
-    _admin_sessions[token] = "admin"
+    _set_session(token, "admin")
     return respond(0, {"token": token}, "ok")
 
 
@@ -875,9 +931,9 @@ def verify_work_access(work_id):
     code = data.get("access_code", "")
 
     if work_manager.verify_access_code(work_id, code):
-        # 生成访问 token
+        # 生成访问 token（C-004 持久化 + C-001 过期）
         token = str(uuid.uuid4())
-        _admin_sessions[token] = f"work_{work_id}"
+        _set_session(token, f"work_{work_id}")
         return respond(0, {"success": True, "token": token}, "ok")
     else:
         return respond(403, None, "访问码错误")
@@ -1411,6 +1467,9 @@ if _role_map_workflow_cfg:
 
 if __name__ == "__main__":
     port = 5000
+
+    # 启动时从磁盘恢复持久化会话（C-004：服务重启不失效）
+    _load_sessions()
 
     # 加载配置并打印管理密码
     config = config_loader.load_global_config()

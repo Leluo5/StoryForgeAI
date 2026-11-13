@@ -14,6 +14,7 @@ import json
 import os
 import tempfile
 import threading
+import time
 import uuid
 from datetime import datetime
 from typing import Any, Dict, Iterator, Optional
@@ -27,6 +28,26 @@ try:
     msvcrt = importlib.import_module("msvcrt")  # Windows
 except ImportError:  # pragma: no cover - POSIX
     msvcrt = None
+
+
+# 模块级线程锁表：按 lock_path 共享 threading.Lock。
+# 背景（P5-T4 发现，Windows）：同一进程内多线程并发访问同一 lock 文件时，
+# 若每个 FileLock 实例各持独立 threading.Lock，则多线程会同时进入 msvcrt.locking，
+# Windows 对同一文件同一区域重复加锁（即使不同线程）会抛 OSError [Errno 36]
+# Resource deadlock avoided。用共享线程锁按 path 互斥，确保同一进程内对同一
+# lock 文件的访问是串行的，msvcrt 只被单线程持有（跨进程仍靠文件锁兜底）。
+_lock_registry: Dict[str, threading.Lock] = {}
+_registry_guard = threading.Lock()
+
+
+def _shared_thread_lock(lock_path: str) -> threading.Lock:
+    """获取按 lock_path 共享的线程锁（进程内互斥同一 lock 文件）。"""
+    with _registry_guard:
+        lock = _lock_registry.get(lock_path)
+        if lock is None:
+            lock = threading.Lock()
+            _lock_registry[lock_path] = lock
+        return lock
 
 
 def new_id() -> str:
@@ -47,7 +68,9 @@ class FileLock:
 
     def __init__(self, lock_path: str) -> None:
         self.lock_path = lock_path
-        self._thread_lock = threading.Lock()
+        # 按 lock_path 共享线程锁：同一进程内多线程对同一 lock 文件互斥，
+        # 避免 Windows msvcrt 对同一区域重复加锁报 Errno 36（P5-T4）。
+        self._thread_lock = _shared_thread_lock(lock_path)
         self._fh: Optional[Any] = None
 
     def acquire(self) -> None:
@@ -111,7 +134,12 @@ class FileLock:
 
 
 def atomic_write_json(path: str, data: Any) -> None:
-    """临时文件原子写 JSON（崩溃恢复：先写临时文件，再 os.replace 覆盖）。"""
+    """临时文件原子写 JSON（崩溃恢复：先写临时文件，再 os.replace 覆盖）。
+
+    Windows 平台 os.replace 无法替换正被其他线程/进程读取的文件
+    （PermissionError WinError 5）。读端使用 read_json（无锁读），写端
+    并发时可能短暂冲突，故对 os.replace 加轻量重试（默认 5 次 × 20ms）。
+    """
     os.makedirs(os.path.dirname(path) or ".", exist_ok=True)
     fd, tmp_path = tempfile.mkstemp(
         prefix=os.path.basename(path) + ".", suffix=".tmp",
@@ -120,11 +148,36 @@ def atomic_write_json(path: str, data: Any) -> None:
     try:
         with os.fdopen(fd, "w", encoding="utf-8") as f:
             json.dump(data, f, ensure_ascii=False, indent=2)
-        os.replace(tmp_path, path)
+        _replace_with_retry(tmp_path, path)
     except BaseException:
         with contextlib.suppress(OSError):
             os.unlink(tmp_path)
         raise
+
+
+def _replace_with_retry(tmp_path: str, path: str, attempts: int = 30, delay: float = 0.05) -> None:
+    """os.replace 带重试：Windows 上目标文件被读端打开时短暂重试。
+
+    版本历史：
+      - P5-T2 初版：5 次 × 20ms（总窗口 100ms）。P5-T1 全量回归证明**不彻底**
+        —— 50 并发创建章节时仍偶发 PermissionError [WinError 5]（BUG-2026-113-01）。
+      - P5-T6 本版：30 次 × 50ms（总窗口 1.5s）。读端 read_json 的「打开-读-关闭」
+        窗口为微秒~毫秒级；50 并发下同一文件可能被多个线程连续读，占用窗口累积
+        （实测单轮偶发 1-7/50 失败）。1.5s 提供 100~1000 倍余量，工程上消除可见竞态。
+
+    技术约束（Windows）：msvcrt.locking 仅提供独占锁、无共享读锁（LOCK_SH 仅
+    POSIX），故读端 read_json 无法用共享读锁消除竞态（若读端加独占锁会退化
+    P95，重蹈 P5-T2 §4.1 O(N) 查重锁开销覆辙）。Windows 平台的正确缓解即
+    写端重试扩大窗口，等待读端短窗口关闭。
+    """
+    for attempt in range(attempts):
+        try:
+            os.replace(tmp_path, path)
+            return
+        except PermissionError:
+            if attempt == attempts - 1:
+                raise
+            time.sleep(delay)
 
 
 def read_json(path: str, default: Any = None) -> Any:

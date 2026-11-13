@@ -17,10 +17,30 @@
 from __future__ import annotations
 
 import os
+import threading
 from typing import Any, Dict, List, Optional
 
 from ..common.errors import bad_request, conflict, not_found
 from ..common.storage import FileLock, atomic_write_json, new_id, now_iso, read_json
+
+# 进程内树级事务锁表（按 tree_id 粒度共享 RLock）。
+# 背景（P5-T4 发现）：pull_from_room 是「读-改-写」快照模式——load_tree（锁外）
+# 读独立快照 → 改快照 → save_tree（锁内原子写）。锁只保护写一瞬间，不保护整个
+# 读-改-写事务，多线程各自读独立快照互相覆盖（50 并发只留最后写入者）。
+# 用按 tree_id 的 RLock 作为进程内事务锁，保证同一树的读-改-写全程串行；
+# 跨进程仍靠 FileLock（save_tree 内）兜底。
+_tree_txn_locks: Dict[str, threading.RLock] = {}
+_tree_txn_guard = threading.Lock()
+
+
+def _tree_txn_lock(tree_id: str) -> threading.RLock:
+    """获取按 tree_id 共享的进程内事务锁（可重入）。"""
+    with _tree_txn_guard:
+        lock = _tree_txn_locks.get(tree_id)
+        if lock is None:
+            lock = threading.RLock()
+            _tree_txn_locks[tree_id] = lock
+        return lock
 
 # 节点类型白名单（对齐 F7 技术方案 §2.2）
 VALID_NODE_TYPES = ("start", "main", "branch", "turn", "climax", "end")
@@ -465,12 +485,36 @@ class PlotTreeStore:
         room_steps: F6 未提交推衍步骤列表，每步含 {label, content, ...}。
         每个步骤生成一个新节点，source=derivation，linked_room_id 标记来源，id 去重。
         新节点挂到 parent_node_id（缺省挂根节点）下。返回 {new_nodes: [...], added: n}。
+
+        并发安全（P5-T4 修复）：本方法为「读-改-写」事务，锁只保护写一瞬间会丢节点。
+        故在进程内树级事务锁（按 tree_id 的 RLock）内**重新 load_tree 最新快照**再合并，
+        保证同一树的并发回写串行且基于最新数据，不互相覆盖；单线程语义不变（最新=传入快照）。
         """
         if not room_id:
             raise bad_request("聊天室 id 不能为空")
         if not room_steps:
             raise conflict("无待回写的推衍步骤")
 
+        tree_id = tree.get("id")
+        if not tree_id:
+            raise bad_request("剧情树 id 不能为空")
+
+        with _tree_txn_lock(tree_id):
+            # 锁内重读最新快照：多线程并发时拿到最新已提交数据，避免覆盖他人节点
+            latest = self.load_tree(tree_id)
+            new_nodes = self._merge_room_steps(latest, room_id, room_steps, parent_node_id)
+            if new_nodes:
+                self.save_tree(latest)
+            return {"new_nodes": new_nodes, "added": len(new_nodes)}
+
+    def _merge_room_steps(
+        self,
+        tree: Dict[str, Any],
+        room_id: str,
+        room_steps: List[Dict[str, Any]],
+        parent_node_id: Optional[str],
+    ) -> List[Dict[str, Any]]:
+        """在给定 tree 快照上合并推衍步骤为派生节点（去重）。返回新增节点列表。"""
         # 去重：该聊天室已回写的推导节点按「步骤 id」去重（linked_room_id 仅标记来源）
         existing_steps = {
             n.get("source_step_id")
@@ -506,9 +550,7 @@ class PlotTreeStore:
                 tree["root_node_id"] = node["id"]
             new_nodes.append(node)
 
-        if new_nodes:
-            self.save_tree(tree)
-        return {"new_nodes": new_nodes, "added": len(new_nodes)}
+        return new_nodes
 
     # ---- 导入导出（F7-T5）----
 
