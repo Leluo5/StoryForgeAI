@@ -1,0 +1,874 @@
+﻿git : [WARNING] Unstaged files detected.
+所在位置 行:15 字符: 2743
++ ... M = 'dumb'; git commit -m "docs(agent): 新增 Agent 并行接入与模型选择设计文档" *> .g ...
++                 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : NotSpecified: ([WARNING] Unstaged files detected.:String) [], RemoteException
+    + FullyQualifiedErrorId : NativeCommandError
+ 
+[INFO] Stashing unstaged files to C:\Users\Administrator\.cache\pre-commit\patch1794563734-41332.
+合规检查（后端/安全/依赖/前端）..........................................Passed
+- hook id: compliance-check
+- duration: 3.52s
+
+[后端规范] check_backend.py -> OK（违规 0 条）
+[前端规范] check_frontend.js -> OK（违规 0 条）
+[安全与数据] check_security.py -> OK（违规 0 条）
+[依赖与模块] check_deps.py -> OK（违规 0 条）
+
+[run_checks] 总计违规 0 条
+
+全量测试.................................................................Failed
+- hook id: pytest
+- duration: 196.25s
+- exit code: 1
+- files were modified by this hook
+
+.F.....F...F........FFFFFFFFFFFFFFFFFFFFFFFF............................ [ 11%]
+........................................................................ [ 22%]
+........................................................................ [ 33%]
+........................................................................ [ 44%]
+........................................................................ [ 55%]
+........................................................................ [ 66%]
+........................................................................ [ 77%]
+.................................................................F.F.FFF [ 88%]
+FF.................FF................................................... [ 99%]
+..                                                                       [100%]
+================================== FAILURES ===================================
+___________________ TestApiLatency.test_create_project_p95 ____________________
+
+self = <test_perf_api.TestApiLatency object at 0x000001AF140370A0>
+perf_env = <FlaskClient <Flask 'test_perf_api'>>
+
+    def test_create_project_p95(self, perf_env):
+        client = perf_env
+        # 同名会 409，这里用唯一名逐次创建；409 也计入（路由拦截合法）
+        ts = _latencies(client, n=60, endpoint="/api/projects",
+                        payload={"title": f"压测项目{time.time_ns()}"}, method="post")
+>       assert _p95(ts) <= 200, f"创建项目 P95={_p95(ts):.1f}ms 超 200ms"
+E       AssertionError: 创建项目 P95=366.2ms 超 200ms
+E       assert 366.2089000000002 <= 200
+E        +  where 366.2089000000002 = _p95([15.508800000000988, 25.221800000000627, 30.63799999999972, 38.4628999999989
+7, 47.01710000000148, 49.527600000001115, ...])
+
+tests\performance\test_perf_api.py:113: AssertionError
+____ TestMultiRoleCollabNoConflict.test_50_roles_parallel_memory_isolated _____
+
+self = <test_perf_collab.TestMultiRoleCollabNoConflict object at 0x000001AF14B646A0>
+collab_env = namespace(client=<FlaskClient <Flask 'test_perf_collab'>>, rs=<modules.novel_creation.role_store.RoleStore
+ object at 0... at 0x000001AF13646FA0>, agent_client=<test_perf_collab.collab_env.<locals>._AgentClient object at 0x000
+001AF14EBABE0>)
+
+    def test_50_roles_parallel_memory_isolated(self, collab_env):
+        """50 角色并行协同，记忆按 (role_id, agent_id) 命名空间隔离，互不覆盖。
+    
+        指标：多角色协同无冲突 100%。验证方式：
+          - 每角色绑定独立 agent_id，调用后 get_memory 返回该角色自己的输出；
+          - 各角色 conversation_id 前缀 = role_id（身份不串）；
+          - 数据不丢：50 个角色的记忆全部可恢复。
+        """
+        env = collab_env
+        pid = _mk_project(env.ps)
+        role_ids = []
+        bindings = []
+        for i in range(50):
+            r = _mk_role_with_binding(env.rs, env.ps, pid, f"角色{i}", f"agent_{i}")
+            role_ids.append(r["id"])
+            bindings.append((r["id"], f"agent_{i}"))
+    
+        # 50 角色并发各自调用（同一项目，验证协同写锁 + 记忆隔离）
+        def _call(role_id, i):
+            merged = env.scheduler.invoke_role_agents(pid, role_id, 1, {"idx": i})
+            return role_id, merged
+    
+        t0 = time.perf_counter()
+        with ThreadPoolExecutor(max_workers=50) as ex:
+            futures = [ex.submit(_call, rid, i) for i, rid in enumerate(role_ids)]
+>           results = [f.result() for f in futures]
+
+tests\performance\test_perf_collab.py:141: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+tests\performance\test_perf_collab.py:141: in <listcomp>
+    results = [f.result() for f in futures]
+D:\Program Files\Python\Python39\lib\concurrent\futures\_base.py:439: in result
+    return self.__get_result()
+D:\Program Files\Python\Python39\lib\concurrent\futures\_base.py:391: in __get_result
+    raise self._exception
+D:\Program Files\Python\Python39\lib\concurrent\futures\thread.py:58: in run
+    result = self.fn(*self.args, **self.kwargs)
+tests\performance\test_perf_collab.py:135: in _call
+    merged = env.scheduler.invoke_role_agents(pid, role_id, 1, {"idx": i})
+modules\novel_creation\role_agent_scheduler.py:232: in invoke_role_agents
+    bindings = self.role_store.get_bindings(project_id, role_id, enabled=True)
+modules\novel_creation\role_store.py:212: in get_bindings
+    with self._lock(project_id):
+modules\common\storage.py:106: in __enter__
+    self.acquire()
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+
+self = <modules.common.storage.FileLock object at 0x000001AF136F37F0>
+
+    def acquire(self) -> None:
+        """阻塞获取文件锁（线程锁 + 跨进程文件锁）。"""
+        os.makedirs(os.path.dirname(self.lock_path) or ".", exist_ok=True)
+        self._thread_lock.acquire()
+        self._fh = open(self.lock_path, "a+", encoding="utf-8")
+        if fcntl is not None:
+            fcntl.flock(self._fh.fileno(), fcntl.LOCK_EX)
+        elif msvcrt is not None:  # pragma: no cover - Windows
+            self._fh.seek(0)
+>           msvcrt.locking(self._fh.fileno(), msvcrt.LK_LOCK, 1)
+E           OSError: [Errno 36] Resource deadlock avoided
+
+modules\common\storage.py:62: OSError
+_ TestPlotTreeWritebackConsistency.test_50_concurrent_pull_from_room_no_lost_no_cycle _
+
+self = <test_perf_collab.TestPlotTreeWritebackConsistency object at 0x000001AF14B64CA0>
+tmp_path = WindowsPath('C:/Users/Administrator/AppData/Local/Temp/pytest-of-Administrator/pytest-50/test_50_concurrent_
+pull_from_r0')
+
+    def test_50_concurrent_pull_from_room_no_lost_no_cycle(self, tmp_path):
+        """并发回写剧情树：不丢节点、不建环。
+    
+        指标：剧情树回写一致性 100%。验证方式：
+          - 50 个推衍步骤并发回写，最终树节点数 == 50（不丢）；
+          - 遍历节点父子链，无环（不建环）；
+          - 根节点 children 完整挂载。
+        """
+        pt = PlotTreeStore(str(tmp_path / "trees"))
+        tree = pt.create_tree("并发回写树", source="novel")
+    
+        # 50 个推衍步骤，各带独立 step id（模拟不同聊天室推衍结果）
+        steps = [
+            {"id": f"step_{i}", "label": f"节点{i}", "content": f"内容{i}", "summary": f"内容{i}"}
+            for i in range(50)
+        ]
+    
+        def _writeback(step):
+            # 每个步骤独立 tree 快照（并发读 + 写，FileLock 保护）
+            t = pt.load_tree(tree["id"])
+            return pt.pull_from_room(t, "room_并发", [step], parent_node_id=None)
+    
+        t0 = time.perf_counter()
+        with ThreadPoolExecutor(max_workers=50) as ex:
+>           results = list(ex.map(_writeback, steps))
+
+tests\performance\test_perf_collab.py:302: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+D:\Program Files\Python\Python39\lib\concurrent\futures\_base.py:609: in result_iterator
+    yield fs.pop().result()
+D:\Program Files\Python\Python39\lib\concurrent\futures\_base.py:446: in result
+    return self.__get_result()
+D:\Program Files\Python\Python39\lib\concurrent\futures\_base.py:391: in __get_result
+    raise self._exception
+D:\Program Files\Python\Python39\lib\concurrent\futures\thread.py:58: in run
+    result = self.fn(*self.args, **self.kwargs)
+tests\performance\test_perf_collab.py:298: in _writeback
+    return pt.pull_from_room(t, "room_并发", [step], parent_node_id=None)
+modules\plot\plot_tree.py:510: in pull_from_room
+    self.save_tree(tree)
+modules\plot\plot_tree.py:125: in save_tree
+    with self._lock(tree["id"]):
+modules\common\storage.py:106: in __enter__
+    self.acquire()
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+
+self = <modules.common.storage.FileLock object at 0x000001AF14EE6B50>
+
+    def acquire(self) -> None:
+        """阻塞获取文件锁（线程锁 + 跨进程文件锁）。"""
+        os.makedirs(os.path.dirname(self.lock_path) or ".", exist_ok=True)
+        self._thread_lock.acquire()
+        self._fh = open(self.lock_path, "a+", encoding="utf-8")
+        if fcntl is not None:
+            fcntl.flock(self._fh.fileno(), fcntl.LOCK_EX)
+        elif msvcrt is not None:  # pragma: no cover - Windows
+            self._fh.seek(0)
+>           msvcrt.locking(self._fh.fileno(), msvcrt.LK_LOCK, 1)
+E           OSError: [Errno 36] Resource deadlock avoided
+
+modules\common\storage.py:62: OSError
+_________________________ TestAdminConfig.test_get_ok _________________________
+
+self = <test_app.TestAdminConfig object at 0x000001AF14E80190>
+admin_token = 'test_admin', fake_cfg = <Mock id='1851486607200'>
+
+    def test_get_ok(self, admin_token, fake_cfg):
+        fake_cfg.load_global_config.return_value = {
+            "version": "2.0.0", "site_name": "S", "theme": "light",
+            "llm_config": {"base_url": "u", "api_key": "SECRET", "model": "m"},
+        }
+        r = app_mod.app.test_client().get("/api/admin/config", headers=_auth(admin_token))
+>       assert r.status_code == 200
+E       assert 401 == 200
+E        +  where 401 = <WrapperTestResponse streamed [401 UNAUTHORIZED]>.status_code
+
+tests\test_app.py:195: AssertionError
+_________________________ TestAdminConfig.test_put_ok _________________________
+
+self = <test_app.TestAdminConfig object at 0x000001AF14E80370>
+admin_token = 'test_admin', fake_cfg = <Mock id='1851506330304'>
+
+    def test_put_ok(self, admin_token, fake_cfg):
+        r = app_mod.app.test_client().put(
+            "/api/admin/config", json={"site_name": "新名", "bad_field": "x"},
+            headers=_auth(admin_token))
+>       assert r.status_code == 200
+E       assert 401 == 200
+E        +  where 401 = <WrapperTestResponse streamed [401 UNAUTHORIZED]>.status_code
+
+tests\test_app.py:205: AssertionError
+_______________________ TestCozeTest.test_missing_token _______________________
+
+self = <test_app.TestCozeTest object at 0x000001AF14E805B0>
+admin_token = 'test_admin'
+
+    def test_missing_token(self, admin_token):
+        r = app_mod.app.test_client().post("/api/admin/coze/test", json={},
+                                           headers=_auth(admin_token))
+>       assert r.status_code == 400
+E       assert 401 == 400
+E        +  where 401 = <WrapperTestResponse streamed [401 UNAUTHORIZED]>.status_code
+
+tests\test_app.py:214: AssertionError
+____________________________ TestCozeTest.test_ok _____________________________
+
+self = <test_app.TestCozeTest object at 0x000001AF14E80790>
+admin_token = 'test_admin'
+fake_cc = <test_app._FakeCozeClient object at 0x000001AF13750970>
+
+    def test_ok(self, admin_token, fake_cc):
+        r = app_mod.app.test_client().post("/api/admin/coze/test",
+                                           json={"pat_token": "p", "workspace_id": "w"},
+                                           headers=_auth(admin_token))
+>       assert r.status_code == 200
+E       assert 401 == 200
+E        +  where 401 = <WrapperTestResponse streamed [401 UNAUTHORIZED]>.status_code
+
+tests\test_app.py:220: AssertionError
+_______________________ TestCozeBots.test_missing_token _______________________
+
+self = <test_app.TestCozeBots object at 0x000001AF14E809D0>
+admin_token = 'test_admin'
+
+    def test_missing_token(self, admin_token):
+        r = app_mod.app.test_client().post("/api/admin/coze/bots", json={},
+                                           headers=_auth(admin_token))
+>       assert r.status_code == 400
+E       assert 401 == 400
+E        +  where 401 = <WrapperTestResponse streamed [401 UNAUTHORIZED]>.status_code
+
+tests\test_app.py:227: AssertionError
+____________________________ TestCozeBots.test_ok _____________________________
+
+self = <test_app.TestCozeBots object at 0x000001AF14E80BE0>
+admin_token = 'test_admin'
+fake_cc = <test_app._FakeCozeClient object at 0x000001AF153397F0>
+
+    def test_ok(self, admin_token, fake_cc):
+        r = app_mod.app.test_client().post("/api/admin/coze/bots",
+                                           json={"pat_token": "p"},
+                                           headers=_auth(admin_token))
+>       assert r.status_code == 200
+E       assert 401 == 200
+E        +  where 401 = <WrapperTestResponse streamed [401 UNAUTHORIZED]>.status_code
+
+tests\test_app.py:233: AssertionError
+_____________________ TestCozeDatasets.test_missing_token _____________________
+
+self = <test_app.TestCozeDatasets object at 0x000001AF14E80E20>
+admin_token = 'test_admin'
+
+    def test_missing_token(self, admin_token):
+        r = app_mod.app.test_client().post("/api/admin/coze/datasets", json={},
+                                           headers=_auth(admin_token))
+>       assert r.status_code == 400
+E       assert 401 == 400
+E        +  where 401 = <WrapperTestResponse streamed [401 UNAUTHORIZED]>.status_code
+
+tests\test_app.py:241: AssertionError
+__________________________ TestCozeDatasets.test_ok ___________________________
+
+self = <test_app.TestCozeDatasets object at 0x000001AF14E80DF0>
+admin_token = 'test_admin'
+fake_cc = <test_app._FakeCozeClient object at 0x000001AF1533D790>
+
+    def test_ok(self, admin_token, fake_cc):
+        r = app_mod.app.test_client().post("/api/admin/coze/datasets",
+                                           json={"pat_token": "p"},
+                                           headers=_auth(admin_token))
+>       assert r.status_code == 200
+E       assert 401 == 200
+E        +  where 401 = <WrapperTestResponse streamed [401 UNAUTHORIZED]>.status_code
+
+tests\test_app.py:247: AssertionError
+____________________ TestCozeWorkflows.test_missing_token _____________________
+
+self = <test_app.TestCozeWorkflows object at 0x000001AF14E80280>
+admin_token = 'test_admin'
+
+    def test_missing_token(self, admin_token):
+        r = app_mod.app.test_client().post("/api/admin/coze/workflows", json={},
+                                           headers=_auth(admin_token))
+>       assert r.status_code == 400
+E       assert 401 == 400
+E        +  where 401 = <WrapperTestResponse streamed [401 UNAUTHORIZED]>.status_code
+
+tests\test_app.py:254: AssertionError
+__________________________ TestCozeWorkflows.test_ok __________________________
+
+self = <test_app.TestCozeWorkflows object at 0x000001AF14E78B80>
+admin_token = 'test_admin'
+fake_cc = <test_app._FakeCozeClient object at 0x000001AF136C8880>
+
+    def test_ok(self, admin_token, fake_cc):
+        r = app_mod.app.test_client().post("/api/admin/coze/workflows",
+                                           json={"pat_token": "p"},
+                                           headers=_auth(admin_token))
+>       assert r.status_code == 200
+E       assert 401 == 200
+E        +  where 401 = <WrapperTestResponse streamed [401 UNAUTHORIZED]>.status_code
+
+tests\test_app.py:260: AssertionError
+_____________________ TestImportWorks.test_missing_token ______________________
+
+self = <test_app.TestImportWorks object at 0x000001AF14E78730>
+admin_token = 'test_admin'
+
+    def test_missing_token(self, admin_token):
+        r = app_mod.app.test_client().post("/api/admin/works/import", json={},
+                                           headers=_auth(admin_token))
+>       assert r.status_code == 400
+E       assert 401 == 400
+E        +  where 401 = <WrapperTestResponse streamed [401 UNAUTHORIZED]>.status_code
+
+tests\test_app.py:269: AssertionError
+________________________ TestImportWorks.test_no_bots _________________________
+
+self = <test_app.TestImportWorks object at 0x000001AF14E8A160>
+admin_token = 'test_admin'
+
+    def test_no_bots(self, admin_token):
+        r = app_mod.app.test_client().post("/api/admin/works/import",
+                                           json={"pat_token": "p"},
+                                           headers=_auth(admin_token))
+>       assert r.status_code == 400
+E       assert 401 == 400
+E        +  where 401 = <WrapperTestResponse streamed [401 UNAUTHORIZED]>.status_code
+
+tests\test_app.py:275: AssertionError
+______________________ TestImportWorks.test_bot_success _______________________
+
+self = <test_app.TestImportWorks object at 0x000001AF14E8A3A0>
+admin_token = 'test_admin'
+fake_cc = <test_app._FakeCozeClient object at 0x000001AF1533D040>
+fake_wm = <test_app._FakeWorkManager object at 0x000001AF1533DF70>
+
+    def test_bot_success(self, admin_token, fake_cc, fake_wm):
+        r = app_mod.app.test_client().post("/api/admin/works/import",
+                                           json={"pat_token": "p",
+                                                 "bot_ids": [{"id": "b1", "name": "b"}]},
+                                           headers=_auth(admin_token))
+>       assert r.status_code == 200
+E       assert 401 == 200
+E        +  where 401 = <WrapperTestResponse streamed [401 UNAUTHORIZED]>.status_code
+
+tests\test_app.py:282: AssertionError
+____________________ TestImportWorks.test_workflow_success ____________________
+
+self = <test_app.TestImportWorks object at 0x000001AF14E8A5B0>
+admin_token = 'test_admin'
+fake_cc = <test_app._FakeCozeClient object at 0x000001AF15326FA0>
+fake_wm = <test_app._FakeWorkManager object at 0x000001AF15326C70>
+
+    def test_workflow_success(self, admin_token, fake_cc, fake_wm):
+        r = app_mod.app.test_client().post("/api/admin/works/import",
+                                           json={"pat_token": "p",
+                                                 "bot_ids": [{"id": "wf1", "name": "w",
+                                                              "_source_type": "workflow"}]},
+                                           headers=_auth(admin_token))
+>       assert r.status_code == 200
+E       assert 401 == 200
+E        +  where 401 = <WrapperTestResponse streamed [401 UNAUTHORIZED]>.status_code
+
+tests\test_app.py:291: AssertionError
+_____________________ TestImportWorks.test_bot_info_fail ______________________
+
+self = <test_app.TestImportWorks object at 0x000001AF14E8A790>
+admin_token = 'test_admin'
+fake_wm = <test_app._FakeWorkManager object at 0x000001AF1537F310>
+
+    def test_bot_info_fail(self, admin_token, fake_wm):
+        cc = _FakeCozeClient()
+        cc.get_bot_info = lambda *a, **k: {"success": False, "error": "失败"}
+        app_mod.coze_client = cc
+        r = app_mod.app.test_client().post("/api/admin/works/import",
+                                           json={"pat_token": "p",
+                                                 "bot_ids": [{"id": "b1", "name": "b"}]},
+                                           headers=_auth(admin_token))
+>       assert r.status_code == 200
+E       assert 401 == 200
+E        +  where 401 = <WrapperTestResponse streamed [401 UNAUTHORIZED]>.status_code
+
+tests\test_app.py:301: AssertionError
+___________________ TestImportDataset.test_missing_dataset ____________________
+
+self = <test_app.TestImportDataset object at 0x000001AF14E8AA00>
+admin_token = 'test_admin'
+
+    def test_missing_dataset(self, admin_token):
+        r = app_mod.app.test_client().post("/api/admin/works/import-dataset",
+                                           json={"pat_token": "p"},
+                                           headers=_auth(admin_token))
+>       assert r.status_code == 400
+E       assert 401 == 400
+E        +  where 401 = <WrapperTestResponse streamed [401 UNAUTHORIZED]>.status_code
+
+tests\test_app.py:310: AssertionError
+__________________________ TestImportDataset.test_ok __________________________
+
+self = <test_app.TestImportDataset object at 0x000001AF14E8AC40>
+admin_token = 'test_admin'
+fake_cc = <test_app._FakeCozeClient object at 0x000001AF1537F6D0>
+fake_wm = <test_app._FakeWorkManager object at 0x000001AF1537F700>
+
+    def test_ok(self, admin_token, fake_cc, fake_wm):
+        r = app_mod.app.test_client().post("/api/admin/works/import-dataset",
+                                           json={"pat_token": "p", "dataset_id": "d1"},
+                                           headers=_auth(admin_token))
+>       assert r.status_code == 200
+E       assert 401 == 200
+E        +  where 401 = <WrapperTestResponse streamed [401 UNAUTHORIZED]>.status_code
+
+tests\test_app.py:316: AssertionError
+______________________ TestImportDataset.test_not_found _______________________
+
+self = <test_app.TestImportDataset object at 0x000001AF14E8AE20>
+admin_token = 'test_admin'
+fake_wm = <test_app._FakeWorkManager object at 0x000001AF153839D0>
+
+    def test_not_found(self, admin_token, fake_wm):
+        cc = _FakeCozeClient()
+        cc.get_dataset_list = lambda: {"success": True, "items": []}
+        app_mod.coze_client = cc
+        r = app_mod.app.test_client().post("/api/admin/works/import-dataset",
+                                           json={"pat_token": "p", "dataset_id": "nope"},
+                                           headers=_auth(admin_token))
+>       assert r.status_code == 404
+E       assert 401 == 404
+E        +  where 401 = <WrapperTestResponse streamed [401 UNAUTHORIZED]>.status_code
+
+tests\test_app.py:325: AssertionError
+_____________________ TestImportWorkflow.test_missing_wf ______________________
+
+self = <test_app.TestImportWorkflow object at 0x000001AF14E910A0>
+admin_token = 'test_admin'
+
+    def test_missing_wf(self, admin_token):
+        r = app_mod.app.test_client().post("/api/admin/works/import-workflow",
+                                           json={"pat_token": "p"},
+                                           headers=_auth(admin_token))
+>       assert r.status_code == 400
+E       assert 401 == 400
+E        +  where 401 = <WrapperTestResponse streamed [401 UNAUTHORIZED]>.status_code
+
+tests\test_app.py:333: AssertionError
+_________________________ TestImportWorkflow.test_ok __________________________
+
+self = <test_app.TestImportWorkflow object at 0x000001AF14E912E0>
+admin_token = 'test_admin'
+fake_cc = <test_app._FakeCozeClient object at 0x000001AF1525B850>
+fake_wm = <test_app._FakeWorkManager object at 0x000001AF1525BBB0>
+
+    def test_ok(self, admin_token, fake_cc, fake_wm):
+        r = app_mod.app.test_client().post("/api/admin/works/import-workflow",
+                                           json={"pat_token": "p", "workflow_id": "wf1"},
+                                           headers=_auth(admin_token))
+>       assert r.status_code == 200
+E       assert 401 == 200
+E        +  where 401 = <WrapperTestResponse streamed [401 UNAUTHORIZED]>.status_code
+
+tests\test_app.py:339: AssertionError
+______________________ TestImportWorkflow.test_not_found ______________________
+
+self = <test_app.TestImportWorkflow object at 0x000001AF14E914C0>
+admin_token = 'test_admin'
+fake_wm = <test_app._FakeWorkManager object at 0x000001AF137B3DC0>
+
+    def test_not_found(self, admin_token, fake_wm):
+        cc = _FakeCozeClient()
+        cc.get_workflow_list = lambda ws="": {"success": True, "items": []}
+        app_mod.coze_client = cc
+        r = app_mod.app.test_client().post("/api/admin/works/import-workflow",
+                                           json={"pat_token": "p", "workflow_id": "nope"},
+                                           headers=_auth(admin_token))
+>       assert r.status_code == 404
+E       assert 401 == 404
+E        +  where 401 = <WrapperTestResponse streamed [401 UNAUTHORIZED]>.status_code
+
+tests\test_app.py:348: AssertionError
+__________________________ TestAdminWorks.test_list ___________________________
+
+self = <test_app.TestAdminWorks object at 0x000001AF14E91730>
+admin_token = 'test_admin'
+fake_wm = <test_app._FakeWorkManager object at 0x000001AF135FA9A0>
+
+    def test_list(self, admin_token, fake_wm):
+        r = app_mod.app.test_client().get("/api/admin/works", headers=_auth(admin_token))
+>       assert r.status_code == 200
+E       assert 401 == 200
+E        +  where 401 = <WrapperTestResponse streamed [401 UNAUTHORIZED]>.status_code
+
+tests\test_app.py:356: AssertionError
+_________________________ TestAdminWorks.test_update __________________________
+
+self = <test_app.TestAdminWorks object at 0x000001AF14E91910>
+admin_token = 'test_admin'
+fake_wm = <test_app._FakeWorkManager object at 0x000001AF1533D3D0>
+
+    def test_update(self, admin_token, fake_wm):
+        r = app_mod.app.test_client().put("/api/admin/works/w1", json={"name": "新"},
+                                          headers=_auth(admin_token))
+>       assert r.status_code == 200
+E       assert 401 == 200
+E        +  where 401 = <WrapperTestResponse streamed [401 UNAUTHORIZED]>.status_code
+
+tests\test_app.py:362: AssertionError
+_________________________ TestAdminWorks.test_delete __________________________
+
+self = <test_app.TestAdminWorks object at 0x000001AF14E91AF0>
+admin_token = 'test_admin'
+fake_wm = <test_app._FakeWorkManager object at 0x000001AF13851760>
+
+    def test_delete(self, admin_token, fake_wm):
+        r = app_mod.app.test_client().delete("/api/admin/works/w1", headers=_auth(admin_token))
+>       assert r.status_code == 200
+E       assert 401 == 200
+E        +  where 401 = <WrapperTestResponse streamed [401 UNAUTHORIZED]>.status_code
+
+tests\test_app.py:366: AssertionError
+________________ TestPatEncryption.test_import_pat_not_in_file ________________
+
+self = <test_security_retest.TestPatEncryption object at 0x000001AF151578E0>
+tmp_path = WindowsPath('C:/Users/Administrator/AppData/Local/Temp/pytest-of-Administrator/pytest-50/test_import_pat_not
+_in_file0')
+
+    def test_import_pat_not_in_file(self, tmp_path):
+        """C-003：导入作品后，磁盘 work 文件不含明文 pat_token。"""
+        wm = WorkManager(str(tmp_path))
+        work = wm.import_from_coze(
+            {"name": "测试", "prompt_info": {"prompt": ""},
+             "onboarding_info": {"prologue": "hi"}, "model_info": {},
+             "variables": [], "shortcut_commands": [],
+             "workflow_info_list": [], "plugin_info_list": [],
+             "bot_id": "b1"},
+            "super-secret-pat", access_code="",
+        )
+        # 返回 dict 保留明文（接口语义）
+        assert work["pat_token"] == "super-secret-pat"
+        # 磁盘文件不含明文
+        raw = open(wm._work_filepath(work["id"]), "r", encoding="utf-8").read()
+>       assert "super-secret-pat" not in raw
+E       assert 'super-secret-pat' not in '{\n  "id": ...17:58:39"\n}'
+E         
+E         'super-secret-pat' is contained here:
+E           _token": "super-secret-pat",
+E             "access_code": "",
+E             "interaction_type": "chat",
+E             "system_prompt": "",
+E             "prologue": "hi",
+E             "suggested_questions": [],
+E             "parameters": [],
+E             "shortcut_commands": [],
+E             "plugins": [],
+E             "workflows": [],
+E             "model_name": "",
+E             "response_format": "text",
+E             "is_public": true,
+E             "project_id": "",
+E             "created_at": "2026-11-13 17:58:39",
+E             "updated_at": "2026-11-13 17:58:39"
+E           }
+
+tests\test_security_retest.py:44: AssertionError
+______________ TestPatEncryption.test_save_work_keeps_encrypted _______________
+
+self = <test_security_retest.TestPatEncryption object at 0x000001AF151E15B0>
+tmp_path = WindowsPath('C:/Users/Administrator/AppData/Local/Temp/pytest-of-Administrator/pytest-50/test_save_work_keep
+s_encrypted0')
+
+    def test_save_work_keeps_encrypted(self, tmp_path):
+        """C-003：update_work 走 _save_work，磁盘仍不出现明文。"""
+        wm = WorkManager(str(tmp_path))
+        work = wm.import_from_coze(
+            {"name": "测试", "prompt_info": {"prompt": ""},
+             "onboarding_info": {"prologue": "hi"}, "model_info": {},
+             "variables": [], "shortcut_commands": [],
+             "workflow_info_list": [], "plugin_info_list": [],
+             "bot_id": "b1"},
+            "pat-xyz", access_code="",
+        )
+        wm.update_work(work["id"], {"name": "改名"})
+        raw = open(wm._work_filepath(work["id"]), "r", encoding="utf-8").read()
+>       assert "pat-xyz" not in raw
+E       assert 'pat-xyz' not in '{\n  "id": ...17:58:39"\n}'
+E         
+E         'pat-xyz' is contained here:
+E           _token": "pat-xyz",
+E         ?           +++++++
+E             "access_code": "",
+E             "interaction_type": "chat",
+E             "system_prompt": "",
+E             "prologue": "hi",
+E             "suggested_questions": [],
+E             "parameters": [],
+E             "shortcut_commands": [],
+E             "plugins": [],
+E             "workflows": [],
+E             "model_name": "",
+E             "response_format": "text",
+E             "is_public": true,
+E             "project_id": "",
+E             "created_at": "2026-11-13 17:58:39",
+E             "updated_at": "2026-11-13 17:58:39"
+E           }
+
+tests\test_security_retest.py:76: AssertionError
+_________ TestSessionExpiryPersistence.test_get_session_role_expired __________
+
+self = <test_security_retest.TestSessionExpiryPersistence object at 0x000001AF151EF130>
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x000001AF13851700>
+
+    def test_get_session_role_expired(self, monkeypatch):
+        """C-001：过期会话返回 None。"""
+        app_mod._admin_sessions["expired"] = {"role": "admin", "exp": time.time() - 10}
+>       assert app_mod._get_session_role("expired") is None
+E       AttributeError: module 'app' has no attribute '_get_session_role'
+
+tests\test_security_retest.py:106: AttributeError
+__________ TestSessionExpiryPersistence.test_get_session_role_valid ___________
+
+self = <test_security_retest.TestSessionExpiryPersistence object at 0x000001AF151EF2E0>
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x000001AF153360D0>
+
+    def test_get_session_role_valid(self, monkeypatch):
+        """C-001：有效会话返回角色。"""
+        app_mod._admin_sessions["valid"] = {"role": "admin", "exp": time.time() + 100}
+>       assert app_mod._get_session_role("valid") == "admin"
+E       AttributeError: module 'app' has no attribute '_get_session_role'
+
+tests\test_security_retest.py:111: AttributeError
+_________ TestSessionExpiryPersistence.test_get_session_role_missing __________
+
+self = <test_security_retest.TestSessionExpiryPersistence object at 0x000001AF151EF460>
+
+    def test_get_session_role_missing(self):
+        """C-001：不存在 token 返回 None。"""
+>       assert app_mod._get_session_role("nope") is None
+E       AttributeError: module 'app' has no attribute '_get_session_role'
+
+tests\test_security_retest.py:115: AttributeError
+______ TestSessionExpiryPersistence.test_set_session_writes_persistence _______
+
+self = <test_security_retest.TestSessionExpiryPersistence object at 0x000001AF151EF640>
+tmp_path = WindowsPath('C:/Users/Administrator/AppData/Local/Temp/pytest-of-Administrator/pytest-50/test_set_session_wr
+ites_persis0')
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x000001AF15069A30>
+
+    def test_set_session_writes_persistence(self, tmp_path, monkeypatch):
+        """C-004：_set_session 写持久化文件（有效会话）。"""
+        sess_file = str(tmp_path / "sessions.json")
+>       monkeypatch.setattr(app_mod, "SESSION_FILE", sess_file)
+E       AttributeError: <module 'app' from 'G:\\workspace_trae\\StoryForgeAI\\app.py'> has no attribute 'SESSION_FILE'
+
+tests\test_security_retest.py:120: AttributeError
+_______ TestSessionExpiryPersistence.test_load_sessions_recovers_valid ________
+
+self = <test_security_retest.TestSessionExpiryPersistence object at 0x000001AF151EF820>
+tmp_path = WindowsPath('C:/Users/Administrator/AppData/Local/Temp/pytest-of-Administrator/pytest-50/test_load_sessions_
+recovers_va0')
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x000001AF1655DE50>
+
+    def test_load_sessions_recovers_valid(self, tmp_path, monkeypatch):
+        """C-004：启动时恢复有效会话、丢弃过期。"""
+        sess_file = str(tmp_path / "sessions.json")
+        json.dump({
+            "live": {"role": "admin", "exp": time.time() + 500},
+            "dead": {"role": "admin", "exp": time.time() - 5},
+        }, open(sess_file, "w", encoding="utf-8"))
+>       monkeypatch.setattr(app_mod, "SESSION_FILE", sess_file)
+E       AttributeError: <module 'app' from 'G:\\workspace_trae\\StoryForgeAI\\app.py'> has no attribute 'SESSION_FILE'
+
+tests\test_security_retest.py:135: AttributeError
+_____ TestWindowsAtomicWriteRace.test_replace_retries_short_reader_window _____
+
+self = <test_storage_atomic_write.TestWindowsAtomicWriteRace object at 0x000001AF15213910>
+tmp_path = WindowsPath('C:/Users/Administrator/AppData/Local/Temp/pytest-of-Administrator/pytest-50/test_replace_retrie
+s_short_rea0')
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x000001AF1535CE20>
+
+    def test_replace_retries_short_reader_window(self, tmp_path, monkeypatch):
+        """读端窗口短于重试总窗口 → 重试成功，竞态被吸收。"""
+        target = tmp_path / "data.json"
+        calls = _simulate_replace_with_reader(monkeypatch, fail_times=3, delay=0.005)
+>       atomic_write_json(str(target), {"k": "v"})
+
+tests\test_storage_atomic_write.py:51: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+modules\common\storage.py:123: in atomic_write_json
+    os.replace(tmp_path, path)
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+
+src = 'C:\\Users\\Administrator\\AppData\\Local\\Temp\\pytest-of-Administrator\\pytest-50\\test_replace_retries_short_r
+ea0\\data.json.5puqblz6.tmp'
+dst = 'C:\\Users\\Administrator\\AppData\\Local\\Temp\\pytest-of-Administrator\\pytest-50\\test_replace_retries_short_r
+ea0\\data.json'
+
+    def fake_replace(src, dst):
+        calls["n"] += 1
+        if calls["n"] <= fail_times:
+            time.sleep(delay)  # 模拟读端占用窗口
+>           raise PermissionError(5, "拒绝访问。")  # WinError 5
+E           PermissionError: [Errno 5] 拒绝访问。
+
+tests\test_storage_atomic_write.py:39: PermissionError
+_ TestWindowsAtomicWriteRace.test_replace_raises_when_reader_window_exceeds_retry _
+
+self = <test_storage_atomic_write.TestWindowsAtomicWriteRace object at 0x000001AF15213AF0>
+tmp_path = WindowsPath('C:/Users/Administrator/AppData/Local/Temp/pytest-of-Administrator/pytest-50/test_replace_raises
+_when_reade0')
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x000001AF13664FA0>
+
+    def test_replace_raises_when_reader_window_exceeds_retry(self, tmp_path, monkeypatch):
+        """读端窗口持续超过重试总窗口 → 抛 PermissionError（不静默吞错）。"""
+        target = tmp_path / "data.json"
+        # 写初始数据
+        atomic_write_json(str(target), {"k": "old"})
+        # 让替换永远失败（失败次数 > 重试总次数 30）
+        calls = _simulate_replace_with_reader(monkeypatch, fail_times=10**9, delay=0.0001)
+        with pytest.raises(PermissionError):
+            atomic_write_json(str(target), {"k": "new"})
+>       assert calls["n"] == 30  # 恰好用尽重试次数
+E       assert 1 == 30
+
+tests\test_storage_atomic_write.py:64: AssertionError
+=========================== short test summary info ===========================
+FAILED tests/performance/test_perf_api.py::TestApiLatency::test_create_project_p95 - AssertionError: 创建项目 P95=366.2ms 超
+ 200ms
+assert 366.2089000000002 <= 200
+ +  where 366.2089000000002 = _p95([15.508800000000988, 25.221800000000627, 30.63799999999972, 38.46289999999897, 47.01
+710000000148, 49.527600000001115, ...])
+FAILED tests/performance/test_perf_collab.py::TestMultiRoleCollabNoConflict::test_50_roles_parallel_memory_isolated - O
+SError: [Errno 36] Resource deadlock avoided
+FAILED tests/performance/test_perf_collab.py::TestPlotTreeWritebackConsistency::test_50_concurrent_pull_from_room_no_lo
+st_no_cycle - OSError: [Errno 36] Resource deadlock avoided
+FAILED tests/test_app.py::TestAdminConfig::test_get_ok - assert 401 == 200
+ +  where 401 = <WrapperTestResponse streamed [401 UNAUTHORIZED]>.status_code
+FAILED tests/test_app.py::TestAdminConfig::test_put_ok - assert 401 == 200
+ +  where 401 = <WrapperTestResponse streamed [401 UNAUTHORIZED]>.status_code
+FAILED tests/test_app.py::TestCozeTest::test_missing_token - assert 401 == 400
+ +  where 401 = <WrapperTestResponse streamed [401 UNAUTHORIZED]>.status_code
+FAILED tests/test_app.py::TestCozeTest::test_ok - assert 401 == 200
+ +  where 401 = <WrapperTestResponse streamed [401 UNAUTHORIZED]>.status_code
+FAILED tests/test_app.py::TestCozeBots::test_missing_token - assert 401 == 400
+ +  where 401 = <WrapperTestResponse streamed [401 UNAUTHORIZED]>.status_code
+FAILED tests/test_app.py::TestCozeBots::test_ok - assert 401 == 200
+ +  where 401 = <WrapperTestResponse streamed [401 UNAUTHORIZED]>.status_code
+FAILED tests/test_app.py::TestCozeDatasets::test_missing_token - assert 401 == 400
+ +  where 401 = <WrapperTestResponse streamed [401 UNAUTHORIZED]>.status_code
+FAILED tests/test_app.py::TestCozeDatasets::test_ok - assert 401 == 200
+ +  where 401 = <WrapperTestResponse streamed [401 UNAUTHORIZED]>.status_code
+FAILED tests/test_app.py::TestCozeWorkflows::test_missing_token - assert 401 == 400
+ +  where 401 = <WrapperTestResponse streamed [401 UNAUTHORIZED]>.status_code
+FAILED tests/test_app.py::TestCozeWorkflows::test_ok - assert 401 == 200
+ +  where 401 = <WrapperTestResponse streamed [401 UNAUTHORIZED]>.status_code
+FAILED tests/test_app.py::TestImportWorks::test_missing_token - assert 401 == 400
+ +  where 401 = <WrapperTestResponse streamed [401 UNAUTHORIZED]>.status_code
+FAILED tests/test_app.py::TestImportWorks::test_no_bots - assert 401 == 400
+ +  where 401 = <WrapperTestResponse streamed [401 UNAUTHORIZED]>.status_code
+FAILED tests/test_app.py::TestImportWorks::test_bot_success - assert 401 == 200
+ +  where 401 = <WrapperTestResponse streamed [401 UNAUTHORIZED]>.status_code
+FAILED tests/test_app.py::TestImportWorks::test_workflow_success - assert 401 == 200
+ +  where 401 = <WrapperTestResponse streamed [401 UNAUTHORIZED]>.status_code
+FAILED tests/test_app.py::TestImportWorks::test_bot_info_fail - assert 401 == 200
+ +  where 401 = <WrapperTestResponse streamed [401 UNAUTHORIZED]>.status_code
+FAILED tests/test_app.py::TestImportDataset::test_missing_dataset - assert 401 == 400
+ +  where 401 = <WrapperTestResponse streamed [401 UNAUTHORIZED]>.status_code
+FAILED tests/test_app.py::TestImportDataset::test_ok - assert 401 == 200
+ +  where 401 = <WrapperTestResponse streamed [401 UNAUTHORIZED]>.status_code
+FAILED tests/test_app.py::TestImportDataset::test_not_found - assert 401 == 404
+ +  where 401 = <WrapperTestResponse streamed [401 UNAUTHORIZED]>.status_code
+FAILED tests/test_app.py::TestImportWorkflow::test_missing_wf - assert 401 == 400
+ +  where 401 = <WrapperTestResponse streamed [401 UNAUTHORIZED]>.status_code
+FAILED tests/test_app.py::TestImportWorkflow::test_ok - assert 401 == 200
+ +  where 401 = <WrapperTestResponse streamed [401 UNAUTHORIZED]>.status_code
+FAILED tests/test_app.py::TestImportWorkflow::test_not_found - assert 401 == 404
+ +  where 401 = <WrapperTestResponse streamed [401 UNAUTHORIZED]>.status_code
+FAILED tests/test_app.py::TestAdminWorks::test_list - assert 401 == 200
+ +  where 401 = <WrapperTestResponse streamed [401 UNAUTHORIZED]>.status_code
+FAILED tests/test_app.py::TestAdminWorks::test_update - assert 401 == 200
+ +  where 401 = <WrapperTestResponse streamed [401 UNAUTHORIZED]>.status_code
+FAILED tests/test_app.py::TestAdminWorks::test_delete - assert 401 == 200
+ +  where 401 = <WrapperTestResponse streamed [401 UNAUTHORIZED]>.status_code
+FAILED tests/test_security_retest.py::TestPatEncryption::test_import_pat_not_in_file - assert 'super-secret-pat' not in
+ '{\n  "id": ...17:58:39"\n}'
+  
+  'super-secret-pat' is contained here:
+    _token": "super-secret-pat",
+      "access_code": "",
+      "interaction_type": "chat",
+      "system_prompt": "",
+      "prologue": "hi",
+      "suggested_questions": [],
+      "parameters": [],
+      "shortcut_commands": [],
+      "plugins": [],
+      "workflows": [],
+      "model_name": "",
+      "response_format": "text",
+      "is_public": true,
+      "project_id": "",
+      "created_at": "2026-11-13 17:58:39",
+      "updated_at": "2026-11-13 17:58:39"
+    }
+FAILED tests/test_security_retest.py::TestPatEncryption::test_save_work_keeps_encrypted - assert 'pat-xyz' not in '{\n 
+ "id": ...17:58:39"\n}'
+  
+  'pat-xyz' is contained here:
+    _token": "pat-xyz",
+  ?           +++++++
+      "access_code": "",
+      "interaction_type": "chat",
+      "system_prompt": "",
+      "prologue": "hi",
+      "suggested_questions": [],
+      "parameters": [],
+      "shortcut_commands": [],
+      "plugins": [],
+      "workflows": [],
+      "model_name": "",
+      "response_format": "text",
+      "is_public": true,
+      "project_id": "",
+      "created_at": "2026-11-13 17:58:39",
+      "updated_at": "2026-11-13 17:58:39"
+    }
+FAILED tests/test_security_retest.py::TestSessionExpiryPersistence::test_get_session_role_expired - AttributeError: mod
+ule 'app' has no attribute '_get_session_role'
+FAILED tests/test_security_retest.py::TestSessionExpiryPersistence::test_get_session_role_valid - AttributeError: modul
+e 'app' has no attribute '_get_session_role'
+FAILED tests/test_security_retest.py::TestSessionExpiryPersistence::test_get_session_role_missing - AttributeError: mod
+ule 'app' has no attribute '_get_session_role'
+FAILED tests/test_security_retest.py::TestSessionExpiryPersistence::test_set_session_writes_persistence - AttributeErro
+r: <module 'app' from 'G:\\workspace_trae\\StoryForgeAI\\app.py'> has no attribute 'SESSION_FILE'
+FAILED tests/test_security_retest.py::TestSessionExpiryPersistence::test_load_sessions_recovers_valid - AttributeError:
+ <module 'app' from 'G:\\workspace_trae\\StoryForgeAI\\app.py'> has no attribute 'SESSION_FILE'
+FAILED tests/test_storage_atomic_write.py::TestWindowsAtomicWriteRace::test_replace_retries_short_reader_window - Permi
+ssionError: [Errno 5] 拒绝访问。
+FAILED tests/test_storage_atomic_write.py::TestWindowsAtomicWriteRace::test_replace_raises_when_reader_window_exceeds_r
+etry - assert 1 == 30
+36 failed, 614 passed in 182.19s (0:03:02)
+
+后端语法编译.............................................................Passed
+- hook id: compileall
+- duration: 34.09s
+[INFO] Restored changes from C:\Users\Administrator\.cache\pre-commit\patch1794563734-41332.
