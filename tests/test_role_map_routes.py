@@ -63,7 +63,8 @@ class TestRoleMapRoutes(unittest.TestCase):
         def fake_llm(prompt):
             return _sample_llm_response()
         self.bp = rm_routes.create_role_map_blueprint(
-            self.map_store, self.role_store, self.project_store,
+            self.map_store, self.role_store,
+            project_store=self.project_store,
             plot_store=None, llm_fn=fake_llm,
         )
 

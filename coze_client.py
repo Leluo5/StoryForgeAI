@@ -346,6 +346,46 @@ class CozeClient:
         except Exception as e:
             return {"success": False, "error": str(e)}
 
+    def generate_character_image(self, workflow_id, prompt):
+        """
+        调用 Coze 文生图工作流生成角色图像（F9-T2）。
+
+        复用 run_workflow 执行 Coze 文生图工作流。工作流输入参数约定：
+        {"prompt": <描述文本>}。返回值统一契约：
+            {"success": True, "image_url": <URL>, "data": <原始 data>}
+        或 {"success": False, "error": <消息>}。
+
+        Args:
+            workflow_id (str): Coze 文生图工作流 ID。
+            prompt (str): 确定性构造的角色形象描述 prompt。
+
+        Returns:
+            dict: 成功 {"success": True, "image_url": ...} / 失败 {"success": False, "error": ...}
+        """
+        result = self.run_workflow(workflow_id, {"prompt": prompt})
+        if not result.get("success"):
+            return {"success": False, "error": result.get("error", "图像生成失败")}
+
+        data = result.get("data")
+        # 工作流 data 通常为 JSON 字符串或 dict，需提取图像 URL 字段（兼容多形态）
+        image_url = ""
+        if isinstance(data, dict):
+            image_url = data.get("image_url") or data.get("url") or data.get("image") or ""
+        elif isinstance(data, str):
+            try:
+                parsed = json.loads(data)
+                if isinstance(parsed, dict):
+                    image_url = (
+                        parsed.get("image_url") or parsed.get("url") or parsed.get("image") or ""
+                    )
+                else:
+                    image_url = str(parsed)
+            except (ValueError, TypeError):
+                image_url = data.strip()
+        if not image_url:
+            return {"success": False, "error": "图像工作流未返回可用的 image_url"}
+        return {"success": True, "image_url": image_url, "data": data}
+
     def chat(
         self,
         bot_id,

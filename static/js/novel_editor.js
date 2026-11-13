@@ -401,11 +401,42 @@
                 const cand = cands[idx] || {};
                 const card = _el('div', { style: 'border:1px solid #e5e7eb;border-radius:8px;padding:12px;margin-bottom:12px;' });
                 card.setAttribute('data-card-index', String(idx));
+                // F9-T6 导入预览卡片头像：候选含 avatar 显示，否则色点占位
+                const avaBox = _el('div', { style: 'display:flex;align-items:center;gap:8px;margin-bottom:8px;' });
+                const avaImg = _el('img', {
+                    style: 'width:40px;height:40px;border-radius:50%;object-fit:cover;border:1px solid #e5e7eb;background:#f1f5f9;flex:0 0 auto;' +
+                        (cand.avatar ? '' : 'display:none;'),
+                    src: cand.avatar || '',
+                });
+                const avaDot = _el('span', {
+                    style: 'width:12px;height:12px;border-radius:50%;background:#94a3b8;flex:0 0 auto;' +
+                        (cand.avatar ? 'display:none;' : ''),
+                });
+                avaBox.appendChild(avaImg);
+                avaBox.appendChild(avaDot);
+                card.appendChild(avaBox);
                 const titleRow = _el('div', { style: 'display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;' }, [
                     _el('strong', { text: item.name || cand.name || '未命名角色' }),
                     _el('span', { text: cand.entry_title || '', style: 'font-size:12px;color:#6b7280;' }),
                 ]);
                 card.appendChild(titleRow);
+                // F9-T7 导入预览头像同步：匹配角色名更新候选头像（卡片脱离 DOM 后自解绑）
+                const previewRoleName = item.name || cand.name || '';
+                if (previewRoleName) {
+                    const syncFn = function (ev) {
+                        // 卡片已关闭/移除 → 自解绑
+                        if (!card.isConnected) { window.removeEventListener('storyforge:role-avatar-updated', syncFn); return; }
+                        const det = (ev && ev.detail) || {};
+                        if (det.roleName === previewRoleName && det.avatarPath) {
+                            avaImg.src = det.avatarPath;
+                            avaImg.style.display = '';
+                            avaDot.style.display = 'none';
+                            cand.avatar = det.avatarPath;
+                        }
+                    };
+                    window.addEventListener('storyforge:role-avatar-updated', syncFn);
+                    card._avatarSyncFn = syncFn;
+                }
                 const fm = item.field_mapping || {};
                 const fields = [
                     { key: 'identity', label: '身份', text: item.identity, map: fm.identity },

@@ -57,8 +57,13 @@ coze_client = CozeClient()
 
 # 统一响应契约辅助函数
 def respond(code, data=None, message="ok"):
-    """统一响应契约：{"code": <int>, "data": <any>, "message": "<可读>"}"""
-    return jsonify({"code": code, "data": data, "message": message}), code
+    """统一响应契约：{"code": <int>, "data": <any>, "message": "<可读>"}
+
+    HTTP 状态码约定：业务成功（code=0）返回 HTTP 200；业务/HTTP 错误
+    （code!=0）返回对应状态码。避免 HTTP 0 导致前端 fetch resp.ok=false。
+    """
+    http_status = 200 if code == 0 else code
+    return jsonify({"code": code, "data": data, "message": message}), http_status
 
 
 # 管理员会话存储（简易实现，生产环境应使用数据库）
@@ -1386,9 +1391,14 @@ _role_map_store = RoleMapStore(
     plot_store=PlotTreeStore(os.path.join(DATA_DIR, "plot")),
 )
 _role_map_bp = create_role_map_blueprint(
-    _role_map_store, _role_store, _project_store,
+    _role_map_store, _role_store,
+    project_store=_project_store,
     plot_store=_role_map_store._plot_store,
     llm_fn=None,  # 生产由 _set_role_map_workflow_id + coze 包装；当前用 extractor 默认占位
+    data_root=DATA_DIR,
+    tool_registry=_tool_registry,
+    coze_client=coze_client,
+    config_loader=config_loader,
 )
 app.register_blueprint(_role_map_bp)
 # 注入抽取 workflow id（从配置读取；默认空则 AI generate 报错，不阻断手动图谱）

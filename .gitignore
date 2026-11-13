@@ -22,3 +22,6 @@ logs/
 .idea/
 .DS_Store
 Thumbs.db
+
+# 浏览器自动化运行时 profile（截图证据只保留 png，浏览器缓存/配置不进库）
+**/screenshots/*-profile/

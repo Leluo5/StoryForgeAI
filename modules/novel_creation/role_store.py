@@ -34,6 +34,16 @@ _ROLE_EXTRA_DEFAULTS: Dict[str, Any] = {
     "personality": "",
     "background": "",
     "appearance": "",
+    # F9 形象特征模型（头像生成依据，结构化维度）：发型/发色/面部特征/服饰风格/表情
+    # avatar 为头像文件访问路径（/api/role-map/avatar/<hash>），默认空串占位。
+    "visual_features": {
+        "hair_style": "",
+        "hair_color": "",
+        "face_features": "",
+        "outfit_style": "",
+        "expression": "",
+    },
+    "avatar": "",
 }
 
 # 角色状态白名单（数据结构设计 §2.1）

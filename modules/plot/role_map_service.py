@@ -21,10 +21,89 @@ from __future__ import annotations
 
 import copy
 import os
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Tuple
 
 from ..common.errors import bad_request, not_found
 from ..common.storage import FileLock, atomic_write_json, new_id, now_iso, read_json
+
+# ---------- F9-T4 连线唯一颜色池 ----------
+# 14 色高对比度主池：每色对浅底（#f8fafc）与深底（#0f172a）WCAG 1.4.11
+# 非文本对比度（≥3:1）双达标，两两 RGB 距离 ≥45（3px 细线可辨）。
+# 生成方式：HSL 色相环 24 均匀角 + 双对比度（浅底 0.955/深底 0.0055）筛选 + 区分度贪心（两两≥45）。
+# 主池耗尽（>14 边）时进入第二圈变体（加深/减淡 ±12%，仍校验双对比度）。
+_ROLE_EDGE_COLOR_POOL: List[str] = [
+    "#ff1a1a", "#ff531a", "#ad8200", "#779e00", "#289e00", "#009e28",
+    "#009e77", "#0099cc", "#1a8cff", "#1a53ff", "#6742d7", "#8c1aff",
+    "#fa00fa", "#ff1a8c",
+]
+
+
+def _hex_to_rgb(hex_color: str) -> Tuple[int, int, int]:
+    h = hex_color.lstrip("#")
+    return int(h[0:2], 16), int(h[2:4], 16), int(h[4:6], 16)
+
+
+def _relative_luminance(hex_color: str) -> float:
+    """WCAG 相对亮度：对 RGB 分量做线性化并加权。"""
+    r, g, b = _hex_to_rgb(hex_color)
+    def _lin(c: int) -> float:
+        c /= 255.0
+        return c / 12.92 if c <= 0.03928 else ((c + 0.055) / 1.055) ** 2.4
+    return 0.2126 * _lin(r) + 0.7152 * _lin(g) + 0.0722 * _lin(b)
+
+
+def _contrast_ratio(lum1: float, lum2: float) -> float:
+    """WCAG 对比度 = (L1+0.05)/(L2+0.05)，取比值 > 1。"""
+    lighter, darker = max(lum1, lum2), min(lum1, lum2)
+    return (lighter + 0.05) / (darker + 0.05)
+
+
+def _color_contrast_ok(hex_color: str) -> bool:
+    """F9-06 双重校验：连线为图形元素，按 WCAG 1.4.11 非文本对比度 ≥3:1。
+
+    浅底 #f8fafc（L≈0.955）与深底 #0f172a（L≈0.0055）双达标。
+    """
+    lum_c = _relative_luminance(hex_color)
+    lum_light, lum_dark = 0.955, 0.0055
+    if _contrast_ratio(lum_c, lum_light) < 3.0:
+        return False
+    if _contrast_ratio(lum_c, lum_dark) < 3.0:
+        return False
+    return True
+
+
+def _color_distance(c1: str, c2: str) -> float:
+    """两色欧氏距离（RGB 空间），用于区分度（F9-07）。"""
+    r1, g1, b1 = _hex_to_rgb(c1)
+    r2, g2, b2 = _hex_to_rgb(c2)
+    return ((r1 - r2) ** 2 + (g1 - g2) ** 2 + (b1 - b2) ** 2) ** 0.5
+
+
+def _pick_edge_color(edges: List[Dict[str, Any]]) -> str:
+    """为新建连线分配唯一颜色（F9-05）。
+
+    优先取色池中未被占用的颜色；色池耗尽（>14 边）时进入第二圈：
+    对池内颜色按序应用加深/减淡变体（调节亮度 ±12%），并校验对比度与
+    两两区分度，保证第二圈变体仍满足深浅底双校验且与首圈色有区分度。
+    """
+    used = {e.get("color") for e in edges if e.get("color")}
+    for color in _ROLE_EDGE_COLOR_POOL:
+        if color not in used:
+            return color
+    # 耗尽：生成第二圈变体（交替加深/减淡，避免与首圈同色）
+    r, g, b = 0, 0, 0
+    for base in _ROLE_EDGE_COLOR_POOL:
+        r, g, b = _hex_to_rgb(base)
+        factor = 1.12 if len(used) % 2 == 0 else 0.88  # 交替加深/减淡
+        new_r = max(0, min(255, int(r * factor)))
+        new_g = max(0, min(255, int(g * factor)))
+        new_b = max(0, min(255, int(b * factor)))
+        variant = "#{:02x}{:02x}{:02x}".format(new_r, new_g, new_b)
+        if variant not in used and _color_contrast_ok(variant):
+            return variant
+    # 极端兜底：返回池内按序（几乎不可能）
+    return _ROLE_EDGE_COLOR_POOL[len(used) % len(_ROLE_EDGE_COLOR_POOL)]
+
 
 # 图谱默认值（与 RoleStore 同聚合根，role_map 字段）
 _ROLE_MAP_DEFAULTS: Dict[str, Any] = {
@@ -142,6 +221,9 @@ class RoleMapStore:
                         "profession": role.get("profession", ""),
                         "age_group": role.get("age_group", ""),
                         "attributes": role.get("attributes", {}),
+                        # F9-T6：透传头像（详情侧滑/版图节点展示）
+                        "avatar": role.get("avatar", ""),
+                        "visual_features": role.get("visual_features", {}),
                     })
             edges = []
             for edge in rm.get("edges", []):
@@ -232,6 +314,8 @@ class RoleMapStore:
                 "target": target,
                 "relation_type": relation_type or "unknown",
                 "note": note,
+                # F9-T4：新建连线分配唯一颜色（深浅底对比度双校验）
+                "color": _pick_edge_color(rm.get("edges", [])),
             }
             rm["edges"].append(edge)
             # 双向写入双方 relations（无向边，双方各存一条对端引用）

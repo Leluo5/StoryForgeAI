@@ -320,6 +320,10 @@
             const work = await api.getWork(workId);
             state.currentWork = work;
             renderWorkPage(work);
+            // 通知入口组件（角色版图/剧情树）当前作品已加载，可读取绑定的 project_id
+            document.dispatchEvent(new CustomEvent('storyforge:work-loaded', {
+                detail: { workId: workId, work: work }
+            }));
         } catch (e) {
             showToast('加载作品失败: ' + e.message, 'error');
             showHome();

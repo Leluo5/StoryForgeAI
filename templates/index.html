@@ -423,13 +423,13 @@
     <!-- ==================== Toast 提示 ==================== -->
     <div id="toast-container" class="toast-container"></div>
 
-    <script src="/static/js/app.js?v=2"></script>
+    <script src="/static/js/app.js?v=3"></script>
     <!-- F5→P3 知识库角色同步导入组件（全局 StoryForgeKBRoleImport） -->
     <script src="/static/js/novel_editor.js?v=1"></script>
     <!-- F7 剧情树面板组件（全局 StoryForgePlotPanel） -->
     <script src="/static/js/plot_tree_panel.js?v=1"></script>
     <!-- F8 角色版图面板组件（全局 StoryForgeRoleMap） -->
-    <script src="/static/js/role_map_panel.js?v=1"></script>
+    <script src="/static/js/role_map_panel.js?v=11"></script>
     <!-- F7 剧情树入口初始化：在创作端（page-work）挂载剧情树按钮 -->
     <script>
         (function () {
@@ -477,6 +477,12 @@
                         mountPlotEntry();
                         mountRoleMapEntry();
                     }
+                });
+                // 作品加载完成后重新挂载入口（此时 state.currentWork.project_id 已就绪，
+                // 避免 DOMContentLoaded 时异步加载未完成导致 projectId 回退为 work_id）
+                document.addEventListener('storyforge:work-loaded', function () {
+                    mountPlotEntry();
+                    mountRoleMapEntry();
                 });
             });
         })();
