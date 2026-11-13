@@ -157,6 +157,8 @@ function checkCSS(file) {
   });
   if (inComment) commentRanges.push([cStart, lines.length]);
   const inCommentAt = (n) => commentRanges.some(([s, e]) => n >= s && n <= e);
+  // 跟踪 @media (prefers-reduced-motion: reduce) 块：该块内 !important 是无障碍标准写法，豁免
+  let inReducedMotion = false;
   lines.forEach((line, idx) => {
     const n = idx + 1;
     // 硬编码颜色字面量（非 :root 变量）：如 #fff / rgb( 但非 var()
@@ -168,8 +170,16 @@ function checkCSS(file) {
     if (zi && parseInt(zi[1], 10) > 2000) {
       violations.push(Violation(file, n, "3.2-z-index", `z-index=${zi[1]} 超分级，应归入 1000 档`));
     }
-    // !important 滥用（跳过注释块内的字样）
-    if (/!important/.test(line) && !inCommentAt(n)) {
+    // @media (prefers-reduced-motion: reduce) 块进入/退出跟踪
+    if (/@media\s*\(prefers-reduced-motion:\s*reduce\)/i.test(line)) {
+      inReducedMotion = true;
+    }
+    if (/^\s*}\s*$/.test(line) && inReducedMotion) {
+      // 简单估算：reduced-motion 块内的 } 视为块结束（该块内无嵌套 @media）
+      inReducedMotion = false;
+    }
+    // !important 滥用（跳过注释块内的字样；reduced-motion 无障碍块豁免）
+    if (/!important/.test(line) && !inCommentAt(n) && !inReducedMotion) {
       violations.push(Violation(file, n, "3.2-样式", "!important 滥用，应改用选择器优先级", "SHOULD"));
     }
   });

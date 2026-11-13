@@ -6,6 +6,13 @@ __pycache__/
 venv/
 .pytest_cache/
 
+# 覆盖率产物（pytest 运行时生成，不进库）
+.coverage
+.coverage.*
+coverage.json
+htmlcov/
+.coverage_cache/
+
 # 运行时数据（项目/知识库/锁/测试工作区，均不进库）
 data/
 
@@ -25,3 +32,6 @@ Thumbs.db
 
 # 浏览器自动化运行时 profile（截图证据只保留 png，浏览器缓存/配置不进库）
 **/screenshots/*-profile/
+
+# CDP 诊断临时脚本（含 node_modules，仅诊断用，不进库）
+scripts/cdp_tmp/
