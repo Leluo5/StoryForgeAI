@@ -375,9 +375,98 @@
         const role = state.projectId ? getActiveRole(state.projectId) : null;
         state.chip.textContent = role ? ('当前角色：' + role.name) : '未选择角色';
     }
-    function _showList() { _renderList(); }
-    function _runToolCommand(cmd) { if (cmd.route) { global.location.hash = cmd.route; factory.close(); } }
-    function _runNavCommand(cmd) { factory.close(); }
+    function _showList() {
+        if (state.form) { state.form.remove(); state.form = null; }
+        state.list.style.display = '';
+        state.input.value = '';
+        _renderList();
+        state.input.focus();
+    }
+    function _runToolCommand(cmd) {
+        if (cmd.route) { global.location.hash = cmd.route; factory.close(); return; }
+        if (!state.projectId) { _toast('请先进入作品', 'warning'); return; }
+        _showParams(cmd);
+    }
+
+    function _showParams(cmd) {
+        state.mode = 'params';
+        state.list.style.display = 'none';
+        const role = getActiveRole(state.projectId);
+        const form = _el('div', { class: 'cp-form' });
+        form.appendChild(_el('div', { class: 'cp-item-title', text: cmd.title }));
+        form.appendChild(_el('div', { class: 'cp-meta', text: _defaultAgentLabel(cmd.id) }));
+        if (cmd.roleLink) {
+            form.appendChild(_el('div', { class: 'cp-meta', text: role ? ('将以角色 ' + role.name + ' 调用') : '未选择角色' }));
+        }
+        const inputs = {};
+        (cmd.params || []).forEach(function (field) {
+            let input;
+            if (field.type === 'select') {
+                input = _el('select', { 'aria-label': field.label });
+                (field.options || []).forEach(function (opt) { input.appendChild(_el('option', { value: opt, text: opt })); });
+            } else {
+                input = _el('input', { type: 'text', placeholder: '可选', 'aria-label': field.label });
+            }
+            inputs[field.key] = input;
+            form.appendChild(_el('label', { class: 'cp-field', text: field.label }, [input]));
+        });
+        const runBtn = _el('button', { class: 'cp-btn primary', text: '执行', onclick: function () { _executeTool(cmd, inputs); } });
+        if (cmd.needRole && !role) runBtn.disabled = true;
+        const backBtn = _el('button', { class: 'cp-btn', text: '返回', onclick: function () { _showList(); } });
+        form.appendChild(_el('div', { class: 'cp-actions' }, [backBtn, runBtn]));
+        form.addEventListener('keydown', function (ev) {
+            if (ev.key === 'Enter' && !ev.isComposing) { ev.preventDefault(); if (!runBtn.disabled) _executeTool(cmd, inputs); }
+        });
+        if (state.form) state.form.remove();
+        state.form = form;
+        state.mask.querySelector('.cp-panel').appendChild(form);
+        _setResult(cmd.needRole && !role ? '请先在「角色」命令中选择当前角色' : '');
+    }
+
+    function _setResult(text) {
+        state.result.textContent = text;
+        state.result.style.display = text ? '' : 'none';
+    }
+
+    async function _executeTool(cmd, inputs) {
+        if (state.executing) return;
+        state.executing = true;
+        const params = {};
+        Object.keys(inputs).forEach(function (key) {
+            const value = inputs[key].value.trim();
+            if (value) params[key] = value;
+        });
+        const role = getActiveRole(state.projectId);
+        const body = { params: params };
+        if (cmd.roleLink && role) body.role_id = role.id;
+        _setResult('执行中…');
+        try {
+            const data = await _request('/api/projects/' + encodeURIComponent(state.projectId) + '/tools/' + encodeURIComponent(cmd.id), {
+                method: 'POST', body: JSON.stringify(body),
+            });
+            if (data && data.task_id) _setResult('已排队，task_id=' + data.task_id);
+            else _setResult('执行成功\n' + JSON.stringify(data && data.result, null, 2).slice(0, 500));
+        } catch (e) {
+            _setResult('执行失败：' + e.message);
+        } finally {
+            state.executing = false;
+        }
+    }
+
+    function _runNavCommand(cmd) {
+        const pid = state.projectId;
+        if (!pid) { _toast('请先进入作品', 'warning'); return; }
+        factory.close();
+        if (cmd.id === 'nav_plot_tree' && global.StoryForgePlotPanel) {
+            global.StoryForgePlotPanel.mount({ mountEl: document.body, apiBase: '', projectId: pid });
+        } else if (cmd.id === 'nav_role_map' && global.StoryForgeRoleMap) {
+            global.StoryForgeRoleMap.mount({ mountEl: document.body, apiBase: '', projectId: pid });
+        } else if (cmd.id === 'nav_kb_import') {
+            const entry = document.querySelector('#kb-import-entry button');
+            if (entry) entry.click();
+            else _toast('知识库入口未就绪', 'warning');
+        }
+    }
 
     document.addEventListener('keydown', _onKeydown);
 
