@@ -244,6 +244,7 @@
             this.projectId = opts.projectId || null;
             this.onClose = opts.onClose || null;
             this.onNodeClick = opts.onNodeClick || null; // F8-T9 详情页跳转钩子
+            this.openRoleId = opts.openRoleId || null; // P5-T5b：命令面板跳转详情
             this._nodes = [];   // 节点数据 [{id,name,camp,...}]
             this._edges = [];   // 边数据 [{source,target,relation_type,note}]
             this._sim = null;
@@ -388,6 +389,14 @@
                 this._edges = (data && data.edges) || [];
                 this._renderGraph();
                 this._updateLegend();
+                // P5-T5b：命令面板「查看详情」直达，复用既有详情逻辑
+                if (this.openRoleId) {
+                    const targetId = this.openRoleId;
+                    this.openRoleId = null;
+                    const node = this._nodes.find(function (n) { return n.id === targetId; });
+                    if (node) this._openRoleDetail(node);
+                    else _toast('未找到角色: ' + targetId, 'warning');
+                }
                 // F8-T8：图谱加载后拉取筛选维度候选值并同步筛选栏状态
                 await this._loadFilterOptions();
                 this._syncFilterBar();
@@ -1221,6 +1230,13 @@
             } });
             container.appendChild(btn);
             return btn;
+        },
+        openDetail(opts) {
+            const options = Object.assign({}, opts, {
+                mountEl: document.body,
+                openRoleId: opts.roleId,
+            });
+            return factory.mount(options);
         },
     };
 
