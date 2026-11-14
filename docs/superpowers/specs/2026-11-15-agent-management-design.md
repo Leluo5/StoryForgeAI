@@ -180,10 +180,9 @@ config/default_flow_agents.json  # 11 步流程 Agent 全局模板
 | `trae` | `agent_id` | 否（允许空占位） | Trae Agent 标识 |
 | `trae` | `endpoint` | 否 | 预留调用地址 |
 
-- 不存储 PAT Token / API Key；调用时按以下顺序解析，API 响应永不返回凭据：
-  1. `global_config.agent_credentials.coze_pat_token`（管理端配置，返回时脱敏）；
-  2. 环境变量 `COZE_PAT_TOKEN`；
-  3. 均不存在 → `400 未配置全局 Coze PAT Token`。
+- 不存储 PAT Token / API Key；Agent 文件仅保存 `bot_id` 等非敏感 ID。
+- 调用沿用现有全局 `CozeClient.pat_token`（由管理端配置或作品导入时设置）；未设置时由现有客户端返回明确错误。
+- Agent API 响应永不返回凭据。
 - 空 `bot_id` 视为「未配置」，调用时返回明确错误，不做静默跳过。
 
 ### 5.3 模型参数（`model_config`，10 项）
@@ -227,11 +226,11 @@ config/default_flow_agents.json  # 11 步流程 Agent 全局模板
   "project_id": "...",
   "schema_version": 1,
   "overrides": [
-    { "key": "project:<id>", "name": "别名", "sort_order": 0, "hidden": false },
-    { "key": "role:<id>", "name": "别名", "sort_order": 1, "hidden": false }
+    { "key": "project:<project_id>", "name": "别名", "sort_order": 0, "hidden": false },
+    { "key": "role:<project_id>:<role_id>", "name": "别名", "sort_order": 1, "hidden": false }
   ],
   "manual_groups": [
-    { "id": "manual:<uuid>", "parent_key": "project:<id>", "name": "自定义分组", "sort_order": 9 }
+    { "id": "manual:<uuid>", "parent_key": "project:<project_id>", "name": "自定义分组", "sort_order": 9 }
   ],
   "updated_at": "..."
 }
@@ -442,6 +441,8 @@ active ⇄ disabled
 | `DELETE /api/agents/<id>` | `force` | `{success:true}` | 404/409 |
 | `GET /api/agents/<id>/versions` | — | 版本列表（不含 snapshot） | 404 |
 | `POST /api/agents/<id>/versions/<no>/rollback` | — | Agent | 400/404 |
+
+> 所有 `/<agent_id>` 接口必须携带 `project_id` 查询参数（PUT/DELETE 也可放在 JSON body 中）；Agent 存储按项目分目录。
 
 ### 9.2 分组
 
