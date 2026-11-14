@@ -21,7 +21,7 @@ from __future__ import annotations
 
 from typing import Any, Dict, List, Optional
 
-from ..common.errors import bad_request
+from ..common.errors import bad_request, conflict
 
 # 预设 11 步（架构设计文档 §5.1，与骨架模块头注释一致）
 DEFAULT_STEPS: List[Dict[str, Any]] = [
@@ -63,6 +63,11 @@ class StepFlowEngine:
         # 深拷贝隔离：外部修改不污染引擎内部状态
         self._steps: List[Dict[str, Any]] = [dict(s) for s in (steps or DEFAULT_STEPS)]
         self._validate()
+        self.progress_store = None
+
+    def set_progress_store(self, store) -> None:
+        """注入每角色进度存储。"""
+        self.progress_store = store
 
     def _validate(self) -> None:
         """校验步骤表：step_order 1-11 完整、唯一且连续（架构设计文档 §5.3）。"""
@@ -140,15 +145,19 @@ class StepFlowEngine:
         self.get_step(step_order)
         self.role_store.get_role(project_id, role_id)
         # 委托调度器：命中绑定 step <= 当前 step 的 Agent 依序调用
-        return self.scheduler.invoke_role_agents(project_id, role_id, step_order, context)
+        merged = self.scheduler.invoke_role_agents(project_id, role_id, step_order, context)
+        if self.progress_store is not None:
+            self.progress_store.record_step(
+                project_id, role_id, step_order, "done", output=merged)
+        return merged
 
     def trigger_flow(
         self, project_id: str, role_id: str, context: Dict[str, Any],
     ) -> Dict[str, Any]:
-        """全流程顺序触发（架构设计文档 §5.2）。
+        """全流程顺序触发，并记录每角色独立进度。
 
         依次对 step_order 1..N 调用调度器，每步输出 merge 进下一步输入（上下文透传）。
-        任一步 Agent 失败即中断并向上抛（AppError），已执行的步骤结果不落盘回滚。
+        未注入 progress_store 时退化为纯顺序触发（不记录进度、不加锁）。
 
         参数：
             project_id: 所属项目。
@@ -157,11 +166,35 @@ class StepFlowEngine:
 
         返回：全部步骤完成后最终合并 context。
 
-        异常：AppError（同上，任一步失败即中断）。
+        异常：AppError（409 该角色流程正在执行；任一步失败即中断并记录失败进度）。
         """
         self.role_store.get_role(project_id, role_id)
         merged: Dict[str, Any] = dict(context)
-        for step in self.get_steps():
-            order = step["step_order"]
-            merged = self.scheduler.invoke_role_agents(project_id, role_id, order, merged)
-        return merged
+        if self.progress_store is None:
+            for step in self.get_steps():
+                merged = self.scheduler.invoke_role_agents(
+                    project_id, role_id, step["step_order"], merged)
+            return merged
+
+        lock = self.progress_store.lock(project_id, role_id)
+        if not lock.try_acquire():
+            raise conflict("该角色流程正在执行")
+        try:
+            self.progress_store.start(project_id, role_id)
+            for step in self.get_steps():
+                order = step["step_order"]
+                self.progress_store.record_step(project_id, role_id, order, "running")
+                try:
+                    merged = self.scheduler.invoke_role_agents(
+                        project_id, role_id, order, merged)
+                except Exception as exc:  # noqa: BLE001 - 记录失败后继续抛
+                    self.progress_store.record_step(
+                        project_id, role_id, order, "failed", error=str(exc))
+                    self.progress_store.finish(project_id, role_id, "failed", str(exc))
+                    raise
+                self.progress_store.record_step(
+                    project_id, role_id, order, "done", output=merged)
+            self.progress_store.finish(project_id, role_id, "done")
+            return merged
+        finally:
+            lock.release()
