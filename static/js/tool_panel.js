@@ -110,7 +110,144 @@
         { id: 'nav_kb_import', title: '知识库角色导入', keywords: ['kb', 'import'] },
     ];
 
-    // ---- 后续任务在此插入：状态、渲染、角色/Agent 命令、参数步骤 ----
+    const state = {
+        built: false, open: false, mask: null, list: null, input: null, chip: null,
+        result: null, form: null, items: [], activeIndex: 0, lastRenderMs: 0,
+        lastFocus: null, projectId: null, roles: null, agents: null,
+        loadingRoles: false, loadingAgents: false, executing: false, mode: 'list',
+    };
+
+    function _projectId() {
+        return (global.StoryForgeApp && global.StoryForgeApp.getCurrentProjectId()) || null;
+    }
+
+    function _build() {
+        _ensureStyle();
+        state.mask = _el('div', { class: 'cp-mask', onclick: function (ev) {
+            if (ev.target === state.mask) factory.close();
+        } });
+        const panel = _el('div', { class: 'cp-panel', role: 'dialog', 'aria-label': '命令面板' });
+        state.input = _el('input', { class: 'cp-input', placeholder: '搜索命令、角色或 Agent…', 'aria-label': '搜索命令' });
+        state.input.addEventListener('input', function () { _renderList(); });
+        state.chip = _el('span', { class: 'cp-role-chip', text: '' });
+        state.list = _el('div', { class: 'cp-list', role: 'listbox' });
+        state.result = _el('div', { class: 'cp-result', text: '' });
+        state.result.style.display = 'none';
+        const head = _el('div', { class: 'cp-head' }, [state.input, state.chip]);
+        panel.appendChild(head);
+        panel.appendChild(state.list);
+        panel.appendChild(state.result);
+        state.mask.appendChild(panel);
+        document.body.appendChild(state.mask);
+        state.built = true;
+    }
+
+    function _onKeydown(ev) {
+        if (ev.isComposing) return;
+        if ((ev.ctrlKey || ev.metaKey) && ev.key.toLowerCase() === 'k') {
+            ev.preventDefault();
+            factory.toggle();
+            return;
+        }
+        if (!state.open) return;
+        if (ev.key === 'Escape') {
+            ev.preventDefault();
+            if (state.mode === 'params') { _showList(); } else { factory.close(); }
+        } else if (state.mode === 'list' && ev.key === 'ArrowDown') {
+            ev.preventDefault(); _move(1);
+        } else if (state.mode === 'list' && ev.key === 'ArrowUp') {
+            ev.preventDefault(); _move(-1);
+        } else if (state.mode === 'list' && ev.key === 'Enter') {
+            const item = state.items[state.activeIndex];
+            if (item && !item.disabled) { ev.preventDefault(); item.run(); }
+        }
+    }
+
+    function _prefetch() {
+        // 异步预取，不阻塞首屏；Task 5/6 实现具体加载。
+    }
+
+    function _staticItems() {
+        const pid = state.projectId;
+        const tools = TOOL_COMMANDS.map(function (cmd) {
+            const disabled = cmd.requiresProject === false ? false : !pid;
+            return {
+                id: cmd.id, category: 'tool', title: cmd.title,
+                subtitle: cmd.route ? '跳转' : (cmd.longTask ? '后台任务' : '写作工具'),
+                keywords: [cmd.id], disabled: disabled,
+                run: function () { _runToolCommand(cmd); },
+            };
+        });
+        const navs = NAV_COMMANDS.map(function (cmd) {
+            return {
+                id: cmd.id, category: 'nav', title: cmd.title, subtitle: '创作面板',
+                keywords: cmd.keywords, disabled: !pid,
+                run: function () { _runNavCommand(cmd); },
+            };
+        });
+        return tools.concat(navs);
+    }
+
+    function _matches(item, kw) {
+        if (!kw) return true;
+        const hay = (item.title + ' ' + (item.subtitle || '') + ' ' + (item.keywords || []).join(' ')).toLowerCase();
+        return kw.split(/\s+/).every(function (part) { return hay.indexOf(part) !== -1; });
+    }
+
+    function _renderList() {
+        state.mode = 'list';
+        const kw = state.input.value.trim().toLowerCase();
+        const all = _staticItems().concat(_roleItems(), _agentItems());
+        state.items = all.filter(function (item) { return _matches(item, kw); });
+        state.activeIndex = 0;
+        const frag = document.createDocumentFragment();
+        let lastCat = null;
+        state.items.forEach(function (item, idx) {
+            if (item.category !== lastCat) {
+                lastCat = item.category;
+                frag.appendChild(_el('div', { class: 'cp-group', text: CATEGORY_LABELS[lastCat] || lastCat }));
+            }
+            const row = _el('button', {
+                class: 'cp-item', role: 'option', 'aria-selected': idx === 0 ? 'true' : 'false',
+                'data-index': String(idx),
+                onclick: function () { if (!item.disabled) item.run(); },
+            });
+            row.disabled = !!item.disabled;
+            row.appendChild(_el('span', { class: 'cp-item-title', text: item.title }));
+            if (item.subtitle) row.appendChild(_el('span', { class: 'cp-item-sub', text: item.subtitle }));
+            (item.actions || []).forEach(function (action) {
+                row.appendChild(_el('span', {
+                    class: 'cp-item-action', role: 'button', tabindex: '0', text: action.label,
+                    onclick: function (ev) { ev.stopPropagation(); action.run(); },
+                    onkeydown: function (ev) { if (ev.key === 'Enter') { ev.stopPropagation(); action.run(); } },
+                }));
+            });
+            frag.appendChild(row);
+        });
+        if (!state.items.length) frag.appendChild(_el('div', { class: 'cp-group', text: '无匹配命令' }));
+        state.list.replaceChildren(frag);
+    }
+
+    function _move(delta) {
+        if (!state.items.length) return;
+        state.activeIndex = (state.activeIndex + delta + state.items.length) % state.items.length;
+        const rows = state.list.querySelectorAll('.cp-item');
+        rows.forEach(function (row, idx) {
+            row.setAttribute('aria-selected', idx === state.activeIndex ? 'true' : 'false');
+            if (idx === state.activeIndex) row.scrollIntoView({ block: 'nearest' });
+        });
+    }
+
+    const CATEGORY_LABELS = { tool: '工具', nav: '导航', role: '角色', agent: '工具 Agent' };
+
+    function _roleItems() { return []; }
+    function _agentItems() { return []; }
+    function _syncChip() { state.chip.textContent = ''; }
+    function _showList() { _renderList(); }
+    function _runToolCommand(cmd) { if (cmd.route) { global.location.hash = cmd.route; factory.close(); } }
+    function _runNavCommand(cmd) { factory.close(); }
+
+    document.addEventListener('keydown', _onKeydown);
 
     const factory = {
         createButton(opts) {
@@ -118,6 +255,30 @@
             (opts.mountEl || document.body).appendChild(btn);
             return btn;
         },
+        open() {
+            const t0 = performance.now();
+            if (!state.built) _build();
+            state.projectId = _projectId();
+            state.lastFocus = document.activeElement;
+            state.open = true;
+            state.mode = 'list';
+            state.mask.style.display = 'flex';
+            state.input.value = '';
+            _renderList();
+            _syncChip();
+            state.input.focus();
+            state.lastRenderMs = performance.now() - t0;
+            _prefetch();
+        },
+        close() {
+            if (!state.open) return;
+            state.open = false;
+            state.mask.style.display = 'none';
+            if (state.lastFocus && state.lastFocus.focus) state.lastFocus.focus();
+        },
+        toggle() { if (state.open) factory.close(); else factory.open(); },
+        isOpen() { return state.open; },
+        getLastRenderMs() { return state.lastRenderMs; },
     };
     global.StoryForgeCommandPalette = factory;
 })(typeof window !== 'undefined' ? window : globalThis);
