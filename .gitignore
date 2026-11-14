@@ -35,3 +35,9 @@ Thumbs.db
 
 # CDP 诊断临时脚本（含 node_modules，仅诊断用，不进库）
 scripts/cdp_tmp/
+
+# git 提交日志（pre-commit 钩子运行产物，不进库）
+.git_commit_log.txt
+
+# 历史归档目录（不进主仓库）
+docs-archive/
