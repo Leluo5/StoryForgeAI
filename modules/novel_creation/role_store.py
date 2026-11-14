@@ -50,10 +50,27 @@ _ROLE_EXTRA_DEFAULTS: Dict[str, Any] = {
 _ROLE_STATUSES = {"active", "archived"}
 # 章节/绑定状态白名单
 _BINDING_ENABLED = {True, False}
+_AGENT_ENVS = {"coze", "trae"}
 
 
 def _now() -> str:
     return now_iso()
+
+
+def _validate_binding_extended_fields(fields: Dict[str, Any]) -> None:
+    if "depends_on" in fields:
+        depends_on = fields["depends_on"]
+        if not isinstance(depends_on, list) \
+                or not all(isinstance(item, str) for item in depends_on):
+            raise bad_request("depends_on 须为字符串列表")
+    if "model" in fields:
+        model = fields["model"]
+        if model is not None and not isinstance(model, str):
+            raise bad_request("model 须为字符串")
+    if "agent_env" in fields:
+        agent_env = fields["agent_env"]
+        if not isinstance(agent_env, str) or agent_env not in _AGENT_ENVS:
+            raise bad_request("agent_env 须为 coze 或 trae")
 
 
 class RoleStore:
@@ -176,10 +193,15 @@ class RoleStore:
     ) -> Dict[str, Any]:
         """创建角色 Agent 绑定。step_order 同角色唯一（数据结构设计 §2.2 约束）。
 
-        extra 聚合可选字段：workflow_id/enabled。
+        extra 聚合可选字段：workflow_id/enabled/depends_on/model/agent_env。
         """
         workflow_id = extra.get("workflow_id")
         enabled = extra.get("enabled", True)
+        extended_fields = {
+            "depends_on": extra.get("depends_on", []),
+            "model": extra.get("model"),
+            "agent_env": extra.get("agent_env", "coze"),
+        }
         if not agent_id:
             raise bad_request("agent_id 不能为空")
         if not isinstance(step_order, int) or isinstance(step_order, bool) \
@@ -187,6 +209,7 @@ class RoleStore:
             raise bad_request("step_order 须为 1-11 整数")
         if enabled not in _BINDING_ENABLED:
             raise bad_request("enabled 须为布尔值")
+        _validate_binding_extended_fields(extended_fields)
         binding: Dict[str, Any] = {
             "id": new_id(),
             "role_id": role_id,
@@ -194,6 +217,7 @@ class RoleStore:
             "step_order": step_order,
             "workflow_id": workflow_id,
             "enabled": enabled,
+            **extended_fields,
             "created_at": _now(),
         }
         with self._lock(project_id):
@@ -222,7 +246,10 @@ class RoleStore:
         self, project_id: str, binding_id: str, **updates: Any,
     ) -> Dict[str, Any]:
         """更新绑定字段（白名单校验），不存在抛 404。"""
-        allowed = {"agent_id", "step_order", "workflow_id", "enabled"}
+        allowed = {
+            "agent_id", "step_order", "workflow_id", "enabled",
+            "depends_on", "model", "agent_env",
+        }
         with self._lock(project_id):
             data = self._load(project_id)
             for binding in data["role_bindings"]:
@@ -232,6 +259,7 @@ class RoleStore:
                     if key not in allowed:
                         raise bad_request(f"非法绑定字段: {key}")
                     binding[key] = value
+                _validate_binding_extended_fields(updates)
                 if binding["enabled"] not in _BINDING_ENABLED:
                     raise bad_request("enabled 须为布尔值")
                 self._save(project_id, data)

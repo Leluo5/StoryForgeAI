@@ -85,6 +85,9 @@ def create_blueprint(
         step_order = payload.get("step_order")
         workflow_id = payload.get("workflow_id")
         enabled = payload.get("enabled", True)
+        depends_on = payload.get("depends_on", [])
+        model = payload.get("model")
+        agent_env = payload.get("agent_env", "coze")
         if not agent_id:
             raise bad_request("agent_id 不能为空")
         if not isinstance(step_order, int) or isinstance(step_order, bool) \
@@ -93,8 +96,15 @@ def create_blueprint(
         binding = role_store.create_binding(
             project["id"], role_id, agent_id,
             step_order=step_order, workflow_id=workflow_id, enabled=enabled,
+            depends_on=depends_on, model=model, agent_env=agent_env,
         )
-        return _ok({"binding_id": binding["id"], "step_order": binding["step_order"]})
+        return _ok({
+            "binding_id": binding["id"],
+            "step_order": binding["step_order"],
+            "depends_on": binding.get("depends_on", []),
+            "model": binding.get("model"),
+            "agent_env": binding.get("agent_env", "coze"),
+        })
 
     # ---------- 3.3 更新绑定 ----------
 
@@ -103,7 +113,10 @@ def create_blueprint(
         """更新角色 Agent 绑定（接口契约 §3.3）。"""
         project, _role = _resolve_role(role_id)
         payload = request.get_json(silent=True) or {}
-        allowed_keys = {"agent_id", "step_order", "workflow_id", "enabled"}
+        allowed_keys = {
+            "agent_id", "step_order", "workflow_id", "enabled",
+            "depends_on", "model", "agent_env",
+        }
         updates = {k: v for k, v in payload.items() if k in allowed_keys}
         if not updates:
             raise bad_request("无可更新字段")
@@ -120,6 +133,9 @@ def create_blueprint(
             "binding_id": binding["id"],
             "step_order": binding["step_order"],
             "enabled": binding["enabled"],
+            "depends_on": binding.get("depends_on", []),
+            "model": binding.get("model"),
+            "agent_env": binding.get("agent_env", "coze"),
         })
 
     # ---------- 3.4 按预设流程调用 ----------

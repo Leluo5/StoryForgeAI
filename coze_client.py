@@ -416,6 +416,7 @@ class CozeClient:
                   或 {"success": False, "error": ...}
         """
         # 解析可选参数（支持 ChatOptions 对象或 dict，兼容旧关键字调用）
+        model = kwargs.get("model")
         options = kwargs.get("options")
         opts = ChatOptions()
         if isinstance(options, ChatOptions):
@@ -449,6 +450,8 @@ class CozeClient:
             body["conversation_id"] = conversation_id
         if parameters:
             body["custom_variables"] = parameters
+        if model:
+            body["model"] = model
 
         try:
             resp = requests.post(create_url, headers=self._headers(), json=body, timeout=30)

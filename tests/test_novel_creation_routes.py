@@ -194,7 +194,60 @@ class TestBindAgent:
         r = env.client.post(f"/api/roles/{rid}/agents",
                             json={"agent_id": "a1", "step_order": 3})
         assert r.status_code == 200
-        assert r.get_json()["data"]["step_order"] == 3
+        body = r.get_json()
+        assert set(body) == {"code", "data", "message"}
+        assert body["code"] == 0
+        assert body["message"] == "ok"
+        d = body["data"]
+        assert d["binding_id"]
+        assert d["step_order"] == 3
+        assert d["depends_on"] == []
+        assert d["model"] is None
+        assert d["agent_env"] == "coze"
+
+        r = env.client.get(f"/api/roles/{rid}/agents")
+        saved = r.get_json()["data"]["bindings"][0]
+        assert saved["depends_on"] == []
+        assert saved["model"] is None
+        assert saved["agent_env"] == "coze"
+
+    def test_extended_fields(self, env):
+        pid = _mk_project(env)
+        rid = _mk_role(env, pid)
+        r = env.client.post(
+            f"/api/roles/{rid}/agents",
+            json={
+                "agent_id": "a1",
+                "step_order": 3,
+                "depends_on": ["b0"],
+                "model": "gpt-4o",
+                "agent_env": "trae",
+            },
+        )
+        assert r.status_code == 200
+        body = r.get_json()
+        assert body["code"] == 0
+        assert body["message"] == "ok"
+        d = body["data"]
+        assert d["depends_on"] == ["b0"]
+        assert d["model"] == "gpt-4o"
+        assert d["agent_env"] == "trae"
+
+        r = env.client.get(f"/api/roles/{rid}/agents")
+        saved = r.get_json()["data"]["bindings"][0]
+        assert saved["id"] == d["binding_id"]
+        assert saved["depends_on"] == ["b0"]
+        assert saved["model"] == "gpt-4o"
+        assert saved["agent_env"] == "trae"
+
+    def test_invalid_agent_env(self, env):
+        pid = _mk_project(env)
+        rid = _mk_role(env, pid)
+        r = env.client.post(
+            f"/api/roles/{rid}/agents",
+            json={"agent_id": "a1", "step_order": 3, "agent_env": "invalid"},
+        )
+        assert r.status_code == 400
 
     def test_role_404(self, env):
         r = env.client.post("/api/roles/nope/agents",
@@ -235,6 +288,33 @@ class TestUpdateAgent:
         r = env.client.put(f"/api/roles/{rid}/agents/{bid}", json={"enabled": False})
         assert r.status_code == 200
         assert r.get_json()["data"]["enabled"] is False
+
+    def test_extended_fields(self, env):
+        pid = _mk_project(env)
+        rid = _mk_role(env, pid)
+        bid = env.client.post(f"/api/roles/{rid}/agents",
+                              json={"agent_id": "a1", "step_order": 3}).get_json()["data"]["binding_id"]
+        r = env.client.put(
+            f"/api/roles/{rid}/agents/{bid}",
+            json={"depends_on": ["b0"], "model": "gpt-4o", "agent_env": "trae"},
+        )
+        assert r.status_code == 200
+        body = r.get_json()
+        assert body["code"] == 0
+        assert body["message"] == "ok"
+        d = body["data"]
+        assert d["binding_id"] == bid
+        assert d["step_order"] == 3
+        assert d["enabled"] is True
+        assert d["depends_on"] == ["b0"]
+        assert d["model"] == "gpt-4o"
+        assert d["agent_env"] == "trae"
+
+        r = env.client.get(f"/api/roles/{rid}/agents")
+        saved = r.get_json()["data"]["bindings"][0]
+        assert saved["depends_on"] == ["b0"]
+        assert saved["model"] == "gpt-4o"
+        assert saved["agent_env"] == "trae"
 
     def test_no_updates(self, env):
         pid = _mk_project(env)

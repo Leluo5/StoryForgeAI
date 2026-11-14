@@ -23,6 +23,8 @@ from concurrent.futures import Executor, ThreadPoolExecutor
 from typing import Any, Callable, Dict, List, Optional
 
 from ..common.errors import bad_gateway, bad_request, server_error
+from .agent_client import CozeAgentClient
+from .parallel_agent_executor import AgentTask, ParallelAgentExecutor
 
 # 身份一致性提示词前缀（架构设计文档 §4.2）
 _IDENTITY_PROMPT = "你扮演角色{role_id}，保持身份一致"
@@ -69,21 +71,53 @@ class RoleAgentScheduler:
         executor: Optional[Executor] = None,
         max_workers: int = 8,
         tool_name: str = "role_agent_invoke",
+        model_router: Optional[Any] = None,
+        parallel_executor: Optional[ParallelAgentExecutor] = None,
+        clients: Optional[Dict[str, Any]] = None,
+        timeout: float = 30.0,
+        max_retries: int = 2,
+        backoff: float = 1.5,
     ) -> None:
         self.role_store = role_store
         self.project_store = project_store
         self.agent_client = agent_client
         self.max_workers = max_workers
         self.tool_name = tool_name
+        self.model_router = model_router
+        if clients is None:
+            clients = {"coze": CozeAgentClient(agent_client)}
+        self.clients = clients
         if executor is None:
             executor = ThreadPoolExecutor(max_workers=max_workers)
         self.executor: Executor = executor
+        if parallel_executor is None:
+            parallel_executor = ParallelAgentExecutor(
+                caller=self._invoke_task,
+                executor=self.executor,
+                max_workers=max_workers,
+                timeout=timeout,
+                max_retries=max_retries,
+                backoff=backoff,
+            )
+        self.parallel_executor = parallel_executor
 
     # ---------- 内部：单绑定 Agent 调用 ----------
 
     def _build_sys_prompt(self, role_id: str) -> str:
         """身份一致性：系统提示词前缀。"""
         return _IDENTITY_PROMPT.format(role_id=role_id)
+
+    def _invoke_task(self, task: AgentTask, context: Dict[str, Any]) -> Dict[str, Any]:
+        """将并行执行任务适配为既有的单 Agent 调用。"""
+        payload = task.payload
+        binding = payload["binding"]
+        return self._invoke_agent(
+            payload["project_id"],
+            payload["role_id"],
+            binding["agent_id"],
+            binding,
+            context,
+        )
 
     def _invoke_agent(
         self,
@@ -116,14 +150,20 @@ class RoleAgentScheduler:
         }
 
         try:
-            # 6. 同步调用走线程池（非阻塞）
-            future = self.executor.submit(
-                self._call_agent,
-                agent_id,
-                user_message,
-                conversation_id,
+            # 6. 并行执行器已负责线程池调度，此处直接同步调用
+            model = binding.get("model")
+            if self.model_router is not None:
+                model = self.model_router.resolve(
+                    scene="role_agent_invoke", override=model,
+                )
+            call_kwargs = {}
+            if model:
+                call_kwargs["model"] = model
+            if binding.get("agent_env"):
+                call_kwargs["agent_env"] = binding["agent_env"]
+            raw = self._call_agent(
+                agent_id, user_message, conversation_id, **call_kwargs,
             )
-            raw = future.result()
         except Exception as exc:  # noqa: BLE001 - 统一转 AppError
             self._record_tool_call(project_id, request_payload, {"error": str(exc)}, "failed")
             raise server_error("角色 Agent 调用失败", detail=str(exc))
@@ -147,14 +187,23 @@ class RoleAgentScheduler:
         return output
 
     def _call_agent(
-        self, agent_id: str, user_message: str, conversation_id: str,
+        self,
+        agent_id: str,
+        user_message: str,
+        conversation_id: str,
+        model: Optional[str] = None,
+        agent_env: str = "coze",
     ) -> Dict[str, Any]:
-        """实际调用注入的 agent_client（子类可覆写便于测试）。"""
-        return self.agent_client.chat(
+        """按运行环境选择 AgentClient，仅在有值时透传模型。"""
+        kwargs = {}
+        if model:
+            kwargs["model"] = model
+        return self.clients[agent_env].chat(
             bot_id=agent_id,
             user_message=user_message,
             conversation_id=conversation_id,
             parameters={},
+            **kwargs,
         )
 
     def _compose_user_message(
@@ -235,16 +284,49 @@ class RoleAgentScheduler:
         # 2. 命中当前或此前步骤的绑定
         hit_bindings = [b for b in bindings if b["step_order"] <= step_order]
 
-        # 3. 无命中：返回原 context（条件触发，由路由层决定是否 409）
-        merged_context = copy.copy(context)
+        # 3. 构建 DAG 任务；旧绑定无 id 时回退到 agent_id
+        tasks = []
         for binding in hit_bindings:
             agent_id = binding.get("agent_id", "")
             if not agent_id:
                 continue
-            output = self._invoke_agent(
-                project_id, role_id, agent_id, binding, merged_context,
-            )
-            # 上下文透传合并
-            merged_context = merge_result(merged_context, output)
+            tasks.append(AgentTask(
+                task_id=binding.get("id") or agent_id,
+                depends_on=list(binding.get("depends_on") or []),
+                payload={
+                    "project_id": project_id,
+                    "role_id": role_id,
+                    "binding": binding,
+                },
+            ))
+
+        # 4. 无命中：返回原 context（条件触发，由路由层决定是否 409）
+        if not tasks:
+            return copy.copy(context)
+
+        result = self.parallel_executor.execute(tasks, copy.copy(context))
+
+        # 5. 按稳定执行顺序折叠成功输出，保留嵌套 dict 的一层浅合并语义
+        merged_context = copy.copy(context)
+        tasks_by_id = {task.task_id: task for task in tasks}
+        for agent_result in result.per_agent:
+            if agent_result.ok:
+                merged_context = merge_result(merged_context, agent_result.output)
+            if agent_result.degraded:
+                binding = tasks_by_id[agent_result.task_id].payload["binding"]
+                request_payload = {
+                    "role_id": role_id,
+                    "agent_id": binding.get("agent_id", ""),
+                    "binding_id": agent_result.task_id,
+                    "step_order": binding.get("step_order"),
+                }
+                response_payload = {
+                    "degraded": True,
+                    "error": agent_result.error,
+                    "attempts": agent_result.attempts,
+                }
+                self._record_tool_call(
+                    project_id, request_payload, response_payload, "degraded",
+                )
 
         return merged_context

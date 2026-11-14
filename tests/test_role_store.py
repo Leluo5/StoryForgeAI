@@ -133,6 +133,77 @@ class TestBinding:
         assert b["workflow_id"] == "wf-1"
         assert b["enabled"] is True
 
+    def test_create_binding_extended_fields(self, store):
+        store.create_binding(
+            "p1", "r1", "agent-1", 3,
+            depends_on=["agent-0"], model="gpt-4o", agent_env="trae",
+        )
+        b = store.get_bindings("p1", "r1")[0]
+        assert b["depends_on"] == ["agent-0"]
+        assert b["model"] == "gpt-4o"
+        assert b["agent_env"] == "trae"
+
+    def test_create_binding_extended_field_defaults(self, store):
+        store.create_binding("p1", "r1", "agent-1", 1)
+        b = store.get_bindings("p1", "r1")[0]
+        assert b["depends_on"] == []
+        assert b["model"] is None
+        assert b["agent_env"] == "coze"
+
+    def test_update_binding_extended_fields(self, store):
+        b = store.create_binding(
+            "p1", "r1", "agent-1", 1,
+            depends_on=["agent-0"], model="gpt-4o", agent_env="coze",
+            workflow_id="wf-1", enabled=False,
+        )
+        store.update_binding(
+            "p1", b["id"],
+            depends_on=["agent-0", "agent-00"], model="gpt-4.1", agent_env="trae",
+        )
+        updated = store.get_bindings("p1", "r1")[0]
+        assert updated["depends_on"] == ["agent-0", "agent-00"]
+        assert updated["model"] == "gpt-4.1"
+        assert updated["agent_env"] == "trae"
+        assert updated["workflow_id"] == "wf-1"
+        assert updated["enabled"] is False
+
+        store.update_binding("p1", b["id"], model="gpt-4o-mini")
+        partial = store.get_bindings("p1", "r1")[0]
+        assert partial["model"] == "gpt-4o-mini"
+        assert partial["depends_on"] == ["agent-0", "agent-00"]
+        assert partial["agent_env"] == "trae"
+
+    @pytest.mark.parametrize(
+        ("field", "value", "message"),
+        [
+            ("agent_env", "foo", "agent_env 须为 coze 或 trae"),
+            ("depends_on", "agent-0", "depends_on 须为字符串列表"),
+            ("depends_on", ["agent-0", 1], "depends_on 须为字符串列表"),
+            ("model", 123, "model 须为字符串"),
+        ],
+    )
+    def test_create_binding_invalid_extended_fields(self, store, field, value, message):
+        with pytest.raises(AppError) as ei:
+            store.create_binding("p1", "r1", "agent-1", 1, **{field: value})
+        assert ei.value.code == 400
+        assert message in ei.value.message
+
+    @pytest.mark.parametrize(
+        ("field", "value", "message"),
+        [
+            ("agent_env", "foo", "agent_env 须为 coze 或 trae"),
+            ("depends_on", "agent-0", "depends_on 须为字符串列表"),
+            ("depends_on", ["agent-0", 1], "depends_on 须为字符串列表"),
+            ("model", 123, "model 须为字符串"),
+        ],
+    )
+    def test_update_binding_invalid_extended_fields(self, store, field, value, message):
+        b = store.create_binding("p1", "r1", "agent-1", 1)
+        with pytest.raises(AppError) as ei:
+            store.update_binding("p1", b["id"], **{field: value})
+        assert ei.value.code == 400
+        assert message in ei.value.message
+
     def test_create_binding_empty_agent(self, store):
         with pytest.raises(AppError) as ei:
             store.create_binding("p1", "r1", "", 1)

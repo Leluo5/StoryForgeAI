@@ -311,6 +311,19 @@ class TestChat:
         assert res["content"] == "你好"
         assert res["conversation_id"] == "conv1"
 
+    def test_accepts_model_kwarg(self):
+        client = CozeClient("pat")
+        with mock.patch("coze_client.requests.post") as mp, \
+                mock.patch("coze_client.requests.get") as mg:
+            mp.return_value = _resp({"code": 0, "data": {"id": "c1"}})
+            mg.return_value = _resp({"code": 0, "data": {
+                "status": "completed",
+                "messages": [{"role": "assistant", "type": "answer", "content": "你好"}],
+            }})
+            res = client.chat("b1", "msg", model="gpt-4o")
+        assert res["success"] is True
+        assert mp.call_args.kwargs["json"]["model"] == "gpt-4o"
+
     def test_create_failure(self):
         client = CozeClient("pat")
         with mock.patch("coze_client.requests.post") as mp:

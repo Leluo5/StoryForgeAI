@@ -18,6 +18,12 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 import app as app_mod  # noqa: E402
+from modules.novel_creation.agent_client import CozeAgentClient  # noqa: E402
+from modules.novel_creation.model_router import ModelRouter  # noqa: E402
+from modules.novel_creation.parallel_agent_executor import (  # noqa: E402
+    ParallelAgentExecutor,
+)
+from modules.novel_creation.trae_agent_client import TraeAgentClient  # noqa: E402
 
 
 def _work(wid="w1", **over):
@@ -141,6 +147,19 @@ def fake_cfg(monkeypatch):
     loader.update_global_config.side_effect = lambda u: {**cfg, **u}
     monkeypatch.setattr(app_mod, "config_loader", loader)
     return loader
+
+
+# ---------- Agent 装配 ----------
+
+def test_role_agent_scheduler_wires_agent_components():
+    scheduler = app_mod._role_scheduler
+
+    assert isinstance(scheduler.model_router, ModelRouter)
+    assert scheduler.model_router._config_loader is app_mod.config_loader
+    assert isinstance(scheduler.parallel_executor, ParallelAgentExecutor)
+    assert isinstance(scheduler.clients["coze"], CozeAgentClient)
+    assert scheduler.clients["coze"]._coze is app_mod.coze_client
+    assert isinstance(scheduler.clients["trae"], TraeAgentClient)
 
 
 # ---------- 首页 ----------
