@@ -241,3 +241,79 @@ class AgentStore:
                     and other.get("tool_name") == agent.get("tool_name") \
                     and other.get("is_default") and agent.get("is_default"):
                 raise conflict(f"工具 {agent.get('tool_name')} 已存在默认 Agent")
+
+    # ---------- 分组覆盖层 ----------
+
+    def load_group_overrides(self, project_id: str) -> Dict[str, Any]:
+        """读取 _groups.json；不存在返回空覆盖层。"""
+        data = read_json(self._groups_path(project_id), None)
+        if not isinstance(data, dict):
+            data = {}
+        data.setdefault("project_id", project_id)
+        data.setdefault("schema_version", 1)
+        data.setdefault("overrides", [])
+        data.setdefault("manual_groups", [])
+        return data
+
+    def save_group_overrides(self, project_id: str, data: Dict[str, Any]) -> Dict[str, Any]:
+        """原子写 _groups.json。"""
+        data = dict(data)
+        data["project_id"] = project_id
+        data["updated_at"] = now_iso()
+        with self._groups_lock(project_id):
+            atomic_write_json(self._groups_path(project_id), data)
+        return data
+
+    def upsert_override(self, project_id: str, key: str, **fields: Any) -> Dict[str, Any]:
+        """upsert 分组覆盖：name/sort_order/hidden。"""
+        if not key:
+            raise bad_request("key 不能为空")
+        data = self.load_group_overrides(project_id)
+        item = next((o for o in data["overrides"] if o.get("key") == key), None)
+        if item is None:
+            item = {"key": key, "name": "", "sort_order": 0, "hidden": False}
+            data["overrides"].append(item)
+        for name in ("name", "sort_order", "hidden"):
+            if name in fields:
+                item[name] = fields[name]
+        self.save_group_overrides(project_id, data)
+        return item
+
+    def delete_override(self, project_id: str, key: str) -> bool:
+        """删除覆盖；不存在返回 False。"""
+        data = self.load_group_overrides(project_id)
+        before = len(data["overrides"])
+        data["overrides"] = [o for o in data["overrides"] if o.get("key") != key]
+        if len(data["overrides"]) == before:
+            return False
+        self.save_group_overrides(project_id, data)
+        return True
+
+    def create_manual_group(self, project_id: str, parent_key: str, name: str,
+                            sort_order: int = 0) -> Dict[str, Any]:
+        """新建手工分组。"""
+        if not name or not str(name).strip():
+            raise bad_request("分组名不能为空")
+        data = self.load_group_overrides(project_id)
+        group = {
+            "id": f"manual:{new_id()}",
+            "parent_key": parent_key,
+            "name": str(name).strip(),
+            "sort_order": int(sort_order),
+        }
+        data["manual_groups"].append(group)
+        self.save_group_overrides(project_id, data)
+        return group
+
+    def delete_manual_group(self, project_id: str, group_id: str) -> bool:
+        """删除手工分组；组内 Agent 回落自动分组。"""
+        data = self.load_group_overrides(project_id)
+        before = len(data["manual_groups"])
+        data["manual_groups"] = [g for g in data["manual_groups"] if g.get("id") != group_id]
+        if len(data["manual_groups"]) == before:
+            return False
+        self.save_group_overrides(project_id, data)
+        for agent in self.list_agents(project_id):
+            if agent.get("manual_group_key") == group_id:
+                self.update_agent(project_id, agent["id"], {"manual_group_key": None})
+        return True
