@@ -22,7 +22,7 @@ import json
 from concurrent.futures import Executor, ThreadPoolExecutor
 from typing import Any, Callable, Dict, List, Optional
 
-from ..common.errors import bad_gateway, bad_request, server_error
+from ..common.errors import bad_gateway, bad_request, not_found, server_error
 from .agent_client import CozeAgentClient
 from .parallel_agent_executor import AgentTask, ParallelAgentExecutor
 
@@ -100,6 +100,11 @@ class RoleAgentScheduler:
                 backoff=backoff,
             )
         self.parallel_executor = parallel_executor
+        self.agent_resolver = None
+
+    def set_agent_resolver(self, resolver) -> None:
+        """注入 agent_ref_id → Agent 配置解析器（应用层装配）。"""
+        self.agent_resolver = resolver
 
     # ---------- 内部：单绑定 Agent 调用 ----------
 
@@ -117,6 +122,7 @@ class RoleAgentScheduler:
             binding["agent_id"],
             binding,
             context,
+            agent_cfg=payload.get("agent_cfg"),
         )
 
     def _invoke_agent(
@@ -126,6 +132,7 @@ class RoleAgentScheduler:
         agent_id: str,
         binding: Dict[str, Any],
         context: Dict[str, Any],
+        agent_cfg: Optional[Dict[str, Any]] = None,
     ) -> Dict[str, Any]:
         """调用单个 Agent：恢复记忆 → 注入身份 → 调用 → 合并输出。
 
@@ -140,6 +147,16 @@ class RoleAgentScheduler:
         # 4. 组装用户消息：系统提示词 + 上下文序列化
         user_message = self._compose_user_message(sys_prompt, memory, context)
 
+        if agent_cfg is None and binding.get("agent_ref_id") and self.agent_resolver is not None:
+            agent_cfg = self.agent_resolver(project_id, binding["agent_ref_id"])
+        platform = binding.get("agent_env") or "coze"
+        model_override = binding.get("model")
+        effective_agent_id = agent_id
+        if agent_cfg:
+            platform = agent_cfg.get("platform") or platform
+            effective_agent_id = (agent_cfg.get("platform_config") or {}).get("bot_id") or agent_id
+            model_override = (agent_cfg.get("model_config") or {}).get("model") or model_override
+
         # 5. 记录请求（审计，先落 request 再补 response）
         request_payload: Dict[str, Any] = {
             "role_id": role_id,
@@ -151,7 +168,7 @@ class RoleAgentScheduler:
 
         try:
             # 6. 并行执行器已负责线程池调度，此处直接同步调用
-            model = binding.get("model")
+            model = model_override
             if self.model_router is not None:
                 model = self.model_router.resolve(
                     scene="role_agent_invoke", override=model,
@@ -159,10 +176,9 @@ class RoleAgentScheduler:
             call_kwargs = {}
             if model:
                 call_kwargs["model"] = model
-            if binding.get("agent_env"):
-                call_kwargs["agent_env"] = binding["agent_env"]
+            call_kwargs["agent_env"] = platform
             raw = self._call_agent(
-                agent_id, user_message, conversation_id, **call_kwargs,
+                effective_agent_id, user_message, conversation_id, **call_kwargs,
             )
         except Exception as exc:  # noqa: BLE001 - 统一转 AppError
             self._record_tool_call(project_id, request_payload, {"error": str(exc)}, "failed")
@@ -284,7 +300,36 @@ class RoleAgentScheduler:
         # 2. 命中当前或此前步骤的绑定
         hit_bindings = [b for b in bindings if b["step_order"] <= step_order]
 
-        # 3. 构建 DAG 任务；旧绑定无 id 时回退到 agent_id
+        # 3. 预校验 agent_ref_id：解析 Agent 配置，跳过 inactive，拒绝未配置 bot_id
+        #    （在构建任务前完成，避免并行执行器的降级逻辑吞掉 400）
+        resolved = {}
+        valid_bindings = []
+        for binding in hit_bindings:
+            agent_id = binding.get("agent_id", "")
+            if not agent_id:
+                continue
+            agent_cfg = None
+            if binding.get("agent_ref_id") and self.agent_resolver is not None:
+                agent_cfg = self.agent_resolver(project_id, binding["agent_ref_id"])
+                if agent_cfg is None:
+                    raise not_found(f"Agent 不存在: {binding['agent_ref_id']}")
+                if agent_cfg.get("status") != "active":
+                    self._record_tool_call(
+                        project_id,
+                        {"role_id": role_id, "agent_id": agent_id,
+                         "agent_ref_id": binding.get("agent_ref_id"), "skipped": True},
+                        {"reason": "agent_not_active"}, "skipped",
+                    )
+                    continue
+                platform = agent_cfg.get("platform") or "coze"
+                bot_id = (agent_cfg.get("platform_config") or {}).get("bot_id") or ""
+                if platform == "coze" and not bot_id:
+                    raise bad_request("作品级流程 Agent 未配置 bot_id")
+            valid_bindings.append(binding)
+            resolved[binding.get("id") or agent_id] = agent_cfg
+        hit_bindings = valid_bindings
+
+        # 4. 构建 DAG 任务；旧绑定无 id 时回退到 agent_id
         tasks = []
         for binding in hit_bindings:
             agent_id = binding.get("agent_id", "")
@@ -297,16 +342,17 @@ class RoleAgentScheduler:
                     "project_id": project_id,
                     "role_id": role_id,
                     "binding": binding,
+                    "agent_cfg": resolved.get(binding.get("id") or agent_id),
                 },
             ))
 
-        # 4. 无命中：返回原 context（条件触发，由路由层决定是否 409）
+        # 5. 无命中：返回原 context（条件触发，由路由层决定是否 409）
         if not tasks:
             return copy.copy(context)
 
         result = self.parallel_executor.execute(tasks, copy.copy(context))
 
-        # 5. 按稳定执行顺序折叠成功输出，保留嵌套 dict 的一层浅合并语义
+        # 6. 按稳定执行顺序折叠成功输出，保留嵌套 dict 的一层浅合并语义
         merged_context = copy.copy(context)
         tasks_by_id = {task.task_id: task for task in tasks}
         for agent_result in result.per_agent:
