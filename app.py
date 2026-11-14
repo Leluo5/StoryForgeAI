@@ -1398,12 +1398,16 @@ def _build_coze_chat_request(work_config, user_message, conversation_id="", para
 from modules.novel_creation.project_store import ProjectStore
 from modules.novel_creation.role_store import RoleStore
 from modules.novel_creation.role_agent_scheduler import RoleAgentScheduler
-from modules.novel_creation.step_flow_engine import StepFlowEngine
+from modules.novel_creation.step_flow_engine import DEFAULT_STEPS, StepFlowEngine
 from modules.novel_creation.tool_registry import create_default_registry
 from modules.novel_creation.routes import create_blueprint
 from modules.novel_creation.model_router import ModelRouter
 from modules.novel_creation.agent_client import CozeAgentClient
 from modules.novel_creation.trae_agent_client import TraeAgentClient
+from modules.novel_creation.flow_progress_store import FlowProgressStore
+from modules.agent_management.agent_store import AgentStore
+from modules.agent_management.agent_service import AgentService
+from modules.agent_management.routes import create_blueprint as create_agent_blueprint
 
 _project_store = ProjectStore(os.path.join(DATA_DIR, "projects"))
 _role_store = RoleStore(os.path.join(DATA_DIR, "projects"))
@@ -1418,6 +1422,34 @@ _role_scheduler = RoleAgentScheduler(
 _step_flow_engine = StepFlowEngine(_role_scheduler, _role_store)
 _tool_registry = create_default_registry()
 
+
+def _load_flow_template():
+    """读取 11 步模板；缺失或不足 11 步时回退到 DEFAULT_STEPS 占位。"""
+    path = os.path.join(BASE_DIR, "config", "default_flow_agents.json")
+    try:
+        with open(path, "r", encoding="utf-8") as f:
+            steps = json.load(f).get("steps") or []
+        if len(steps) == 11:
+            return steps
+    except (OSError, ValueError):
+        pass
+    return [dict(step, platform="coze", platform_config={}, model_config={})
+            for step in DEFAULT_STEPS]
+
+
+_flow_progress_store = FlowProgressStore(os.path.join(DATA_DIR, "flows"))
+_agent_store = AgentStore(os.path.join(DATA_DIR, "agents"))
+_agent_service = AgentService(
+    _agent_store, _project_store, _role_store, _tool_registry,
+    flow_template=_load_flow_template(),
+)
+_role_store.set_lifecycle_hooks(
+    on_create=_agent_service.bind_role_default_flow,
+    on_delete=_flow_progress_store.delete_role,
+)
+_role_scheduler.set_agent_resolver(_agent_service.get_agent)
+_step_flow_engine.set_progress_store(_flow_progress_store)
+
 # 知识库蓝图（F5）：模块级 bp，注册后挂载 /api/knowledge/* 全部接口
 from modules.knowledge_base.routes import bp as _knowledge_bp
 from modules.knowledge_base.routes import _store as _kb_store
@@ -1431,8 +1463,11 @@ _role_import_engine = RoleImportEngine(
 _novel_bp = create_blueprint(
     _role_store, _project_store, _role_scheduler, _step_flow_engine,
     tool_registry=_tool_registry, import_engine=_role_import_engine,
+    project_provisioner=_agent_service.provision_project_defaults,
+    tool_agent_resolver=_agent_service.resolve_default_tool_agent,
 )
 app.register_blueprint(_novel_bp)
+app.register_blueprint(create_agent_blueprint(_agent_service, _flow_progress_store))
 app.register_blueprint(_knowledge_bp)
 
 # 剧情推衍聊天室蓝图（F6）：模块级 bp，注册后挂载 /api/story/* 全部接口
@@ -1491,5 +1526,13 @@ if __name__ == "__main__":
     app.logger.info(f"  {site_name} - Coze 作品展示平台")
     app.logger.info(f"  访问地址: http://localhost:{port}")
     app.logger.info(f"{sep}\n")
+
+    # 启动时执行一次幂等迁移（失败不阻断启动）
+    try:
+        report = _agent_service.migrate_role_bindings(
+            os.path.join(DATA_DIR, "projects"), dry_run=False)
+        app.logger.info("[Agent] 角色绑定迁移: %s", report)
+    except Exception as exc:  # noqa: BLE001 - 迁移失败不阻断启动
+        app.logger.warning("[Agent] 角色绑定迁移失败: %s", exc)
 
     app.run(host="0.0.0.0", port=port, debug=False)

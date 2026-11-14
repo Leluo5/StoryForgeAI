@@ -32,7 +32,7 @@ from typing import Any, Dict
 from ..common.errors import AppError as _AppError
 from ..common.storage import new_id as _new_id
 
-from flask import Blueprint, jsonify, request
+from flask import Blueprint, current_app, jsonify, request
 
 from ..common.errors import bad_request, conflict, forbidden, not_found
 from .role_agent_scheduler import merge_result
@@ -57,6 +57,8 @@ def create_blueprint(
     """
     tool_registry = extra.get("tool_registry")
     import_engine = extra.get("import_engine")
+    project_provisioner = extra.get("project_provisioner")
+    tool_agent_resolver = extra.get("tool_agent_resolver")
     bp = Blueprint("novel_creation", __name__, url_prefix="/api")
 
     # ---------- 辅助 ----------
@@ -201,6 +203,11 @@ def create_blueprint(
             description=payload.get("world_setting") or "",
             author=payload.get("author") or "",
         )
+        if project_provisioner is not None:
+            try:
+                project_provisioner(project)
+            except Exception as exc:  # noqa: BLE001 - 开通失败不阻断建作品
+                current_app.logger.warning("[作品] 默认 Agent 开通失败: %s", exc)
         return _ok({"id": project["id"], "title": project["title"],
                     "current_step": 1})
 
@@ -388,6 +395,21 @@ def create_blueprint(
             context["role"] = role
             context["role_id"] = role_id
             context["project_id"] = project_id
+
+        # 工具默认 Agent 联动：解析结果注入上下文（解析失败不阻断工具调用）
+        tool_agent = None
+        if tool_agent_resolver is not None:
+            try:
+                tool_agent = tool_agent_resolver(project_id, tool)
+            except Exception:  # noqa: BLE001 - 解析失败不阻断工具
+                tool_agent = None
+        if tool_agent:
+            context["tool_agent"] = {
+                "id": tool_agent.get("id"),
+                "name": tool_agent.get("name"),
+                "platform": tool_agent.get("platform"),
+                "model_config": tool_agent.get("model_config") or {},
+            }
 
         # 派发处理器（异常映射 500/502 由应用层错误处理器统一处理）
         try:
