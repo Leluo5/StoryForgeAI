@@ -17,7 +17,7 @@ import re
 import sys
 
 ROOT_DEFAULT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-EXCLUDE_DIRS = {"__pycache__", ".git", "docs-archive", "docs", "data", ".pytest_cache", "tests", "node_modules", ".uploads", "scripts"}
+EXCLUDE_DIRS = {"__pycache__", ".git", "docs-archive", "docs", "data", ".pytest_cache", "tests", "node_modules", ".uploads", "scripts", ".venv", "venv", ".tox"}
 SENSITIVE_FIELDS = {"api_key", "pat_token", "access_code", "password", "secret"}
 
 

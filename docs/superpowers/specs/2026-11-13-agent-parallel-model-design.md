@@ -1,7 +1,7 @@
 # Agent 模块架构调整设计：并行接入 + 模型选择
 
 > 日期：2026-11-13
-> 状态：草案（待自审 + 用户审阅）
+> 状态：已实施（Task 1–12 已完成；Trae 真实通道仍待契约，Coze 运行时 model 仅完成代码实现且未做在线验证）
 > 范围：StoryForgeAI agent 模块（modules/novel_creation/ + coze_client.py + config_loader.py）
 > 方案：A · 分层抽取 · 独立组件
 
@@ -19,7 +19,7 @@
 
 ---
 
-## 二、核心能力可实现性判定（基于当前代码验证）
+## 二、核心能力可实现性判定（基于设计时代码验证）
 
 | # | 能力 | 判定 | 依据 |
 |---|---|---|---|
@@ -50,15 +50,15 @@ class ModelRouter:
     def __init__(self, config_loader, default_model="default"): ...
     def list_models(self) -> list[str]
     def get_default_model(self) -> str
-    def resolve(self, scene: ModelScene) -> str   # 场景 → 模型
+    def resolve(self, scene: str, override=None) -> str   # 显式覆盖 → 场景 → 默认模型
 
 class ParallelAgentExecutor:
-    def __init__(self, agent_client, executor=None, max_workers=8,
+    def __init__(self, caller, executor=None, max_workers=8,
                  timeout=30.0, max_retries=2, backoff=1.5): ...
     def execute(self, tasks: list[AgentTask], context: dict) -> ExecuteResult
 ```
 
-`RoleAgentScheduler` 新增**可选**构造参数：`model_router`、`parallel_executor`、`timeout`、`max_retries`、`backoff`（均向后兼容，缺省时用内置默认值）。现有端点/响应格式/错误码不变。
+`RoleAgentScheduler` 新增**可选**构造参数：`model_router`、`parallel_executor`、`clients`、`timeout`、`max_retries`、`backoff`（均向后兼容，缺省时用内置默认值）。现有端点/响应格式/错误码不变。
 
 ### 3.3 绑定与存储扩展
 
@@ -82,11 +82,11 @@ class ParallelAgentExecutor:
 ### 4.1 支撑点（可直接复用）
 
 - **绑定语义完整**：`create_binding` 已强制 `step_order ∈ [1,11]` 且同角色同步骤唯一，`get_bindings` 按 step_order 排序——即"角色信息 × 流程维度"的组合条件。
-- **DI 注入完备**：`create_app` 已注入 `role_store / project_store / agent_client / executor`，新组件可沿用同一注入模式。
+- **DI 注入完备**：应用层已注入 `role_store / project_store / agent_client`，新组件沿用同一注入模式；实际装配位于 `app.py` 模块级，`executor` 与 `ParallelAgentExecutor` 可由调度器缺省创建。
 - **契约清晰**：`CozeClient.chat(bot_id, user_message, conversation_id, parameters) -> dict{success, content}`，`_call_agent` 已按此调用。
 - **错误映射就绪**：`AppError` 400/404/409/502/500 已覆盖并行/降级所需错误码。
 
-### 4.2 潜在瓶颈（真实代码证据）
+### 4.2 潜在瓶颈（设计时真实代码证据）
 
 | 瓶颈 | 证据 | 影响 |
 |---|---|---|
@@ -128,22 +128,22 @@ class ParallelAgentExecutor:
 ## 六、各模块交互逻辑
 
 ```
-create_app (app.py)
-  └─ 注入 role_store / project_store / agent_client / executor
-       └─ RoleAgentScheduler（保留，公开签名不变）
+app.py 模块级装配
+  └─ 注入 role_store / project_store / ModelRouter / clients
+       └─ RoleAgentScheduler（公开调用签名不变，内部缺省创建 ParallelAgentExecutor）
             ├─ 命中绑定：get_bindings(project_id, role_id, enabled=True) → 过滤 step_order <= 当前 step
-            ├─ 新增委托 → ModelRouter.resolve(scene) → model_id（读取 config_loader.model_config，可被 binding.model 覆盖）
-            ├─ 新增委托 → ParallelAgentExecutor.execute(tasks, context)
+            ├─ ModelRouter.resolve(scene="role_agent_invoke", override=binding.model) → model_id
+            ├─ ParallelAgentExecutor.execute(tasks, context)
             │    depends_on 构建 DAG → 拓扑分层 → 层内并行、层间串行
-            │    稳定性：future.result(timeout=30s) / 重试2次退避1.5 / 降级跳过打 degraded
-            └─ 调 _call_agent → clients[agent_env].chat(bot_id, user_message, conversation_id, parameters)
-                 ├─ CozeAgentClient → CozeClient.chat（现有逻辑）
-                 └─ TraeAgentClient（新建，通道待澄清）
-                      └─ 写回记忆：set_memory(project_id, role_id, agent_id, ...)
-                      └─ 审计：append_tool_call(project_id, tool_name, req, resp, status)
+            │    稳定性：future.result(timeout=30s) / 最多重试2次、指数退避 / 降级跳过
+            ├─ _call_agent → clients[agent_env].chat(bot_id, user_message, conversation_id, parameters)
+            │    ├─ CozeAgentClient → CozeClient.chat（model 非空时写入请求体）
+            │    └─ TraeAgentClient（协议桩，NotImplementedError 进入重试/降级）
+            ├─ 成功调用后写回记忆：set_memory(project_id, role_id, agent_id, ...)
+            └─ 审计：append_tool_call(project_id, tool_name, req, resp, status)
 ```
 
-**关键不变量**：`RoleAgentScheduler` 对外方法（`invoke_role_agents`/`trigger_step`/`trigger_flow`）签名与现有调用方（`step_flow_engine`、`routes.py`）完全不变；`merge_result` 语义不变。
+**关键不变量**：`RoleAgentScheduler.invoke_role_agents` 的公开签名与返回形状不变，现有调用方（`step_flow_engine`、`routes.py`）无需新增参数；`merge_result` 保持顶层及嵌套 dict 各一层的浅合并语义，不做递归深合并。
 
 ---
 
@@ -168,12 +168,12 @@ create_app (app.py)
 - `merge_result` 只浅层合并一层，不深改嵌套结构。
 - 审计失败不阻断主流程。
 
-**新引入、需在实现前明确的约束（开放项 TODO）**：
-1. **Trae 通道协议未定义**：调用入口（HTTP 网关 / MCP / Tool / 本地 CLI）需用户澄清；未澄清前 TraeAgentClient 先做协议桩。
-2. **Coze 运行时模型参数未验证**：`v3/chat` 是否接受 model 字段待实测；未实测前能力 3 判定为条件可行。
-3. **超时收尾语义**：外层超时后 Coze 内部轮询仍在后台，需明确 cancel / add_done_callback 收尾。
-4. **agent_env 字段**：需同步 `routes.py` 绑定创建/更新端点接受该字段，否则前端无法配置。
-5. **HTTP 接口兼容**：现有端点/响应格式/错误码保持不变；新增字段仅作请求体可选扩展。
+**新引入约束与开放项**：
+1. **Trae 通道协议未定义（仍开放）**：调用入口（HTTP 网关 / MCP / Tool / 本地 CLI）仍需用户澄清；当前 `TraeAgentClient` 为协议桩，真实通道尚未接入。
+2. **Coze 运行时模型参数未在线验证（仍开放）**：代码已在 `v3/chat` 请求体中传递可选 model 字段，但平台是否接受并生效仍待在线实测。
+3. **超时收尾语义（现有限制）**：外层超时已调用 `future.cancel()`，但不会强制终止正在运行的 caller 线程，Coze 内部轮询可能仍在后台执行。
+4. **agent_env 字段（已落地）**：`routes.py` 绑定创建/更新端点已接受并返回 `depends_on`、`model`、`agent_env`。
+5. **HTTP 接口兼容（已落地）**：绑定创建/更新端点沿用现有 HTTP 200 与统一响应包络；新增字段仅作请求体可选扩展，不改变既有错误码。
 
 ---
 
@@ -186,8 +186,21 @@ create_app (app.py)
 
 ---
 
-## 十、验证结论
+## 十、实现说明（Task 1–11）
 
-- **方案 A 架构成立**，组件职责清晰，与现有 DI 范式、错误映射、存储模型兼容。
-- **三项核心能力判定**：能力 1 可直接落地（扩展白名单即可）；能力 2、3 需各补一个前置澄清/实测（Trae 通道协议、Coze 运行时 model 支持），否则只能交付"框架就绪 + 桩实现"。
-- **建议下一步**：先与用户对齐两个开放项（① Trae 调用通道协议；② Coze 是否支持运行时指定模型），这两项直接决定能力 2、3 的最终交付形态。
+- **AgentClient 双环境协议**：`AgentClient.chat(bot_id, user_message, conversation_id="", parameters=None, **kwargs)` 统一返回字典契约；`CozeAgentClient` 包装并透传至现有 `CozeClient`，`TraeAgentClient` 实现同一协议但仍是抛出 `NotImplementedError` 的桩，真实通道待契约明确后补全。
+- **RoleStore 与绑定 API**：`create_binding`/`update_binding` 已支持 `depends_on`（字符串列表）、`model`（字符串或 `None`）、`agent_env`（`coze`/`trae`），创建默认值分别为 `[]`、`None`、`coze`；旧数据在调度读取时按无依赖、无显式模型、Coze 环境兜底。绑定创建与更新路由均透传并返回这些字段，且都沿用 **HTTP 200** 和 `{"code": 0, "data": ..., "message": "ok"}` 统一响应包络，不引入新的成功状态码。
+- **ModelRouter 与模型传递**：调度器固定使用 `scene="role_agent_invoke"`，优先级为 `binding.model` 显式覆盖 → 匹配场景的 `route_rules` → `default_model`（缺省再回退构造默认值）。解析结果经 `_call_agent` 传给所选客户端；`CozeClient.chat` 在 model 非空时将其写入 `v3/chat` 请求体。**该 Coze 运行时 model 能力仅完成代码实现，未做在线验证，不能据此认定平台已经支持。**
+- **ParallelAgentExecutor 执行语义**：按 `depends_on` 使用 Kahn 算法构建拓扑层，未知依赖视为已满足，普通循环依赖和自依赖抛出 400；同层任务统一提交到注入的 Executor 并行执行，分别以该层入口 context 快照的独立浅拷贝作为输入，各层之间串行推进。
+- **重试、超时与降级**：单任务异常最多重试 2 次（共 3 次尝试），退避间隔按 `backoff * (2 ** attempt)` 增长；每个 future 默认等待 30 秒，超时调用 `cancel()` 并降级，但不假定运行中的线程被强制终止。异常、非 dict 输出或超时只将对应任务标记为 `degraded`，不阻断后续层。Trae 桩抛出的 `NotImplementedError` 同样经重试后进入降级。
+- **RoleAgentScheduler 兼容性**：`invoke_role_agents(project_id, role_id, step_order, context)` 签名及返回形状保持不变，仍返回合并后的 context dict，无命中任务时返回原 context 浅拷贝。成功输出按 `per_agent` 的稳定顺序经 `merge_result` 折叠：顶层浅合并，同名字段双方均为 dict 时再浅合并一层，保留未覆盖旧字段，不递归合并更深结构。对调用方而言，降级仅通过工具调用审计记录（`status="degraded"`）体现，内部执行结果虽含降级信息，但不会向 `invoke_role_agents` 返回的 context 或 HTTP 响应包络添加 `degraded`、`per_agent` 等字段。
+- **app.py 模块级装配**：应用模块级创建 `_role_scheduler`，注入 `ModelRouter(config_loader)` 以及 `{"coze": CozeAgentClient(...), "trae": TraeAgentClient()}`；未显式注入 `parallel_executor`，由调度器构造器缺省创建 `ParallelAgentExecutor`，随后装配 `_step_flow_engine` 并注册小说创作蓝图。
+
+---
+
+## 十一、验证结论
+
+- **方案 A 已按 Task 1–11 落地**：动态绑定扩展、双环境客户端协议、模型路由、DAG 并行执行、稳定性策略与应用装配均已接入现有调用链。
+- **三项核心能力的实际边界**：能力 1 已实现；能力 2 已完成协议与 Coze 通道接入，但 Trae 真实通道仍是协议桩；能力 3 已完成路由与 Coze model 请求字段的代码实现，但 Coze 在线支持情况尚未验证。
+- **最终验证**：全量 Python 回归 **701 passed**，`compileall` 与 `git diff --check` 通过；后端、安全与数据、依赖与模块规范检查均为 0 条违规（后端/安全扫描额外排除本地 `.venv`）。前端规范因本机无 Node 未执行，本次未修改前端文件。
+- **后续开放项不变**：仍需明确 Trae 调用通道契约并实测 Coze 运行时模型参数；外层超时后的后台调用收尾仍是已知限制。

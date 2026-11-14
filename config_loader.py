@@ -3,6 +3,7 @@
 负责 global_config.json 的加载与保存
 """
 
+import copy
 import json
 import os
 import secrets
@@ -23,7 +24,12 @@ DEFAULT_GLOBAL_CONFIG = {
     "admin_password": "",
     "site_name": "StoryForgeAI",
     "site_description": "AI 作品展示平台",
-    "theme": "light"
+    "theme": "light",
+    "model_config": {
+        "models": [],
+        "default_model": "default",
+        "route_rules": [],
+    },
 }
 
 
@@ -54,7 +60,7 @@ class ConfigLoader:
             dict: 全局配置字典
         """
         if not os.path.exists(self.global_config_path):
-            default = dict(DEFAULT_GLOBAL_CONFIG)
+            default = copy.deepcopy(DEFAULT_GLOBAL_CONFIG)
             default["admin_password"] = self._hash_password(self._generate_password())
             self.save_global_config(default)
             return default
@@ -65,7 +71,11 @@ class ConfigLoader:
             # 确保必要字段存在
             for key, value in DEFAULT_GLOBAL_CONFIG.items():
                 if key not in config:
-                    config[key] = value
+                    config[key] = copy.deepcopy(value)
+            model_config = config.setdefault("model_config", {})
+            for key, value in DEFAULT_GLOBAL_CONFIG["model_config"].items():
+                if key not in model_config:
+                    model_config[key] = copy.deepcopy(value)
             if not config.get("admin_password"):
                 config["admin_password"] = self._hash_password(self._generate_password())
                 self.save_global_config(config)
@@ -78,7 +88,7 @@ class ConfigLoader:
             return config
         except (json.JSONDecodeError, IOError) as e:
             _logger.warning(f"[警告] 加载全局配置失败: {e}，使用默认配置")
-            default = dict(DEFAULT_GLOBAL_CONFIG)
+            default = copy.deepcopy(DEFAULT_GLOBAL_CONFIG)
             default["admin_password"] = self._hash_password(self._generate_password())
             return default
 

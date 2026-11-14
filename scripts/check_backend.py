@@ -21,7 +21,7 @@ import sys
 ROOT_DEFAULT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 TARGET_PY = re.compile(r"\.py$")
 # 后端相关文件（排除测试、docs-archive、static/templates、scripts 自身）
-EXCLUDE_DIRS = {"__pycache__", ".git", "docs-archive", "docs", "data", ".pytest_cache", "tests", "node_modules", "scripts", ".uploads", ".vscode"}
+EXCLUDE_DIRS = {"__pycache__", ".git", "docs-archive", "docs", "data", ".pytest_cache", "tests", "node_modules", "scripts", ".uploads", ".vscode", ".venv", "venv", ".tox"}
 # 敏感字段（安全规范 2.1）
 SENSITIVE_KEYS = {"pat_token", "access_code", "api_key", "secret", "token"}
 # 模块间跨模块 import 检查：modules/<模块>/ 禁止 import 其它模块内部符号

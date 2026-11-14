@@ -1401,10 +1401,20 @@ from modules.novel_creation.role_agent_scheduler import RoleAgentScheduler
 from modules.novel_creation.step_flow_engine import StepFlowEngine
 from modules.novel_creation.tool_registry import create_default_registry
 from modules.novel_creation.routes import create_blueprint
+from modules.novel_creation.model_router import ModelRouter
+from modules.novel_creation.agent_client import CozeAgentClient
+from modules.novel_creation.trae_agent_client import TraeAgentClient
 
 _project_store = ProjectStore(os.path.join(DATA_DIR, "projects"))
 _role_store = RoleStore(os.path.join(DATA_DIR, "projects"))
-_role_scheduler = RoleAgentScheduler(_role_store, _project_store, coze_client)
+_role_scheduler = RoleAgentScheduler(
+    _role_store, _project_store, coze_client,
+    model_router=ModelRouter(config_loader),
+    clients={
+        "coze": CozeAgentClient(coze_client),
+        "trae": TraeAgentClient(),
+    },
+)
 _step_flow_engine = StepFlowEngine(_role_scheduler, _role_store)
 _tool_registry = create_default_registry()
 

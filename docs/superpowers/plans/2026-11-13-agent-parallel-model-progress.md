@@ -3,7 +3,7 @@
 > 生成日期：2026-11-13
 > 对应实现计划：`docs/superpowers/plans/2026-11-agent-parallel-model.md`
 > 对应设计文档：`docs/superpowers/specs/2026-11-13-agent-parallel-model-design.md`
-> 当前进度：**0 / 12 任务完成**（未开始）
+> 当前进度：**12 / 12 任务完成**
 
 ---
 
@@ -12,12 +12,12 @@
 | 指标 | 值 |
 |---|---|
 | 任务总数 | 12 |
-| 已完成 | 0 |
+| 已完成 | 12 |
 | 进行中 | 0 |
-| 未开始 | 12 |
-| 完成率 | 0% |
+| 未开始 | 0 |
+| 完成率 | 100% |
 
-**当前状态**：全部任务未开始，无任何任务相关代码文件或测试文件产生。
+**当前状态**：Task 1-12 已完成；全量 Python 回归 701 项通过，语法编译及后端、安全、依赖规范检查通过；前端规范因本机无 Node 未执行，保留该环境限制。
 
 ---
 
@@ -38,18 +38,18 @@
 
 | # | 任务 | 涉及文件 | 依赖 | 状态 | 完成标准 |
 |---|---|---|---|---|---|
-| 1 | AgentClient 抽象协议 + CozeAgentClient 包装 | 新建 `agent_client.py`、`tests/test_agent_client.py` | — | ⬜ 未开始 | `pytest tests/test_agent_client.py` 通过（2 passed） |
-| 2 | TraeAgentClient 协议桩 | 新建 `trae_agent_client.py`，追加 `test_agent_client.py` | 1 | ⬜ 未开始 | `pytest tests/test_agent_client.py` 通过（3 passed） |
-| 3 | role_store 绑定字段白名单扩展 | 修改 `role_store.py`，追加 `test_role_store.py` | — | ⬜ 未开始 | `pytest tests/test_role_store.py` 通过（含 depends_on/model/agent_env 校验） |
-| 4 | config_loader 新增 model_config | 修改 `config_loader.py`，新建 `test_config_model.py` | — | ⬜ 未开始 | `pytest tests/test_config_model.py` 通过 |
-| 5 | ModelRouter 模型路由层 | 新建 `model_router.py`、`test_model_router.py` | 4 | ⬜ 未开始 | `pytest tests/test_model_router.py` 通过（5 passed） |
-| 6 | CozeClient.chat 支持可选 model | 修改 `coze_client.py`，追加 `test_coze_client.py` | — | ⬜ 未开始 | `pytest tests/test_coze_client.py` 通过（body 含 model） |
-| 7 | ParallelAgentExecutor（DAG + 并行 + 超时/重试/降级） | 新建 `parallel_agent_executor.py`、`test_parallel_agent_executor.py` | — | ⬜ 未开始 | `pytest tests/test_parallel_agent_executor.py` 通过 |
-| 8 | RoleAgentScheduler 委托并行 + 模型路由 | 修改 `role_agent_scheduler.py`，追加 `test_role_agent_scheduler.py` | 5,7 | ⬜ 未开始 | 新增测试通过 + 既有测试不回归 |
-| 9 | routes.py 端点接受扩展字段 | 修改 `routes.py`，追加 `test_novel_creation_routes.py` | 3 | ⬜ 未开始 | `pytest tests/test_novel_creation_routes.py` 通过 |
-| 10 | app.py 装配注入 | 修改 `app.py`，追加 `test_app.py` | 5,7 | ⬜ 未开始 | `pytest tests/test_app.py` 通过 |
-| 11 | 集成测试（端到端多 Agent 并行聚合） | 新建 `test_parallel_integration.py` | 1,5,7,8 | ⬜ 未开始 | `pytest tests/test_parallel_integration.py` 通过 |
-| 12 | 全量回归 + 文档同步 | 修改设计文档 | 1-11 | ⬜ 未开始 | `pytest tests/` 全部 PASS（含既有 30+ 测试不回归） |
+| 1 | AgentClient 抽象协议 + CozeAgentClient 包装 | 新建 `agent_client.py`、`tests/test_agent_client.py` | — | 已完成 | `pytest tests/test_agent_client.py` 通过（2 passed） |
+| 2 | TraeAgentClient 协议桩 | 新建 `trae_agent_client.py`，追加 `test_agent_client.py` | 1 | 已完成 | `pytest tests/test_agent_client.py` 通过（3 passed） |
+| 3 | role_store 绑定字段白名单扩展 | 修改 `role_store.py`，追加 `test_role_store.py` | — | 已完成 | `pytest tests/test_role_store.py` 通过（40 passed，含 depends_on/model/agent_env 校验） |
+| 4 | config_loader 新增 model_config | 修改 `config_loader.py`，新建 `test_config_model.py` | — | 已完成 | `pytest tests/test_config_model.py` 通过（5 passed） |
+| 5 | ModelRouter 模型路由层 | 新建 `model_router.py`、`test_model_router.py` | 4 | 已完成 | `pytest tests/test_model_router.py` 通过（5 passed，含动态配置与 override） |
+| 6 | CozeClient.chat 支持可选 model | 修改 `coze_client.py`，追加 `test_coze_client.py` | — | 已完成 | `pytest tests/test_coze_client.py` 通过（37 passed，body 含可选 model） |
+| 7 | ParallelAgentExecutor（DAG + 并行 + 超时/重试/降级） | 新建 `parallel_agent_executor.py`、`test_parallel_agent_executor.py` | — | 已完成 | `pytest tests/test_parallel_agent_executor.py` 通过（13 passed，含自环与迟到输出隔离） |
+| 8 | RoleAgentScheduler 委托并行 + 模型路由 | 修改 `role_agent_scheduler.py`，追加 `test_role_agent_scheduler.py` | 5,7 | 已完成 | `pytest tests/test_role_agent_scheduler.py` 通过（29 passed）；组合回归 99 passed |
+| 9 | routes.py 端点接受扩展字段 | 修改 `routes.py`，追加 `test_novel_creation_routes.py` | 3 | 已完成 | `pytest tests/test_novel_creation_routes.py` 通过（56 passed，含持久化与默认值兼容） |
+| 10 | app.py 装配注入 | 修改 `app.py`，追加 `test_app.py` | 5,7 | 已完成 | `pytest tests/test_app.py` 通过（48 passed）；组合回归 77 passed |
+| 11 | 集成测试（端到端多 Agent 并行聚合） | 新建 `test_parallel_integration.py` | 1,5,7,8 | 已完成 | `pytest tests/test_parallel_integration.py` 通过（2 passed）；组合回归 31 passed |
+| 12 | 全量回归 + 文档同步 | 修改设计文档与进度文档 | 1-11 | 已完成 | 全量 pytest 701 passed、compileall 通过；后端/安全/依赖规范 0 条；文档已同步；前端规范受 Node 环境限制未执行 |
 
 **依赖链**：Task 2←1；Task 5←4；Task 8←5,7；Task 9←3；Task 10←5,7；Task 11←1,5,7,8；Task 12←1-11。
 
@@ -57,10 +57,10 @@
 
 ## 四、当前 git 基线
 
-- 分支：`main`
-- HEAD：`ba64282 feat(F9): 角色头像生成与连线配色功能交付`
-- 工作区：存在大量与本次任务**无关**的未提交修改（app.py、storage.py、project_store.py、plot_tree.py、static/js、templates/index.html 等，为前序 F9 等改动残留），**本次 12 个任务不会触碰这些文件**，任务相关文件为新增/仅限 `modules/novel_creation/`、`coze_client.py`、`config_loader.py`、`app.py`、`tests/`、`docs/superpowers/`。
-- `docs/superpowers/` 为未跟踪目录（设计文档 + 实现计划 + 本追踪文档）。
+- 分支：`feature/agent-parallel-model`
+- HEAD：`fb93b02`
+- 工作区：仅有本功能 Task 1-12 的未提交代码、测试及文档改动；按项目 Git 规范，未经用户确认不提交。
+- 本地隔离测试环境：`.venv`，其目录已被 `.gitignore` 忽略。
 
 ---
 
@@ -68,19 +68,35 @@
 
 恢复执行时按以下步骤：
 
-1. 确认 git 状态与 HEAD（基线 `ba64282`）
-2. 确认无任务相关代码残留（`agent_client.py` / `model_router.py` / `parallel_agent_executor.py` / `trae_agent_client.py` 均不存在）
-3. 从 **Task 1** 开始派发第一个实现子代理
-4. 每个任务完成后更新本追踪文档对应状态行（⬜ → 🔄 → ✅）
+1. 确认当前分支为 `feature/agent-parallel-model`，并检查未提交改动
+2. 使用项目隔离环境 `.venv` 运行测试
+3. 实施计划已全部完成；继续开放项时，先明确 Trae 调用契约或执行 Coze model 在线验证
+4. 新增变更后同步更新本追踪文档与对应设计文档
 
 ---
 
 ## 六、开放项（实现前需与用户确认，已按可落地路径编写进计划）
 
-| # | 开放项 | 计划处理 | 影响任务 |
+| # | 开放项 | 当前处理 | 影响任务 |
 |---|---|---|---|
-| 1 | Trae 通道协议未定义 | 实现为协议桩（抛 NotImplementedError），真实接入待用户提供契约 | 2 |
-| 2 | Coze 运行时 model 未验证 | 按乐观路径实现（body 加可选 model），若实测不通过仅影响 Task 6 | 6 |
-| 3 | 超时收尾语义 | 计划 Task 7 已含 future 级超时可选实现 | 7 |
-| 4 | agent_env 字段同步 routes | Task 9 处理 | 9 |
-| 5 | HTTP 接口兼容 | 新增字段仅作请求体可选扩展，响应格式不变 | 9,12 |
+| 1 | Trae 通道协议未定义 | 已实现协议桩（抛 NotImplementedError）并接入降级路径，真实通道待用户提供契约 | 2,8 |
+| 2 | Coze 运行时 model 未验证 | 代码已通过可选 model 写入请求体，尚未做外部在线验证 | 6 |
+| 3 | 超时收尾语义 | 已实现 future 级超时、取消等待与迟到输出隔离；运行中线程不强制终止 | 7 |
+| 4 | agent_env 字段同步 routes | 已完成创建/更新端点透传、响应与持久化验证 | 9 |
+| 5 | HTTP 接口兼容 | 统一响应包络与 HTTP 200 保持不变，data 增加扩展字段 | 9,12 |
+
+---
+
+## 七、Task 12 最终验证记录
+
+| 检查 | 结果 |
+|---|---|
+| 全量 Python 回归 | `.venv\Scripts\python.exe -m pytest tests/ -q`：**701 passed** |
+| 后端语法编译 | `.venv\Scripts\python.exe -m compileall -q .`：通过 |
+| 后端源码规范 | 排除本地 `.venv` 后运行 `check_backend.py`：0 条违规 |
+| 安全与数据规范 | 排除本地 `.venv` 后运行 `check_security.py`：0 条违规 |
+| 依赖与模块规范 | `check_deps.py`：0 条违规 |
+| 前端规范 | 未执行：本机无 Node，`check_frontend.js` 无法启动；本次未修改前端文件 |
+| 差异格式 | `git diff --check`：通过 |
+
+说明：本地 `scripts/run_checks.py` 不排除 `.venv`，直接运行会扫描第三方依赖并放大违规数，因此后端与安全检查采用同一检查函数、额外排除 `.venv` 后执行。CI 的 Node 环境仍需在具备 Node 18 的环境验证。
