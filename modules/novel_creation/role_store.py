@@ -11,11 +11,14 @@ age_group/attributes/relations）。存储形态：data/projects/<project_id>.js
 
 from __future__ import annotations
 
+import logging
 import os
 from typing import Any, Dict, List, Optional
 
 from ..common.errors import bad_request, not_found
 from ..common.storage import FileLock, atomic_write_json, new_id, now_iso, read_json
+
+_logger = logging.getLogger(__name__)
 
 # F8 角色版图扩展字段（默认值），与数据结构设计 §2.1 合并。
 # 知识库角色同步（F5 → P3）新增顶层字段：personality/background/appearance。
@@ -71,6 +74,12 @@ def _validate_binding_extended_fields(fields: Dict[str, Any]) -> None:
         agent_env = fields["agent_env"]
         if not isinstance(agent_env, str) or agent_env not in _AGENT_ENVS:
             raise bad_request("agent_env 须为 coze 或 trae")
+    if "agent_ref_id" in fields:
+        agent_ref_id = fields["agent_ref_id"]
+        if agent_ref_id is not None and (
+            not isinstance(agent_ref_id, str) or not agent_ref_id.strip()
+        ):
+            raise bad_request("agent_ref_id 须为非空字符串")
 
 
 class RoleStore:
@@ -89,6 +98,13 @@ class RoleStore:
     def __init__(self, data_dir: str) -> None:
         self.data_dir = data_dir
         os.makedirs(data_dir, exist_ok=True)
+        self._on_role_created = None
+        self._on_role_deleted = None
+
+    def set_lifecycle_hooks(self, on_create=None, on_delete=None) -> None:
+        """注入角色生命周期回调（失败不阻断主流程）。"""
+        self._on_role_created = on_create
+        self._on_role_deleted = on_delete
 
     def _path(self, project_id: str) -> str:
         return os.path.join(self.data_dir, f"{project_id}.json")
@@ -136,6 +152,11 @@ class RoleStore:
             data = self._load(project_id)
             data["roles"].append(role)
             self._save(project_id, data)
+        if self._on_role_created is not None:
+            try:
+                self._on_role_created(project_id, role["id"])
+            except Exception as exc:  # noqa: BLE001 - 回调失败不阻断创建
+                _logger.warning("[角色] 创建后回调失败: %s", exc)
         return role
 
     def list_roles(self, project_id: str) -> List[Dict[str, Any]]:
@@ -184,6 +205,11 @@ class RoleStore:
             data["role_bindings"] = [b for b in data["role_bindings"] if b["role_id"] != role_id]
             data["agent_sessions"] = [s for s in data["agent_sessions"] if s["role_id"] != role_id]
             self._save(project_id, data)
+        if self._on_role_deleted is not None:
+            try:
+                self._on_role_deleted(project_id, role_id)
+            except Exception as exc:  # noqa: BLE001 - 回调失败不阻断删除
+                _logger.warning("[角色] 删除后回调失败: %s", exc)
 
     # ---------- RoleAgentBinding ----------
 
@@ -201,6 +227,7 @@ class RoleStore:
             "depends_on": extra.get("depends_on", []),
             "model": extra.get("model"),
             "agent_env": extra.get("agent_env", "coze"),
+            "agent_ref_id": extra.get("agent_ref_id"),
         }
         if not agent_id:
             raise bad_request("agent_id 不能为空")
@@ -248,7 +275,7 @@ class RoleStore:
         """更新绑定字段（白名单校验），不存在抛 404。"""
         allowed = {
             "agent_id", "step_order", "workflow_id", "enabled",
-            "depends_on", "model", "agent_env",
+            "depends_on", "model", "agent_env", "agent_ref_id",
         }
         with self._lock(project_id):
             data = self._load(project_id)
