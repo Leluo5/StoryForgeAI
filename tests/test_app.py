@@ -546,3 +546,17 @@ class TestExecute:
                            "f": "fileid", "b": "true", "num": "1.5"},
             })
             assert r.status_code == 200
+
+
+# ---------- 启动脚本 ----------
+
+class TestStartupScripts:
+    @pytest.mark.parametrize("script_name", ["start.bat", "start.sh"])
+    def test_installs_dependencies_from_requirements(self, script_name):
+        root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        script_path = os.path.join(root, script_name)
+        with open(script_path, "r", encoding="utf-8") as script_file:
+            script = script_file.read()
+
+        assert "python -m pip install -r requirements.txt" in script
+        assert "pip install flask requests flask-cors" not in script

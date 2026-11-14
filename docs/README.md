@@ -2,7 +2,7 @@
 
 > 版本：v1.0 · 状态：生效（2026-11-10）
 > 项目：StoryForgeAI —— 专业小说 AI 写作软件
-> 技术栈：Python 3.10+ / Flask / requests / flask-cors + 原生 JS（IIFE SPA）+ JSON 文件存储
+> 技术栈：Python 3.9+ / Flask / requests / flask-cors + 原生 JS（IIFE SPA）+ JSON 文件存储
 
 ---
 
