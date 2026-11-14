@@ -164,8 +164,12 @@
     }
 
     function _prefetch() {
-        // 异步预取，不阻塞首屏；Task 5/6 实现具体加载。
+        if (!state.projectId) return;
+        _loadRoles();
+        _loadAgents();
     }
+
+    async function _loadAgents() {}
 
     function _staticItems() {
         const pid = state.projectId;
@@ -240,9 +244,72 @@
 
     const CATEGORY_LABELS = { tool: '工具', nav: '导航', role: '角色', agent: '工具 Agent' };
 
-    function _roleItems() { return []; }
+    const ROLE_KEY_PREFIX = 'storyforge:active-role:';
+
+    function getActiveRole(projectId) {
+        try {
+            const raw = global.localStorage.getItem(ROLE_KEY_PREFIX + projectId);
+            return raw ? JSON.parse(raw) : null;
+        } catch (e) { return null; }
+    }
+
+    function setActiveRole(projectId, role) {
+        try { global.localStorage.setItem(ROLE_KEY_PREFIX + projectId, JSON.stringify(role)); } catch (e) { /* 隐私模式降级 */ }
+        _syncChip();
+        global.dispatchEvent(new CustomEvent('storyforge:active-role-changed', {
+            detail: { projectId: projectId, role: role },
+        }));
+    }
+
+    async function _loadRoles() {
+        if (!state.projectId || state.loadingRoles || state.roles) return;
+        state.loadingRoles = true;
+        const pid = state.projectId;
+        try {
+            const data = await _request('/api/role-map/graph?project_id=' + encodeURIComponent(pid));
+            if (state.projectId !== pid) return;
+            state.roles = ((data && data.nodes) || []).map(function (n) {
+                return { id: n.id, name: n.name || n.id };
+            });
+        } catch (e) {
+            state.roles = { error: e.message };
+        } finally {
+            state.loadingRoles = false;
+            if (state.open) _renderList();
+        }
+    }
+
+    function _roleItems() {
+        if (!state.projectId) return [];
+        if (state.loadingRoles) {
+            return [{ id: 'role-loading', category: 'role', title: '角色加载中…', disabled: true, run: function () {} }];
+        }
+        if (!state.roles) return [];
+        if (state.roles.error) {
+            return [{ id: 'role-error', category: 'role', title: '角色加载失败，点击重试', keywords: [], disabled: false,
+                run: function () { state.roles = null; _loadRoles(); } }];
+        }
+        return state.roles.map(function (role) {
+            return {
+                id: 'role:' + role.id, category: 'role', title: role.name,
+                subtitle: '角色', keywords: [role.id, role.name],
+                run: function () {
+                    setActiveRole(state.projectId, role);
+                    _toast('已切换当前角色：' + role.name, 'success');
+                },
+                actions: [{ label: '详情', run: function () {
+                    factory.close();
+                    global.StoryForgeRoleMap.openDetail({ projectId: state.projectId, roleId: role.id, roleName: role.name, apiBase: '' });
+                } }],
+            };
+        });
+    }
+
     function _agentItems() { return []; }
-    function _syncChip() { state.chip.textContent = ''; }
+    function _syncChip() {
+        const role = state.projectId ? getActiveRole(state.projectId) : null;
+        state.chip.textContent = role ? ('当前角色：' + role.name) : '未选择角色';
+    }
     function _showList() { _renderList(); }
     function _runToolCommand(cmd) { if (cmd.route) { global.location.hash = cmd.route; factory.close(); } }
     function _runNavCommand(cmd) { factory.close(); }
@@ -279,6 +346,8 @@
         toggle() { if (state.open) factory.close(); else factory.open(); },
         isOpen() { return state.open; },
         getLastRenderMs() { return state.lastRenderMs; },
+        getActiveRole: getActiveRole,
+        setActiveRole: setActiveRole,
     };
     global.StoryForgeCommandPalette = factory;
 })(typeof window !== 'undefined' ? window : globalThis);
