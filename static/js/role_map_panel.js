@@ -254,6 +254,9 @@
             this._linkLabelSel = null;
             this._raf = null;
             this._destroyed = false;
+            // P5-T5a：详情请求代次与当前角色，用于丢弃旧成长线响应
+            this._detailSeq = 0;
+            this._detailRoleId = null;
             // F9-T7：头像同步事件监听（版本图节点 + 详情侧滑 + 导入预览）
             this._onAvatarUpdated = this._onAvatarUpdated.bind(this);
             global.addEventListener('storyforge:role-avatar-updated', this._onAvatarUpdated);
@@ -961,13 +964,12 @@
         _openRoleDetail(d) {
             if (!d || !d.id) return;
             const self = this;
-            // 关闭已有详情
-            this._closeRoleDetail();
+            const roleId = d.id;
+            // P5-T5a：递增详情代次，使在途的旧成长线响应失效；
+            // 不先关闭旧详情，避免「先删后建」产生空白帧。
+            const seq = ++this._detailSeq;
 
             const panel = _el('div', { class: 'rmp-detail' });
-            this._detailEl = panel;
-            // F9-T7：记录当前详情角色数据（供头像同步事件更新 src）
-            this._detailData = d;
 
             // 头部：角色名 + 阵营色点 + 生成头像 + 关闭
             const name = d.name || d.id;
@@ -1031,15 +1033,28 @@
             const growthBox = _el('div', { class: 'rmp-detail-growth' });
             growthBox.appendChild(_el('div', { class: 'rmp-nodata', text: '成长线加载中...' }));
             panel.appendChild(growthBox);
+
+            // P5-T5a：一次性提交详情——有旧详情时原地替换，否则追加。
+            // 构建期间旧内容保持可见，构建完成后一次性替换，无空白帧。
+            const prev = this._detailEl;
+            if (prev && prev.parentNode) {
+                prev.parentNode.replaceChild(panel, prev);
+            } else {
+                this._root.appendChild(panel);
+            }
+            this._detailEl = panel;
+            this._detailData = d;
+            this._detailRoleId = roleId;
             this._detailGrowthBox = growthBox;
 
-            this._root.appendChild(panel);
-
             // F8-T10：异步加载成长线（剧情树按角色过滤）
-            this._loadGrowth(d.id);
+            this._loadGrowth(roleId, seq);
         }
 
         _closeRoleDetail() {
+            // P5-T5a：递增代次，使所有在途成长线响应失效
+            this._detailSeq += 1;
+            this._detailRoleId = null;
             if (this._detailEl) { this._detailEl.remove(); this._detailEl = null; }
             if (this._detailGrowthBox) this._detailGrowthBox = null;
             this._detailData = null;
@@ -1048,16 +1063,25 @@
         // ---------- F8-T10 成长线时间线 ----------
         // 纵向时间轴：按 order 排序渲染剧情节点；支持逐段浏览（上/下一段）、
         // 快速定位（刻度点击）、历史回溯（已读节点可点击高亮）、章节跳转（onNodeJump 钩子）。
-        async _loadGrowth(roleId) {
+        async _loadGrowth(roleId, seq) {
             if (!this.projectId) return;
             const box = this._detailGrowthBox;
             if (!box) return;
+            // P5-T5a：仅当角色、代次、面板与容器全部仍有效时才允许写 DOM；
+            // 旧请求即使晚到，也不能覆盖当前详情。
+            const self = this;
+            const isCurrent = function () {
+                return seq === self._detailSeq &&
+                    roleId === self._detailRoleId &&
+                    self._detailEl != null &&
+                    self._detailGrowthBox === box;
+            };
             try {
                 const url = this._api('/roles/' + encodeURIComponent(roleId) +
                     '?project_id=' + encodeURIComponent(this.projectId));
                 const data = await _request(url);
+                if (!isCurrent()) return;
                 const nodes = (data && data.growth && data.growth.nodes) || [];
-                if (!this._detailGrowthBox) return;
                 box.replaceChildren();
                 if (!nodes.length) {
                     box.appendChild(_el('div', { class: 'rmp-nodata', text: '暂无成长线' }));
@@ -1065,10 +1089,9 @@
                 }
                 this._renderGrowthTimeline(box, nodes);
             } catch (e) {
-                if (this._detailGrowthBox) {
-                    box.replaceChildren();
-                    box.appendChild(_el('div', { class: 'rmp-nodata', text: '成长线加载失败: ' + e.message }));
-                }
+                if (!isCurrent()) return;
+                box.replaceChildren();
+                box.appendChild(_el('div', { class: 'rmp-nodata', text: '成长线加载失败: ' + e.message }));
             }
         }
 
