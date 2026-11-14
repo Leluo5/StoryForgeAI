@@ -91,6 +91,8 @@
         <div id="plot-tree-entry" class="plot-tree-entry"></div>
         <!-- F8 角色版图入口容器（创作端挂载点） -->
         <div id="role-map-entry" class="role-map-entry"></div>
+        <!-- P5-T5b 命令面板入口容器 -->
+        <div id="command-palette-entry" class="command-palette-entry"></div>
 
         <!-- Chat 类型 -->
         <div id="view-chat" class="work-view hidden">
@@ -447,6 +449,8 @@
     <script src="/static/js/plot_tree_panel.js?v=2"></script>
     <!-- F8 角色版图面板组件（全局 StoryForgeRoleMap） -->
     <script src="/static/js/role_map_panel.js?v=12"></script>
+    <!-- P5-T5b 命令面板组件（全局 StoryForgeCommandPalette） -->
+    <script src="/static/js/tool_panel.js?v=1"></script>
     <!-- F7 剧情树入口初始化：在创作端（page-work）挂载剧情树按钮 -->
     <script>
         (function () {
@@ -484,15 +488,23 @@
                     onClose: function () { mountRoleMapEntry(); }
                 });
             }
+            function mountCommandEntry() {
+                const entry = document.getElementById('command-palette-entry');
+                if (!entry || !window.StoryForgeCommandPalette) return;
+                entry.replaceChildren();
+                window.StoryForgeCommandPalette.createButton({ mountEl: entry });
+            }
             // 页面切换时重新挂载（page-work 每次进入都刷新入口）
             document.addEventListener('DOMContentLoaded', function () {
                 mountPlotEntry();
                 mountRoleMapEntry();
+                mountCommandEntry();
                 // 监听 hash 变化，重新进入 page-work 时确保入口存在
                 window.addEventListener('hashchange', function () {
                     if (window.location.hash.indexOf('#work/') === 0) {
                         mountPlotEntry();
                         mountRoleMapEntry();
+                        mountCommandEntry();
                     }
                 });
                 // 作品加载完成后重新挂载入口（此时 state.currentWork.project_id 已就绪，
@@ -500,6 +512,7 @@
                 document.addEventListener('storyforge:work-loaded', function () {
                     mountPlotEntry();
                     mountRoleMapEntry();
+                    mountCommandEntry();
                 });
             });
         })();

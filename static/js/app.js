@@ -194,6 +194,7 @@
     async function showHome() {
         state.currentView = 'home';
         state.currentWorkId = null;
+        state.currentWork = null;
         showPage('page-home');
         window.location.hash = '';
 
