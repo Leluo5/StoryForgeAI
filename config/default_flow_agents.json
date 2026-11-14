@@ -1,0 +1,16 @@
+{
+  "version": 1,
+  "steps": [
+    {"step_order": 1, "name": "外貌特征", "desc": "角色外观设定", "platform": "coze", "platform_config": {"bot_id": "", "workspace_id": ""}, "model_config": {}},
+    {"step_order": 2, "name": "个性特点", "desc": "性格特质", "platform": "coze", "platform_config": {"bot_id": "", "workspace_id": ""}, "model_config": {}},
+    {"step_order": 3, "name": "思维方式", "desc": "认知模式", "platform": "coze", "platform_config": {"bot_id": "", "workspace_id": ""}, "model_config": {}},
+    {"step_order": 4, "name": "个人能力", "desc": "技能特长", "platform": "coze", "platform_config": {"bot_id": "", "workspace_id": ""}, "model_config": {}},
+    {"step_order": 5, "name": "情感状态", "desc": "当前情绪", "platform": "coze", "platform_config": {"bot_id": "", "workspace_id": ""}, "model_config": {}},
+    {"step_order": 6, "name": "文化背景", "desc": "出身文化", "platform": "coze", "platform_config": {"bot_id": "", "workspace_id": ""}, "model_config": {}},
+    {"step_order": 7, "name": "信仰道德", "desc": "价值观与信念", "platform": "coze", "platform_config": {"bot_id": "", "workspace_id": ""}, "model_config": {}},
+    {"step_order": 8, "name": "成长线", "desc": "成长弧线", "platform": "coze", "platform_config": {"bot_id": "", "workspace_id": ""}, "model_config": {}},
+    {"step_order": 9, "name": "经历沉淀", "desc": "过往经历", "platform": "coze", "platform_config": {"bot_id": "", "workspace_id": ""}, "model_config": {}},
+    {"step_order": 10, "name": "人际关系", "desc": "社交网络", "platform": "coze", "platform_config": {"bot_id": "", "workspace_id": ""}, "model_config": {}},
+    {"step_order": 11, "name": "情节发展", "desc": "参与剧情", "platform": "coze", "platform_config": {"bot_id": "", "workspace_id": ""}, "model_config": {}}
+  ]
+}

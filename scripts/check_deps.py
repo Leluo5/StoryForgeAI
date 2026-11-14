@@ -69,7 +69,8 @@ def collect_module_dirs(root):
 
 # 数据层/引擎职责文件的后缀（实际项目命名与 <模块>_store.py 约定略有出入，按职责存在性判断）
 _STORE_SUFFIXES = ("_store.py", "_parser.py", "_io.py", "store.py")
-_ENGINE_SUFFIXES = ("_engine.py", "_linker.py", "_scheduler.py", "_parser.py", "_io.py", "tree.py", "_tree.py")
+_ENGINE_SUFFIXES = ("_engine.py", "_service.py", "_linker.py", "_scheduler.py",
+                    "_parser.py", "_io.py", "tree.py", "_tree.py")
 
 
 def _has_role(files, suffixes):
