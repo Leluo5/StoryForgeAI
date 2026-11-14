@@ -169,7 +169,19 @@
         _loadAgents();
     }
 
-    async function _loadAgents() {}
+    async function _loadAgents() {
+        if (!state.projectId || state.loadingAgents || state.agents) return;
+        state.loadingAgents = true;
+        const pid = state.projectId;
+        try {
+            state.agents = await _request('/api/agents/tools?project_id=' + encodeURIComponent(pid));
+        } catch (e) {
+            state.agents = { error: e.message };
+        } finally {
+            state.loadingAgents = false;
+            if (state.open) _renderList();
+        }
+    }
 
     function _staticItems() {
         const pid = state.projectId;
@@ -305,7 +317,60 @@
         });
     }
 
-    function _agentItems() { return []; }
+    function _agentItems() {
+        if (!state.projectId) return [];
+        if (state.loadingAgents) {
+            return [{ id: 'agent-loading', category: 'agent', title: '工具 Agent 加载中…', disabled: true, run: function () {} }];
+        }
+        if (!state.agents) return [];
+        if (state.agents.error) {
+            return [{ id: 'agent-error', category: 'agent', title: '工具 Agent 加载失败，点击重试', disabled: false,
+                run: function () { state.agents = null; _loadAgents(); } }];
+        }
+        const items = [];
+        state.agents.forEach(function (group) {
+            (group.agents || []).forEach(function (agent) {
+                const active = agent.status === 'active';
+                const isDefault = agent.id === group.default_agent_id;
+                items.push({
+                    id: 'agent:' + agent.id, category: 'agent',
+                    title: group.tool_name + ' / ' + agent.name,
+                    subtitle: (agent.platform || 'coze') + (isDefault ? ' · 当前默认' : '') + (active ? '' : ' · 不可用'),
+                    keywords: [group.tool_name, agent.name], disabled: !active || isDefault,
+                    run: function () { _switchAgent(group.tool_name, agent); },
+                });
+            });
+        });
+        return items;
+    }
+
+    async function _switchAgent(toolName, agent) {
+        if (state.executing) return;
+        state.executing = true;
+        try {
+            await _request('/api/agents/tools/' + encodeURIComponent(toolName) + '/switch', {
+                method: 'POST',
+                body: JSON.stringify({ project_id: state.projectId, agent_id: agent.id }),
+            });
+            state.agents.forEach(function (group) {
+                if (group.tool_name === toolName) group.default_agent_id = agent.id;
+            });
+            _toast('已切换：' + toolName + ' → ' + agent.name, 'success');
+            _renderList();
+        } catch (e) {
+            _toast('切换失败: ' + e.message, 'error');
+        } finally {
+            state.executing = false;
+        }
+    }
+
+    function _defaultAgentLabel(toolName) {
+        if (!state.agents || state.agents.error) return '未配置默认 Agent';
+        const group = state.agents.find(function (g) { return g.tool_name === toolName; });
+        if (!group || !group.default_agent_id) return '未配置默认 Agent';
+        const agent = (group.agents || []).find(function (a) { return a.id === group.default_agent_id; });
+        return agent ? ('默认 Agent：' + agent.name + '（' + (agent.platform || 'coze') + '）') : '未配置默认 Agent';
+    }
     function _syncChip() {
         const role = state.projectId ? getActiveRole(state.projectId) : null;
         state.chip.textContent = role ? ('当前角色：' + role.name) : '未选择角色';
