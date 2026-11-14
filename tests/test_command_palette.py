@@ -12,6 +12,7 @@ BASE = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 PANEL = os.path.join(BASE, "static", "js", "tool_panel.js")
 ROLE_MAP = os.path.join(BASE, "static", "js", "role_map_panel.js")
 INDEX = os.path.join(BASE, "templates", "index.html")
+APP = os.path.join(BASE, "static", "js", "app.js")
 
 REGISTERED_TOOLS = [
     "gen_outline", "gen_chapter", "gen_character_image", "gen_world_map",
@@ -89,6 +90,18 @@ class RoleMapOpenDetailInvariantTest(unittest.TestCase):
     def test_mount_supports_open_role_id(self):
         self.assertIn("this.openRoleId = opts.openRoleId || null;", self.src)
         self.assertIn("this._openRoleDetail(node)", self.src)
+
+
+class HomeContextInvariantTest(unittest.TestCase):
+    def test_show_home_clears_current_work_context(self):
+        src = _read(APP)
+        start = src.find("    async function showHome() {")
+        self.assertGreater(start, -1, "未找到 showHome()")
+        end = src.find("\n    }", start)
+        self.assertGreater(end, start, "未找到 showHome() 结束位置")
+        body = src[start:end]
+        self.assertIn("state.currentWorkId = null;", body)
+        self.assertIn("state.currentWork = null;", body, "返回首页必须清空旧作品上下文")
 
 
 class IndexEntryInvariantTest(unittest.TestCase):
