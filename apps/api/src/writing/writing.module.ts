@@ -9,14 +9,16 @@ import { WorkController } from './work.controller';
 import { WorkService } from './work.service';
 import { StructureController } from './structure.controller';
 import { StructureService } from './structure.service';
+import { ChapterSaveController } from './chapter-save.controller';
+import { ChapterSaveService } from './chapter-save.service';
 
 @Module({
   imports: [
     TypeOrmModule.forFeature([WorkEntity, VolumeEntity, ChapterEntity, ChapterChangeEntity]),
     AuthModule
   ],
-  providers: [WorkService, StructureService],
-  controllers: [WorkController, StructureController],
+  providers: [WorkService, StructureService, ChapterSaveService],
+  controllers: [WorkController, StructureController, ChapterSaveController],
   exports: [WorkService]
 })
 export class WritingModule {}
