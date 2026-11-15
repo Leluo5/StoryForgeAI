@@ -10,7 +10,8 @@
     "start": "tsx src/main.ts",
     "start:dev": "tsx watch src/main.ts",
     "start:prod": "node dist/main.js",
-    "migration:run": "tsx ./node_modules/typeorm/cli.js migration:run -d src/database/data-source.ts"
+    "migration:run": "tsx ./node_modules/typeorm/cli.js migration:run -d src/database/data-source.ts",
+    "bootstrap:author": "tsx src/auth/bootstrap-author.ts"
   },
   "dependencies": {
     "@nestjs/common": "^11.2.10",
@@ -18,6 +19,7 @@
     "@nestjs/platform-express": "^11.2.10",
     "@nestjs/typeorm": "^11.0.3",
     "@storyforge/contracts": "workspace:*",
+    "argon2": "^0.45.2",
     "dotenv": "^16.6.1",
     "pg": "^8.23.1",
     "reflect-metadata": "^0.2.2",
