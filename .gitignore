@@ -52,3 +52,6 @@ test-results/
 .env
 .env.*
 !.env.example
+
+# 本地 brainstorm 产物
+.superpowers/
