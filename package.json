@@ -8,13 +8,17 @@
     "test": "pnpm --filter @storyforge/contracts build && node --test tests/node/*.test.mjs && pnpm vitest run",
     "test:e2e": "pnpm --filter @storyforge/contracts build && playwright test",
     "verify:m0": "node scripts/verify-m0.mjs",
+    "verify:m1:db": "node scripts/verify-m1-db-failure.mjs",
+    "verify:m1": "node scripts/verify-m1.mjs",
     "typecheck": "pnpm -r typecheck",
     "lint": "pnpm -r lint",
     "ci": "pnpm --filter @storyforge/contracts build && pnpm lint && pnpm typecheck && pnpm test && pnpm build",
     "postinstall": "node scripts/repair-workspace-links.mjs"
   },
   "devDependencies": {
+    "@axe-core/playwright": "^4.10.2",
     "@playwright/test": "^1.51.1",
+    "@storyforge/editor-schema": "workspace:*",
     "dotenv": "^16.5.0",
     "vitest": "^3.2.0"
   }
