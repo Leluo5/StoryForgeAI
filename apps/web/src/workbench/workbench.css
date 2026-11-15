@@ -35,6 +35,8 @@
 [role='treeitem'] { margin: var(--sp-1) 0; }
 [role='treeitem'] a { display: inline-block; padding: var(--sp-2); color: var(--text-primary); text-decoration: none; }
 [role='treeitem'][aria-selected='true'] > a { color: var(--brand-600); background: var(--brand-100); border-radius: var(--radius-md); }
+/* 深色主题下 brand-600 在 brand-100 上对比度不足，改用浅色强调 */
+[data-theme='dark'] [role='treeitem'][aria-selected='true'] > a { color: var(--brand-400); }
 .volume-row { display: flex; flex-wrap: wrap; align-items: center; gap: var(--sp-1); margin-top: var(--sp-3); }
 .tree-actions { margin: var(--sp-3) 0; }
 .panel-trigger { display: none; }

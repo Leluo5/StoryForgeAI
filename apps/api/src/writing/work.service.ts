@@ -2,7 +2,7 @@ import { randomUUID } from 'node:crypto';
 import { createHash } from 'node:crypto';
 import { canonicalizeDocument, createEmptyDocument } from '@storyforge/editor-schema';
 import type { CreateWorkRequest, CreateWorkResponse, UpdateWorkRequest, Work } from '@storyforge/contracts';
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { Injectable, Inject, NotFoundException } from '@nestjs/common';
 import { DataSource } from 'typeorm';
 import { WorkEntity } from '../database/work.entity';
 import { VolumeEntity } from '../database/volume.entity';
@@ -22,7 +22,7 @@ export function toWork(work: WorkEntity): Work {
 
 @Injectable()
 export class WorkService {
-  constructor(private readonly dataSource: DataSource) {}
+  constructor(@Inject(DataSource) private readonly dataSource: DataSource) {}
 
   async create(authorId: string, input: CreateWorkRequest): Promise<CreateWorkResponse> {
     return this.dataSource.transaction(async (manager) => {

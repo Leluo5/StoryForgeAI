@@ -1,0 +1,10 @@
+.app-session {
+  display: flex; align-items: center; justify-content: flex-end; gap: var(--sp-2);
+  padding: var(--sp-1) var(--sp-4); color: var(--text-secondary);
+  background: var(--bg-secondary); border-bottom: 1px solid var(--border-color);
+  font-size: var(--fs-small);
+}
+.app-session button {
+  min-height: 28px; padding: var(--sp-1) var(--sp-2); color: var(--text-primary);
+  background: var(--bg-tertiary); border: 1px solid var(--border-color); border-radius: var(--radius-md);
+}

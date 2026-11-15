@@ -1,6 +1,6 @@
 import type { CreateWorkRequest, UpdateWorkRequest } from '@storyforge/contracts';
 import { createWorkRequestSchema, updateWorkRequestSchema } from '@storyforge/contracts';
-import { Body, Controller, Get, Param, Patch, Post, Query, Req, UseGuards } from '@nestjs/common';
+import { Body, Controller, Get, Inject, Param, Patch, Post, Query, Req, UseGuards } from '@nestjs/common';
 import { SessionGuard } from '../auth/session.guard';
 import { ok, type AuthenticatedRequest } from '../common/http';
 import { CsrfGuard } from '../auth/csrf.guard';
@@ -10,7 +10,7 @@ import { WorkService } from './work.service';
 @Controller('works')
 @UseGuards(SessionGuard)
 export class WorkController {
-  constructor(private readonly service: WorkService) {}
+  constructor(@Inject(WorkService) private readonly service: WorkService) {}
 
   @Get()
   async list(@Req() request: AuthenticatedRequest, @Query('q') query = '') {

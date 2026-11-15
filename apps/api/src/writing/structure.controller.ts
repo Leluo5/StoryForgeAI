@@ -1,6 +1,6 @@
 import type { ChapterInput, VolumeInput } from './structure-input.types';
 import { chapterInputSchema, reorderRequestSchema, volumeInputSchema } from '@storyforge/contracts';
-import { Body, Controller, Get, Param, Patch, Post, Put, Req, UseGuards } from '@nestjs/common';
+import { Body, Controller, Get, Inject, Param, Patch, Post, Put, Req, UseGuards } from '@nestjs/common';
 import { SessionGuard } from '../auth/session.guard';
 import { ok, type AuthenticatedRequest } from '../common/http';
 import { CsrfGuard } from '../auth/csrf.guard';
@@ -10,7 +10,7 @@ import { StructureService } from './structure.service';
 @Controller('works/:workId')
 @UseGuards(SessionGuard)
 export class StructureController {
-  constructor(private readonly service: StructureService) {}
+  constructor(@Inject(StructureService) private readonly service: StructureService) {}
 
   @Get('tree')
   async tree(@Req() request: AuthenticatedRequest, @Param('workId') workId: string) {

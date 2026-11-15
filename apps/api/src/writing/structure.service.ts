@@ -1,5 +1,5 @@
 import type { Chapter, ChapterSummary, TreeResponse, Volume } from '@storyforge/contracts';
-import { Injectable, NotFoundException, UnprocessableEntityException } from '@nestjs/common';
+import { Inject, Injectable, NotFoundException, UnprocessableEntityException } from '@nestjs/common';
 import { createHash, randomUUID } from 'node:crypto';
 import { DataSource, EntityManager } from 'typeorm';
 import { canonicalizeDocument, createEmptyDocument } from '@storyforge/editor-schema';
@@ -50,7 +50,7 @@ function assertCompleteOrder<T extends { id: string }>(current: T[], orderedIds:
 
 @Injectable()
 export class StructureService {
-  constructor(private readonly dataSource: DataSource) {}
+  constructor(@Inject(DataSource) private readonly dataSource: DataSource) {}
 
   tree(authorId: string, workId: string): Promise<TreeResponse> {
     return this.dataSource.transaction(async (manager) => {

@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { BrowserRouter, Navigate, Route, Routes } from 'react-router-dom';
 import type { SessionResponse } from '@storyforge/contracts';
 import { AuthPage } from './auth/auth-page';
-import { getSession, login } from './auth/auth-client';
+import { getSession, login, logout } from './auth/auth-client';
 import { WorksPage } from './works/works-page';
 import { WorkbenchRoute } from './workbench/workbench-page';
 
@@ -14,10 +14,16 @@ export function App() {
   }, []);
   if (loading) return <p role="status">正在恢复会话</p>;
   if (!session) return <AuthPage login={login} onSuccess={setSession} />;
-  return <BrowserRouter><Routes>
-    <Route path="/" element={<Navigate to="/works" replace />} />
-    <Route path="/works" element={<WorksPage />} />
-    <Route path="/works/:workId/write/:chapterId" element={<WorkbenchRoute />} />
-    <Route path="*" element={<Navigate to="/works" replace />} />
-  </Routes></BrowserRouter>;
+  return <BrowserRouter>
+    <header className="app-session">
+      <span>{session.author.display_name}</span>
+      <button type="button" onClick={() => { void logout().then(() => setSession(undefined)); }}>退出登录</button>
+    </header>
+    <Routes>
+      <Route path="/" element={<Navigate to="/works" replace />} />
+      <Route path="/works" element={<WorksPage />} />
+      <Route path="/works/:workId/write/:chapterId" element={<WorkbenchRoute />} />
+      <Route path="*" element={<Navigate to="/works" replace />} />
+    </Routes>
+  </BrowserRouter>;
 }

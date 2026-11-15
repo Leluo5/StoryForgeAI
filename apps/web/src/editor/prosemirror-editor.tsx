@@ -49,5 +49,6 @@ export function ProseMirrorEditor({ initialDocument, readOnly, onDocument }: Pro
     if (canonicalizeDocument(editor.state.doc.toJSON()) === canonicalizeDocument(next.toJSON())) return;
     editor.updateState(EditorState.create({ doc: next, plugins: editor.state.plugins }));
   }, [initialDocument]);
-  return <div ref={host} aria-label="富文本正文" />;
+  // contenteditable 的通用容器必须带 textbox 角色，aria-label 才合法
+  return <div ref={host} role="textbox" aria-multiline="true" aria-label="富文本正文" />;
 }

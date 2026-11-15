@@ -19,6 +19,8 @@ export interface WriterLease {
   takeover(onLost: () => void): Promise<boolean>;
   stop(): Promise<void>;
   canWrite(): boolean;
+  /** 回到前台时核对租约是否仍有效；不支持校验的实现可省略 */
+  verify?(): Promise<boolean>;
 }
 export interface WriterConflict {
   baseDocument: ProseMirrorNode;
@@ -52,6 +54,9 @@ export function useChapterWriter(options: Options) {
   const flushing = useRef<Promise<void> | undefined>(undefined);
   const autoSave = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   const ready = useRef(false);
+  // StrictMode 会先执行一次挂载清理再重新挂载，用代际号防止旧清理释放新租约
+  const generation = useRef(0);
+  const stopTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
 
   // 单飞刷新：同一时刻只允许一个同步循环，避免重复 acknowledge 与重复请求
   const flush = useCallback((): Promise<void> => {
@@ -105,6 +110,10 @@ export function useChapterWriter(options: Options) {
   }, [chapterId, workId]);
 
   useEffect(() => {
+    const run = generation.current + 1;
+    generation.current = run;
+    // 重新挂载时取消上一次清理排队中的租约释放，避免删掉本次刚申请的租约
+    if (stopTimer.current) { clearTimeout(stopTimer.current); stopTimer.current = undefined; }
     let active = true;
     ready.current = false;
     setStatus('recovering');
@@ -116,7 +125,7 @@ export function useChapterWriter(options: Options) {
         setChapter(server);
         const acquired = await lease.current.start(() => { ready.current = false; setStatus('read_only'); });
         if (!active) {
-          if (acquired) await lease.current.stop();
+          if (acquired && generation.current === run) await lease.current.stop();
           return;
         }
         const recovered = await store.current.recover(workId, chapterId);
@@ -142,7 +151,19 @@ export function useChapterWriter(options: Options) {
     }
     void initialize();
     const hidden = () => { if (window.document.visibilityState === 'hidden') void flush(); };
+    // 从后台回到前台时立即核对租约，已被其他标签接管时拒绝继续写入
+    const verifyLease = async () => {
+      if (!ready.current) return;
+      const verify = lease.current.verify;
+      if (!verify) return;
+      if (!await verify.call(lease.current)) { ready.current = false; setStatus('read_only'); }
+    };
+    const visible = () => { if (window.document.visibilityState === 'visible') void verifyLease(); };
+    const focusVerify = () => void verifyLease();
     window.document.addEventListener('visibilitychange', hidden);
+    window.document.addEventListener('visibilitychange', visible);
+    // 部分环境只触发窗口焦点事件而不触发 visibilitychange，同样需要核对租约
+    window.addEventListener('focus', focusVerify);
     return () => {
       // 卸载时先把未确认日志刷到服务端，再释放租约
       const finalFlush = ready.current && lease.current.canWrite() ? flush() : Promise.resolve();
@@ -150,7 +171,15 @@ export function useChapterWriter(options: Options) {
       ready.current = false;
       if (autoSave.current) clearTimeout(autoSave.current);
       window.document.removeEventListener('visibilitychange', hidden);
-      void finalFlush.finally(() => lease.current.stop());
+      window.document.removeEventListener('visibilitychange', visible);
+      window.removeEventListener('focus', focusVerify);
+      // 延迟到宏任务释放：同一次任务内的重新挂载会取消它，真实卸载则先 flush 再 stop
+      stopTimer.current = setTimeout(() => {
+        stopTimer.current = undefined;
+        void finalFlush.finally(() => {
+          if (generation.current === run) void lease.current.stop();
+        });
+      }, 0);
     };
   }, [chapterId, flush, workId]);
 

@@ -2,7 +2,7 @@ import { createHash, randomUUID } from 'node:crypto';
 import { isDeepStrictEqual } from 'node:util';
 import { applyOperations, canonicalizeDocument } from '@storyforge/editor-schema';
 import type { SaveChangeRequest, SaveChangeResponse } from '@storyforge/contracts';
-import { ConflictException, Injectable, NotFoundException, UnprocessableEntityException } from '@nestjs/common';
+import { ConflictException, Inject, Injectable, NotFoundException, UnprocessableEntityException } from '@nestjs/common';
 import { DataSource } from 'typeorm';
 import { WorkEntity } from '../database/work.entity';
 import { ChapterEntity } from '../database/chapter.entity';
@@ -10,7 +10,7 @@ import { ChapterChangeEntity } from '../database/chapter-change.entity';
 
 @Injectable()
 export class ChapterSaveService {
-  constructor(private readonly dataSource: DataSource) {}
+  constructor(@Inject(DataSource) private readonly dataSource: DataSource) {}
 
   save(authorId: string, workId: string, chapterId: string, input: SaveChangeRequest): Promise<SaveChangeResponse> {
     return this.dataSource.transaction(async (manager) => {
