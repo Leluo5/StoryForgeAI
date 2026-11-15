@@ -17,5 +17,5 @@
     "prosemirror-transform": "^1.10.4",
     "zod": "^3.25.0"
   },
-  "devDependencies": { "typescript": "^5.8.3", "vitest": "^3.2.0" }
+  "devDependencies": { "typescript": "^5.8.3", "vitest": "^3.2.0", "@types/node": "^22" }
 }

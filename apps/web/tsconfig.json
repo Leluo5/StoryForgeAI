@@ -8,7 +8,7 @@
     "jsx": "react-jsx",
     "noEmit": true,
     "esModuleInterop": true,
-    "types": ["node", "vitest/globals", "@testing-library/jest-dom"]
+    "types": ["node", "vite/client", "vitest/globals", "@testing-library/jest-dom"]
   },
   "include": ["src", "vite.config.ts"]
 }

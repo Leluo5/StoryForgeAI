@@ -13,8 +13,10 @@
   },
   "dependencies": {
     "@storyforge/contracts": "workspace:*",
+    "@storyforge/design-tokens": "workspace:*",
     "react": "^19.1.0",
     "react-dom": "^19.1.0",
+    "react-router-dom": "^7.6.0",
     "zod": "^3.25.0"
   },
   "devDependencies": {
