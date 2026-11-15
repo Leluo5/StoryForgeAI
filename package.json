@@ -1,0 +1,16 @@
+{
+  "name": "storyforge-ai",
+  "private": true,
+  "engines": { "node": "22.16.0" },
+  "packageManager": "pnpm@10.12.4",
+  "scripts": {
+    "build": "pnpm -r build",
+    "test": "node --test tests/node/*.test.mjs && pnpm -r test",
+    "typecheck": "pnpm -r typecheck",
+    "lint": "pnpm -r lint",
+    "ci": "pnpm lint && pnpm typecheck && pnpm test && pnpm build"
+  },
+  "devDependencies": {
+    "vitest": "^3.2.0"
+  }
+}
