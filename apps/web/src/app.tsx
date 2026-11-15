@@ -4,6 +4,7 @@ import type { SessionResponse } from '@storyforge/contracts';
 import { AuthPage } from './auth/auth-page';
 import { getSession, login } from './auth/auth-client';
 import { WorksPage } from './works/works-page';
+import { WorkbenchRoute } from './workbench/workbench-page';
 
 export function App() {
   const [session, setSession] = useState<SessionResponse>();
@@ -16,6 +17,7 @@ export function App() {
   return <BrowserRouter><Routes>
     <Route path="/" element={<Navigate to="/works" replace />} />
     <Route path="/works" element={<WorksPage />} />
+    <Route path="/works/:workId/write/:chapterId" element={<WorkbenchRoute />} />
     <Route path="*" element={<Navigate to="/works" replace />} />
   </Routes></BrowserRouter>;
 }
