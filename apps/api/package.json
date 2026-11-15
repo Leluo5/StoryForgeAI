@@ -20,6 +20,7 @@
     "@nestjs/typeorm": "^11.0.3",
     "@storyforge/contracts": "workspace:*",
     "argon2": "^0.45.2",
+    "cookie-parser": "^1.4.7",
     "dotenv": "^16.6.1",
     "pg": "^8.23.1",
     "reflect-metadata": "^0.2.2",
@@ -29,6 +30,7 @@
   },
   "devDependencies": {
     "@nestjs/testing": "^11.2.10",
+    "@types/cookie-parser": "^1.4.10",
     "@types/express": "^5.0.6",
     "@types/node": "^22.20.5",
     "@types/pg": "^8.23.1",
