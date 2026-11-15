@@ -11,7 +11,8 @@
     "start:dev": "tsx watch src/main.ts",
     "start:prod": "node dist/main.js",
     "migration:run": "tsx ./node_modules/typeorm/cli.js migration:run -d src/database/data-source.ts",
-    "bootstrap:author": "tsx src/auth/bootstrap-author.ts"
+    "bootstrap:author": "tsx src/auth/bootstrap-author.ts",
+    "test:prepare": "tsx test/prepare-e2e.ts"
   },
   "dependencies": {
     "@nestjs/common": "^11.2.10",
