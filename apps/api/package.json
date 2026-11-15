@@ -20,6 +20,7 @@
     "@nestjs/platform-express": "^11.2.10",
     "@nestjs/typeorm": "^11.0.3",
     "@storyforge/contracts": "workspace:*",
+    "@storyforge/editor-schema": "workspace:*",
     "argon2": "^0.45.2",
     "cookie-parser": "^1.4.7",
     "dotenv": "^16.6.1",

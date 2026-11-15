@@ -35,6 +35,9 @@ importers:
       '@storyforge/contracts':
         specifier: workspace:*
         version: link:../../packages/contracts
+      '@storyforge/editor-schema':
+        specifier: workspace:*
+        version: link:../../packages/editor-schema
       argon2:
         specifier: ^0.45.2
         version: 0.45.2
