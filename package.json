@@ -1,0 +1,21 @@
+{
+  "name": "storyforge-ai",
+  "private": true,
+  "engines": { "node": "22.16.0" },
+  "packageManager": "pnpm@10.12.4",
+  "scripts": {
+    "build": "pnpm -r build",
+    "test": "pnpm --filter @storyforge/contracts build && node --test tests/node/*.test.mjs && pnpm vitest run",
+    "test:e2e": "pnpm --filter @storyforge/contracts build && playwright test",
+    "verify:m0": "node scripts/verify-m0.mjs",
+    "typecheck": "pnpm -r typecheck",
+    "lint": "pnpm -r lint",
+    "ci": "pnpm --filter @storyforge/contracts build && pnpm lint && pnpm typecheck && pnpm test && pnpm build",
+    "postinstall": "node scripts/repair-workspace-links.mjs"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.51.1",
+    "dotenv": "^16.5.0",
+    "vitest": "^3.2.0"
+  }
+}

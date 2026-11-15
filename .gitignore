@@ -41,3 +41,17 @@ scripts/cdp_tmp/
 
 # 历史归档目录（不进主仓库）
 docs-archive/
+
+# Node 工作区
+node_modules/
+dist/
+coverage/
+.playwright/
+playwright-report/
+test-results/
+.env
+.env.*
+!.env.example
+
+# 本地 brainstorm 产物
+.superpowers/
