@@ -20,6 +20,8 @@ export default defineConfig({
     globals: true,
     environment: 'jsdom',
     setupFiles: ['./src/test/setup.ts'],
-    restoreMocks: true
+    restoreMocks: true,
+    // fake-indexeddb 用 setImmediate 推进事务，若被假定时器接管会导致租约测试死锁
+    fakeTimers: { toFake: ['setTimeout', 'clearTimeout', 'setInterval', 'clearInterval', 'Date'] }
   }
 });
