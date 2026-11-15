@@ -4,7 +4,7 @@ import { useEffect, useRef, useState } from 'react';
 import type { WriterConflict } from './use-chapter-writer';
 
 interface Props {
-  conflict?: WriterConflict;
+  conflict?: WriterConflict | undefined;
   onResolve(document: ProseMirrorNode): Promise<void>;
   onRestore(): Promise<void>;
   onExport(): Promise<string>;
