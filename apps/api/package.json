@@ -10,7 +10,7 @@
     "start": "tsx src/main.ts",
     "start:dev": "tsx watch src/main.ts",
     "start:prod": "node dist/main.js",
-    "migration:run": "tsx ./node_modules/typeorm/cli.js migration:run -d src/database/data-source.ts",
+    "migration:run": "tsx src/database/run-migrations.ts",
     "bootstrap:author": "tsx src/auth/bootstrap-author.ts",
     "test:prepare": "tsx test/prepare-e2e.ts"
   },
@@ -20,6 +20,7 @@
     "@nestjs/platform-express": "^11.2.10",
     "@nestjs/typeorm": "^11.0.3",
     "@storyforge/contracts": "workspace:*",
+    "@storyforge/editor-schema": "workspace:*",
     "argon2": "^0.45.2",
     "cookie-parser": "^1.4.7",
     "dotenv": "^16.6.1",
@@ -37,6 +38,8 @@
     "@types/pg": "^8.23.1",
     "@types/supertest": "^6.0.3",
     "supertest": "^7.3.2",
+    "prosemirror-model": "^1.25.1",
+    "prosemirror-transform": "^1.10.4",
     "tsx": "^4.23.15",
     "typescript": "^5.9.3",
     "vitest": "^3.2.7"

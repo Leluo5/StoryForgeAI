@@ -10,7 +10,7 @@ test('author can log in, restore a session and log out', async ({ page }, testIn
   await page.getByLabel('密码').fill(authorPassword);
   await page.getByRole('button', { name: '登录' }).click();
 
-  await expect(page.getByRole('heading', { name: '工程基座已就绪' })).toBeVisible();
+  await expect(page.getByRole('heading', { name: '作品库' })).toBeVisible();
   await expect(page.getByText(authorDisplayName)).toBeVisible();
   const sessionCookie = (await page.context().cookies()).find((cookie) => cookie.name === 'storyforge_session');
   expect(sessionCookie).toMatchObject({ httpOnly: true, sameSite: 'Lax', path: '/' });
@@ -19,7 +19,7 @@ test('author can log in, restore a session and log out', async ({ page }, testIn
   expect(visibleCookies).toContain('storyforge_csrf=');
 
   await page.reload();
-  await expect(page.getByRole('heading', { name: '工程基座已就绪' })).toBeVisible();
+  await expect(page.getByRole('heading', { name: '作品库' })).toBeVisible();
   const screenshot = testInfo.outputPath('m0-authenticated.png');
   await page.screenshot({ path: screenshot, fullPage: true });
   await testInfo.attach('m0-authenticated', { path: screenshot, contentType: 'image/png' });

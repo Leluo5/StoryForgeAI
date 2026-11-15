@@ -26,8 +26,12 @@ function assertTestDataSource(dataSource: DataSource): void {
   assertTestDatabaseUrl(url);
 }
 
-async function dropAuthTables(dataSource: DataSource): Promise<void> {
+async function dropWritingAndAuthTables(dataSource: DataSource): Promise<void> {
   assertTestDataSource(dataSource);
+  await dataSource.query('DROP TABLE IF EXISTS chapter_changes CASCADE');
+  await dataSource.query('DROP TABLE IF EXISTS chapters CASCADE');
+  await dataSource.query('DROP TABLE IF EXISTS volumes CASCADE');
+  await dataSource.query('DROP TABLE IF EXISTS works CASCADE');
   await dataSource.query('DROP TABLE IF EXISTS sessions CASCADE');
   await dataSource.query('DROP TABLE IF EXISTS authors CASCADE');
   await dataSource.query('DROP TABLE IF EXISTS migrations CASCADE');
@@ -35,17 +39,17 @@ async function dropAuthTables(dataSource: DataSource): Promise<void> {
 
 export async function resetTestDatabase(dataSource: DataSource): Promise<void> {
   if (!dataSource.isInitialized) await dataSource.initialize();
-  await dropAuthTables(dataSource);
+  await dropWritingAndAuthTables(dataSource);
   await dataSource.runMigrations();
 }
 
 export async function clearAuthTables(dataSource: DataSource): Promise<void> {
   assertTestDataSource(dataSource);
-  await dataSource.query('TRUNCATE TABLE sessions, authors RESTART IDENTITY CASCADE');
+  await dataSource.query('TRUNCATE TABLE chapter_changes, chapters, volumes, works, sessions, authors RESTART IDENTITY CASCADE');
 }
 
 export async function destroyTestDatabase(dataSource: DataSource): Promise<void> {
   if (!dataSource.isInitialized) return;
-  await dropAuthTables(dataSource);
+  await dropWritingAndAuthTables(dataSource);
   await dataSource.destroy();
 }
