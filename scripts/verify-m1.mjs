@@ -130,7 +130,13 @@ const allPassed = results.length === checks.length
   && performancePassed
   && databaseFailurePassed
   && toolchainPassed;
-const browserPassed = results.find((result) => result.id === 'browser')?.exitCode === 0;
+const browserResult = results.find((result) => result.id === 'browser');
+const browserPassed = browserResult?.exitCode === 0;
+// 只有真正执行过的验收才标记通过/未通过，前置步骤失败导致的跳过必须显示“未执行”
+const browserLabel = browserResult ? (browserPassed ? '通过' : '未通过') : '未执行';
+const databaseFailureLabel = !databaseFailure ? '未执行'
+  : databaseFailurePassed ? '通过；无半提交，重试和幂等重放均为一个版本/一条变更' : '未通过';
+const blocked = results.find((result) => result.exitCode !== 0);
 const pythonResult = results.find((result) => result.id === 'legacy-pytest');
 const pythonSummary = pythonResult?.output.trim().split(/\r?\n/).filter(Boolean).at(-1) ?? '未执行到测试汇总';
 
@@ -158,12 +164,13 @@ const report = [
   '',
   '## 写作、恢复与冲突验收',
   '',
-  `- 作品创建、富文本/Markdown、自动保存、深链和 WAL 导出：${browserPassed ? '通过' : '未通过'}。`,
-  `- 真实 Chromium 进程崩溃后 IndexedDB pending 恢复：${browserPassed ? '通过' : '未通过'}。`,
-  `- 409 三方正文保留、人工选择、多标签 TTL/fencing：${browserPassed ? '通过' : '未通过'}。`,
-  `- 断网、非法 Markdown、配额、WAL 损坏和服务端恢复：${browserPassed ? '通过' : '未通过'}。`,
-  `- 375/768/1024/1440、键盘/dialog 焦点及 axe-core：${browserPassed ? '通过' : '未通过'}。`,
-  `- 保存事务等待真实行锁时重启 PostgreSQL：${databaseFailurePassed ? '通过；无半提交，重试和幂等重放均为一个版本/一条变更' : '未通过'}。`,
+  `- 作品创建、富文本/Markdown、自动保存、深链和 WAL 导出：${browserLabel}。`,
+  `- 真实 Chromium 进程崩溃后 IndexedDB pending 恢复：${browserLabel}。`,
+  `- 409 三方正文保留、人工选择、多标签 TTL/fencing：${browserLabel}。`,
+  `- 断网、非法 Markdown、配额、WAL 损坏和服务端恢复：${browserLabel}。`,
+  `- 375/768/1024/1440、键盘/dialog 焦点及 axe-core：${browserLabel}。`,
+  `- 保存事务等待真实行锁时重启 PostgreSQL：${databaseFailureLabel}。`,
+  ...(blocked ? ['', '## 阻塞原因', '', `\`${blocked.command} ${blocked.args.join(' ')}\` 退出码 ${blocked.exitCode}：${cell(blocked.output.trim().split(/\r?\n/).filter(Boolean).slice(-3).join(' / ') || '无输出')}`] : []),
   '',
   '## M1 性能基线（不是 M5 门槛结论）',
   '',
