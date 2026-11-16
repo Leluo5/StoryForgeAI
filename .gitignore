@@ -55,3 +55,6 @@ test-results/
 
 # 本地 brainstorm 产物
 .superpowers/
+
+# 基础设施配置备份（改动前保留，禁止提交）
+infra/docker-compose.yml.bak-project

@@ -1,6 +1,6 @@
 import 'dotenv/config';
 
-const DEFAULT_TEST_DATABASE_URL = 'postgresql://storyforge:storyforge@127.0.0.1:5432/storyforge_test';
+const DEFAULT_TEST_DATABASE_URL = 'postgresql://storyforge:storyforge@127.0.0.1:5433/storyforge_test';
 
 function required(name: 'AUTHOR_EMAIL' | 'AUTHOR_DISPLAY_NAME' | 'AUTHOR_PASSWORD'): string {
   const value = process.env[name];

@@ -1,3 +1,6 @@
+# 独立 project name，避免与 car-link 的 compose（同目录 infra/）共用 project `infra` 导致容器/卷互相覆盖
+name: storyforge
+
 services:
   postgres:
     image: postgres:16
@@ -6,7 +9,7 @@ services:
       POSTGRES_PASSWORD: storyforge
       POSTGRES_DB: storyforge
     ports:
-      - "5432:5432"
+      - "5433:5432"
     volumes:
       - storyforge_pg:/var/lib/postgresql/data
     healthcheck:
@@ -15,4 +18,7 @@ services:
       timeout: 2s
       retries: 20
 volumes:
+  # 复用既有数据卷（原 project `infra` 下创建），必须 external 才能复用，避免 project 改名后新建空卷
   storyforge_pg:
+    name: infra_storyforge_pg
+    external: true

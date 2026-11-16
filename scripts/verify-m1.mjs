@@ -9,7 +9,7 @@ const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const evidenceDirectory = join(root, 'test-results', 'm1-evidence');
 const reportPath = join(root, 'docs', '05-测试与验收报告', 'M1写作基座验收报告.md');
 const pnpm = process.platform === 'win32' ? 'pnpm.cmd' : 'pnpm';
-const databaseUrl = process.env.TEST_DATABASE_URL ?? 'postgresql://storyforge:storyforge@127.0.0.1:5432/storyforge_test';
+const databaseUrl = process.env.TEST_DATABASE_URL ?? 'postgresql://storyforge:storyforge@127.0.0.1:5433/storyforge_test';
 mkdirSync(evidenceDirectory, { recursive: true });
 mkdirSync(dirname(reportPath), { recursive: true });
 

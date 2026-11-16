@@ -10,7 +10,7 @@ const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const evidenceDirectory = join(root, 'test-results', 'm1-evidence');
 const evidencePath = join(evidenceDirectory, 'db-failure.json');
 const pnpm = process.platform === 'win32' ? 'pnpm.cmd' : 'pnpm';
-const databaseUrl = process.env.TEST_DATABASE_URL ?? 'postgresql://storyforge:storyforge@127.0.0.1:5432/storyforge_test';
+const databaseUrl = process.env.TEST_DATABASE_URL ?? 'postgresql://storyforge:storyforge@127.0.0.1:5433/storyforge_test';
 const authorEmail = process.env.AUTHOR_EMAIL;
 const authorPassword = process.env.AUTHOR_PASSWORD;
 const apiRequire = createRequire(join(root, 'apps/api', 'package.json'));

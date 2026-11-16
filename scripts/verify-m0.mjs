@@ -58,7 +58,7 @@ for (const check of checks) {
   if (exitCode !== 0) break;
 }
 
-const databaseUrl = process.env.TEST_DATABASE_URL ?? 'postgresql://storyforge:storyforge@127.0.0.1:5432/storyforge_test';
+const databaseUrl = process.env.TEST_DATABASE_URL ?? 'postgresql://storyforge:storyforge@127.0.0.1:5433/storyforge_test';
 let postgresVersion = '查询失败';
 let databasePassed = false;
 const apiRequire = createRequire(join(root, 'apps/api', 'package.json'));
