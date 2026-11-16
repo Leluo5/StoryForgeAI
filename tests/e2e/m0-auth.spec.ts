@@ -26,7 +26,15 @@ test('author can log in, restore a session and log out', async ({ page }, testIn
 
   await page.getByRole('button', { name: '退出登录' }).click();
   await expect(page.getByRole('button', { name: '登录' })).toBeVisible();
-  expect((await page.context().cookies()).some((cookie) => cookie.name === 'storyforge_session')).toBe(false);
+  // 登出后 session cookie 的清除是服务端 Set-Cookie 响应异步传播到浏览器
+  // context，UI 渲染「登录」按钮与 cookie 实际清除存在微小时序差。用
+  // expect.poll 等待 cookie 真正被清除，避免偶发断言失败（M1 e2e 脆弱点）。
+  await expect
+    .poll(async () =>
+      (await page.context().cookies()).some((cookie) => cookie.name === 'storyforge_session'),
+      { timeout: 10_000 },
+    )
+    .toBe(false);
   await page.reload();
   await expect(page.getByRole('button', { name: '登录' })).toBeVisible();
 });
