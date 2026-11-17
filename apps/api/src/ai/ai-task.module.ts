@@ -16,6 +16,7 @@ import { AiTaskEventBus, AI_TASK_EVENT_BUS, AiTaskSseService } from './ai-task.s
 import { AiResultMapper } from './ai-result.mapper';
 import { MockAiModelProvider, AI_MODEL_PROVIDER } from './ai-model.provider';
 import { AiTaskController } from './ai-task.controller';
+import { env } from '../config/env';
 
 /**
  * AI 创作基座模块（M3a）。
@@ -44,7 +45,9 @@ import { AiTaskController } from './ai-task.controller';
     { provide: AI_TASK_EVENT_BUS, useExisting: AiTaskEventBus },
     AiTaskSseService,
     { provide: AI_RESULT_MAPPER, useClass: AiResultMapper },
-    { provide: AI_MODEL_PROVIDER, useClass: MockAiModelProvider }
+    // Mock 模型：E2E（NODE_ENV=test）下加 400ms 延迟，制造「发起→消费完成」的可观测窗口，
+    // 供状态机/取消用例捕获 queued/running 状态；单测直接 new MockAiModelProvider() 不受影响，生产/开发延迟为 0。
+    { provide: AI_MODEL_PROVIDER, useFactory: () => new MockAiModelProvider({ latencyMs: env.NODE_ENV === 'test' ? 400 : 0 }) }
   ],
   controllers: [AiTaskController],
   exports: [AiTaskService, AiTaskSseService, AiTaskProcessor]

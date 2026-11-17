@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { ChapterEntity } from '../database/chapter.entity';
 import { RevisionSetEntity } from '../database/revision-set.entity';
 import { AuditLogEntity } from '../database/audit-log.entity';
+import { replaceDocumentOperations } from '@storyforge/editor-schema';
 import { createWritingFixture, destroyWritingFixture, type WritingFixture } from '../../test/writing-fixture';
 import { RevisionService } from './revision.service';
 import { AuditService } from './audit.service';
@@ -129,5 +130,23 @@ describe('RevisionService', () => {
     expect(pending.total).toBe(2);
     const resolved = await service.listRevisionSets(fixture.authorId, fixture.workId, fixture.chapterId, { status: 'resolved' });
     expect(resolved.total).toBe(0);
+  });
+
+  it('applies an accepted AI revision to the chapter document and bumps the version', async () => {
+    const chapter = await fixture.dataSource.getRepository(ChapterEntity).findOneByOrFail({ id: fixture.chapterId });
+    const candidate = {
+      type: 'doc',
+      content: [{ type: 'paragraph', content: [{ type: 'text', text: 'AI 续写后的正文' }] }]
+    };
+    // 真实 ProseMirror replace step（整文档替换），applyOperations 可正确应用
+    const steps = replaceDocumentOperations(chapter.document, candidate);
+    const created = await service.createRevisionSet(fixture.authorId, fixture.workId, fixture.chapterId, {
+      actor_type: 'ai', base_version: 0, operations: steps
+    });
+    await service.resolveOperation(fixture.authorId, fixture.workId, created.revision_set.id, 0, 'accept');
+    const after = await fixture.dataSource.getRepository(ChapterEntity).findOneByOrFail({ id: fixture.chapterId });
+    // M3a D4：接受 AI 修订 → 正文真正写入 + 版本递增（M2 手工修订仅标记状态，不写正文）
+    expect(after.version).toBe(1);
+    expect(JSON.stringify(after.document)).toContain('AI 续写后的正文');
   });
 });

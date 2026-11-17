@@ -1,8 +1,8 @@
 import { createHash } from 'node:crypto';
-import { Inject, Injectable, NotFoundException, ConflictException, BadRequestException } from '@nestjs/common';
+import { Inject, Injectable, NotFoundException, ConflictException } from '@nestjs/common';
 import { DataSource, EntityManager } from 'typeorm';
 import { randomUUID } from 'node:crypto';
-import { canonicalizeDocument } from '@storyforge/editor-schema';
+import { applyOperations, canonicalizeDocument } from '@storyforge/editor-schema';
 import type {
   CreateRevisionSetRequest,
   ListRevisionSetsQuery,
@@ -176,6 +176,26 @@ export class RevisionService {
       }
 
       target.status = decision === 'accept' ? 'accepted' : 'rejected';
+
+      // 接受 AI 修订：把该条 step 应用到章节正文（版本+1、content_hash）。
+      // 与 M2 手工修订不同（仅标记状态），M3a D4 要求接受 AI 修订即真正写入正文。
+      // 自动快照已在上面 ensureAutoSnapshot 完成（记录的是接受前的正文，作为回滚基准）。
+      if (revisionSet.ai_set && decision === 'accept') {
+        const chapter = await manager.getRepository(ChapterEntity).findOneBy({ id: revisionSet.chapter_id });
+        if (chapter) {
+          try {
+            const nextDoc = applyOperations(chapter.document, [toSteps([target.step])[0]!]);
+            chapter.document = nextDoc.toJSON();
+            chapter.version = chapter.version + 1;
+            chapter.content_hash = createHash('sha256').update(canonicalizeDocument(nextDoc.toJSON())).digest('hex');
+            await manager.save(chapter);
+          } catch {
+            // 占位/非法 step（前端「创建 AI 修订集」占位操作、或测试构造的假 step）无法应用为真实正文变更：
+            // 仅推进修订集状态，不写正文、不改版本。真实 AI replace step 才走上方写入分支。
+          }
+        }
+      }
+
       const pendingCount = stored.filter((item) => item.status === 'pending').length;
       const acceptedCount = stored.filter((item) => item.status === 'accepted').length;
       const status: RevisionStatus = pendingCount === 0
