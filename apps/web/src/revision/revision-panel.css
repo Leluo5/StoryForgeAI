@@ -1,0 +1,25 @@
+.revision-panel h2 { margin: 0 0 var(--sp-3); font-size: var(--fs-h3); font-weight: var(--fw-semibold); }
+.revision-panel h3 { margin: var(--sp-4) 0 var(--sp-2); font-size: var(--fs-body-lg); font-weight: var(--fw-semibold); }
+.revision-actions { margin: var(--sp-2) 0; }
+.revision-actions button, .revision-op-actions button {
+  min-height: 28px; padding: var(--sp-1) var(--sp-2); color: var(--text-primary);
+  background: var(--bg-tertiary); border: 1px solid var(--border-color); border-radius: var(--radius-md);
+}
+.revision-actions button:disabled, .revision-op-actions button:disabled { opacity: 0.5; cursor: not-allowed; }
+.revision-set { margin: var(--sp-2) 0; padding: var(--sp-2); border: 1px solid var(--border-color); border-radius: var(--radius-md); }
+.revision-set-head { display: flex; flex-wrap: wrap; align-items: center; gap: var(--sp-2); margin-bottom: var(--sp-2); }
+.revision-set-head time { margin-left: auto; font-size: var(--fs-body-sm); color: var(--text-secondary); }
+.revision-source { padding: 0 var(--sp-2); border-radius: var(--radius-sm); font-size: var(--fs-body-sm); }
+.revision-source-ai { background: var(--brand-100); color: var(--brand-700); }
+.revision-source-rollback { background: var(--warning-100, #fef3c7); color: var(--warning-700, #92400e); }
+.revision-source-manual { background: var(--bg-tertiary); color: var(--text-secondary); }
+.revision-status { font-size: var(--fs-body-sm); color: var(--text-secondary); }
+.revision-ops { margin: 0; padding-left: 0; list-style: none; }
+.revision-op { display: flex; flex-wrap: wrap; align-items: center; gap: var(--sp-1); padding: var(--sp-1) 0; }
+.revision-op-desc { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.revision-op-status { font-size: var(--fs-body-sm); }
+.revision-op-status-pending { color: var(--warning-600, #b45309); }
+.revision-op-status-accepted { color: var(--success-600, #047857); }
+.revision-op-status-rejected { color: var(--danger-600, #b91c1c); }
+.revision-op-actions { display: inline-flex; gap: var(--sp-1); }
+.revision-empty { color: var(--text-secondary); font-size: var(--fs-body-sm); }

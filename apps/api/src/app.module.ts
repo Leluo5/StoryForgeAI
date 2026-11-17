@@ -5,9 +5,10 @@ import { RequestIdMiddleware } from './common/request-id.middleware';
 import { AppDataSource } from './database/data-source';
 import { HealthController } from './health.controller';
 import { WritingModule } from './writing/writing.module';
+import { RevisionModule } from './revision/revision.module';
 
 @Module({
-  imports: [TypeOrmModule.forRoot({ ...AppDataSource.options }), AuthModule, WritingModule],
+  imports: [TypeOrmModule.forRoot({ ...AppDataSource.options }), AuthModule, WritingModule, RevisionModule],
   controllers: [HealthController]
 })
 export class AppModule implements NestModule {

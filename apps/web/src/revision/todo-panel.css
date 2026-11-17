@@ -1,0 +1,53 @@
+.todo-compose {
+  display: flex; flex-direction: column; gap: var(--sp-2);
+  padding: var(--sp-3); margin-bottom: var(--sp-3);
+  background: var(--bg-tertiary); border: 1px solid var(--border-color); border-radius: var(--radius-md);
+}
+.todo-compose input, .todo-compose textarea {
+  padding: var(--sp-2); color: var(--text-primary); background: var(--bg-primary);
+  border: 1px solid var(--border-color); border-radius: var(--radius-sm); font: inherit;
+}
+.todo-compose textarea { resize: vertical; min-height: 48px; }
+.todo-compose button {
+  align-self: flex-start; padding: var(--sp-1) var(--sp-3);
+  color: var(--text-primary); background: var(--brand-100);
+  border: 0; border-radius: var(--radius-sm); cursor: pointer;
+}
+.todo-compose button:disabled { opacity: 0.5; cursor: not-allowed; }
+
+.todo-filter {
+  display: flex; flex-wrap: wrap; gap: var(--sp-1); padding: var(--sp-1);
+  background: var(--bg-tertiary); border: 1px solid var(--border-color); border-radius: var(--radius-md);
+  margin-bottom: var(--sp-3);
+}
+.todo-filter button {
+  flex: 1 1 auto; min-height: 26px; padding: var(--sp-1) var(--sp-2);
+  color: var(--text-primary); background: transparent; border: 0; border-radius: var(--radius-sm); cursor: pointer;
+}
+.todo-filter button.todo-filter-active { color: var(--brand-600); background: var(--brand-100); font-weight: var(--fw-semibold); }
+
+.todo-list { display: flex; flex-direction: column; gap: var(--sp-3); }
+.todo-card {
+  padding: var(--sp-3); border: 1px solid var(--border-color); border-radius: var(--radius-md);
+  background: var(--bg-primary);
+}
+.todo-card[data-status='done'] { opacity: 0.6; }
+.todo-head { display: flex; align-items: center; gap: var(--sp-2); margin-bottom: var(--sp-2); }
+.todo-status {
+  padding: 1px 8px; font-size: var(--fs-xs); border-radius: var(--radius-full);
+  background: var(--brand-100); color: var(--brand-700);
+}
+.todo-card[data-status='in_progress'] .todo-status { background: var(--warning-100); color: var(--warning-700); }
+.todo-card[data-status='done'] .todo-status { background: var(--success-100); color: var(--success-700); }
+.todo-card[data-status='cancelled'] .todo-status { background: var(--bg-tertiary); color: var(--text-tertiary); }
+.todo-head time { margin-left: auto; color: var(--text-tertiary); font-size: var(--fs-xs); }
+.todo-title { margin: 0 0 var(--sp-1); font-size: var(--fs-md); }
+.todo-desc { margin: 0 0 var(--sp-2); color: var(--text-secondary); white-space: pre-wrap; }
+.todo-assignee { margin: 0 0 var(--sp-2); color: var(--text-tertiary); font-size: var(--fs-xs); }
+.todo-actions { display: flex; flex-wrap: wrap; gap: var(--sp-2); }
+.todo-actions button {
+  padding: var(--sp-1) var(--sp-2); color: var(--text-primary);
+  background: var(--bg-tertiary); border: 1px solid var(--border-color); border-radius: var(--radius-sm); cursor: pointer;
+}
+.todo-actions button:disabled { opacity: 0.5; cursor: not-allowed; }
+.todo-empty { color: var(--text-tertiary); text-align: center; padding: var(--sp-4); }

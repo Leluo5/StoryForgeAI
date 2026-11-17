@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState, type CSSProperties } from 'react';
+import { useCallback, useEffect, useRef, useState, type CSSProperties, type JSX } from 'react';
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { applyTheme, initialTheme, type Theme } from '@storyforge/design-tokens';
 import type { SaveChangeRequest, TreeResponse } from '@storyforge/contracts';
@@ -12,6 +12,12 @@ import {
 } from '../works/writing-client';
 import { ChapterTree, type TreeAction } from './chapter-tree';
 import { chapterUrl } from './chapter-url';
+import { RevisionPanel } from '../revision/revision-panel';
+import { VersionPanel } from '../revision/version-panel';
+import { CommentPanel } from '../revision/comment-panel';
+import { TodoPanel } from '../revision/todo-panel';
+import { NotificationCenter } from '../revision/notification-center';
+import { unreadCount } from '../revision/collab-client';
 import './workbench.css';
 
 export interface WorkbenchClient {
@@ -71,7 +77,11 @@ export function WorkbenchPage({ client = defaultClient }: Props) {
   const [exporting, setExporting] = useState(false);
   const leftDialog = useRef<HTMLDialogElement>(null);
   const rightDialog = useRef<HTMLDialogElement>(null);
+  const noticeDialog = useRef<HTMLDialogElement>(null);
   const returnFocus = useRef<HTMLElement | null>(null);
+  const [noticeUnread, setNoticeUnread] = useState(0);
+  // 打开通知中心时递增 key，强制 NotificationCenter 重新挂载（其内部 useEffect 重新拉取最新数据）
+  const [noticeOpenKey, setNoticeOpenKey] = useState(0);
 
   const writer = useChapterWriter({
     workId, chapterId, clientId,
@@ -85,11 +95,21 @@ export function WorkbenchPage({ client = defaultClient }: Props) {
   }, [client, workId]);
   useEffect(() => { void loadTree(); }, [loadTree]);
 
+  // 通知未读数（header 铃铛角标）；通知中心打开时由 NotificationCenter 自身刷新，这里仅作入口角标
+  useEffect(() => {
+    let active = true;
+    void unreadCount().then((count) => { if (active) setNoticeUnread(count.unread); }).catch(() => {});
+    return () => { active = false; };
+  }, []);
+
+  // 合法右侧面板：chapter（章节信息）/ revision（修订）/ version（版本）/ comment（评论）/ todo（待办）
+  const PANELS = ['chapter', 'revision', 'version', 'comment', 'todo'];
+  const currentPanel = PANELS.includes(searchParams.get('panel') ?? '') ? (searchParams.get('panel') as string) : 'chapter';
   // M1 只有正文页签，非法深链参数就地归一化
   useEffect(() => {
     const next = new URLSearchParams(searchParams);
     if (next.get('tab') !== 'manuscript') next.set('tab', 'manuscript');
-    if (next.get('panel') !== 'chapter') next.set('panel', 'chapter');
+    if (!PANELS.includes(next.get('panel') ?? '')) next.set('panel', 'chapter');
     if (next.toString() !== searchParams.toString()) setSearchParams(next, { replace: true });
   }, [searchParams, setSearchParams]);
 
@@ -167,17 +187,48 @@ export function WorkbenchPage({ client = defaultClient }: Props) {
 
   const navigation = tree ? <ChapterTree tree={tree} currentChapterId={chapterId}
     onOpen={(id) => navigate(chapterUrl(workId, id))} onAction={performAction} /> : <p role="status">正在加载章节</p>;
+  // 切换右侧面板：持久化到 ?panel= 查询参数，刷新/深链不丢
+  function switchPanel(panel: string): void {
+    if (!PANELS.includes(panel)) return;
+    const next = new URLSearchParams(searchParams);
+    next.set('panel', panel);
+    setSearchParams(next);
+  }
   function context(idSuffix: string) {
     const widthId = `right-width-${idSuffix}`;
-    return <section aria-label="章节信息">
-      <h2>章节信息</h2>
-      <p>章节：{writer.chapter?.title ?? '正在读取'}</p>
-      <p>服务端版本：{writer.chapter?.version ?? 0}</p>
-      <p>客户端 ID：{clientId}</p>
-      <label htmlFor={widthId}>右侧栏宽度</label>
-      <input id={widthId} aria-label="右侧栏宽度" type="range" min="220" max="420" step="8"
-        value={panels.rightWidth} onChange={(event) => updatePanels({ rightWidth: Number(event.target.value) })} />
-    </section>;
+    const tabs = <div className="context-tabs" role="tablist" aria-label="右侧面板">
+      <button type="button" role="tab" aria-selected={currentPanel === 'chapter'} className={currentPanel === 'chapter' ? 'context-tab-active' : ''}
+        onClick={() => switchPanel('chapter')}>章节信息</button>
+      <button type="button" role="tab" aria-selected={currentPanel === 'revision'} className={currentPanel === 'revision' ? 'context-tab-active' : ''}
+        onClick={() => switchPanel('revision')}>修订</button>
+      <button type="button" role="tab" aria-selected={currentPanel === 'version'} className={currentPanel === 'version' ? 'context-tab-active' : ''}
+        onClick={() => switchPanel('version')}>版本</button>
+      <button type="button" role="tab" aria-selected={currentPanel === 'comment'} className={currentPanel === 'comment' ? 'context-tab-active' : ''}
+        onClick={() => switchPanel('comment')}>评论</button>
+      <button type="button" role="tab" aria-selected={currentPanel === 'todo'} className={currentPanel === 'todo' ? 'context-tab-active' : ''}
+        onClick={() => switchPanel('todo')}>待办</button>
+    </div>;
+    let body: JSX.Element;
+    if (currentPanel === 'revision') {
+      body = <RevisionPanel workId={workId} chapterId={chapterId} />;
+    } else if (currentPanel === 'version') {
+      body = <VersionPanel workId={workId} chapterId={chapterId} />;
+    } else if (currentPanel === 'comment') {
+      body = <CommentPanel workId={workId} chapterId={chapterId} />;
+    } else if (currentPanel === 'todo') {
+      body = <TodoPanel workId={workId} />;
+    } else {
+      body = <section aria-label="章节信息">
+        <h2>章节信息</h2>
+        <p>章节：{writer.chapter?.title ?? '正在读取'}</p>
+        <p>服务端版本：{writer.chapter?.version ?? 0}</p>
+        <p>客户端 ID：{clientId}</p>
+        <label htmlFor={widthId}>右侧栏宽度</label>
+        <input id={widthId} aria-label="右侧栏宽度" type="range" min="220" max="420" step="8"
+          value={panels.rightWidth} onChange={(event) => updatePanels({ rightWidth: Number(event.target.value) })} />
+      </section>;
+    }
+    return <div className="context-body">{tabs}{body}</div>;
   }
   const style = {
     '--left-width': panels.leftCollapsed ? '0px' : `${panels.leftWidth}px`,
@@ -199,7 +250,13 @@ export function WorkbenchPage({ client = defaultClient }: Props) {
       <button type="button" onClick={() => {
         const next = theme === 'light' ? 'dark' : 'light'; setTheme(next); applyTheme(next);
       }}>{theme === 'light' ? '切换深色主题' : '切换浅色主题'}</button>
-      <button className="panel-trigger right-trigger" type="button" onClick={() => openDialog(rightDialog.current)}>打开章节信息</button>
+      <button type="button" aria-label={`通知（${noticeUnread} 条未读）`} onClick={() => {
+        // 每次打开刷新角标，并强制通知中心重新拉取最新通知
+        void unreadCount().then((count) => setNoticeUnread(count.unread)).catch(() => {});
+        setNoticeOpenKey((key) => key + 1);
+        openDialog(noticeDialog.current);
+      }}>通知{noticeUnread > 0 ? `(${noticeUnread})` : ''}</button>
+      <button className="panel-trigger right-trigger" type="button" onClick={() => openDialog(rightDialog.current)}>打开{currentPanel === 'revision' ? '修订' : currentPanel === 'version' ? '版本' : currentPanel === 'comment' ? '评论' : currentPanel === 'todo' ? '待办' : '章节信息'}</button>
     </header>
     {error && <p role="alert">{error}</p>}
     <div className="workbench-grid" style={style}>
@@ -232,9 +289,14 @@ export function WorkbenchPage({ client = defaultClient }: Props) {
       {navigation}
     </dialog>
     <dialog ref={rightDialog} className="workbench-dialog right-dialog" aria-labelledby="right-dialog-title" onClose={restoreDialogFocus}>
-      <h2 id="right-dialog-title">章节信息</h2>
-      <button type="button" onClick={() => rightDialog.current?.close()}>关闭章节信息</button>
+      <h2 id="right-dialog-title">{currentPanel === 'revision' ? '修订' : currentPanel === 'version' ? '版本历史' : currentPanel === 'comment' ? '评论' : currentPanel === 'todo' ? '待办' : '章节信息'}</h2>
+      <button type="button" onClick={() => rightDialog.current?.close()}>关闭右侧面板</button>
       {context('dialog')}
+    </dialog>
+    <dialog ref={noticeDialog} className="workbench-dialog notice-dialog" aria-labelledby="notice-dialog-title" onClose={restoreDialogFocus}>
+      <h2 id="notice-dialog-title">通知中心</h2>
+      <button type="button" onClick={() => noticeDialog.current?.close()}>关闭通知</button>
+      <NotificationCenter key={noticeOpenKey} />
     </dialog>
     <ConflictDialog conflict={writer.conflict} onResolve={writer.resolveConflict}
       onRestore={writer.restoreFromServer} onExport={writer.exportRecovery} />

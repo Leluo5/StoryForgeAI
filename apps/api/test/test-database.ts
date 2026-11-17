@@ -26,8 +26,15 @@ function assertTestDataSource(dataSource: DataSource): void {
   assertTestDatabaseUrl(url);
 }
 
-async function dropWritingAndAuthTables(dataSource: DataSource): Promise<void> {
+export async function dropWritingAndAuthTables(dataSource: DataSource): Promise<void> {
   assertTestDataSource(dataSource);
+  // M2 变更协作表（先删引用表，按 FK 依赖倒序）
+  await dataSource.query('DROP TABLE IF EXISTS audit_logs CASCADE');
+  await dataSource.query('DROP TABLE IF EXISTS notifications CASCADE');
+  await dataSource.query('DROP TABLE IF EXISTS todos CASCADE');
+  await dataSource.query('DROP TABLE IF EXISTS comment_threads CASCADE');
+  await dataSource.query('DROP TABLE IF EXISTS version_snapshots CASCADE');
+  await dataSource.query('DROP TABLE IF EXISTS revision_sets CASCADE');
   await dataSource.query('DROP TABLE IF EXISTS chapter_changes CASCADE');
   await dataSource.query('DROP TABLE IF EXISTS chapters CASCADE');
   await dataSource.query('DROP TABLE IF EXISTS volumes CASCADE');
@@ -45,7 +52,9 @@ export async function resetTestDatabase(dataSource: DataSource): Promise<void> {
 
 export async function clearAuthTables(dataSource: DataSource): Promise<void> {
   assertTestDataSource(dataSource);
-  await dataSource.query('TRUNCATE TABLE chapter_changes, chapters, volumes, works, sessions, authors RESTART IDENTITY CASCADE');
+  await dataSource.query(
+    'TRUNCATE TABLE audit_logs, notifications, todos, comment_threads, version_snapshots, revision_sets, chapter_changes, chapters, volumes, works, sessions, authors RESTART IDENTITY CASCADE'
+  );
 }
 
 export async function destroyTestDatabase(dataSource: DataSource): Promise<void> {

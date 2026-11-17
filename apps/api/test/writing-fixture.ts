@@ -4,7 +4,7 @@ import { createDataSource } from '../src/database/data-source';
 import { AuthorEntity } from '../src/database/author.entity';
 import { ChapterEntity } from '../src/database/chapter.entity';
 import { WorkService } from '../src/writing/work.service';
-import { testDatabaseUrl } from './test-database';
+import { testDatabaseUrl, dropWritingAndAuthTables } from './test-database';
 
 export interface WritingFixture {
   dataSource: DataSource;
@@ -19,6 +19,7 @@ export interface WritingFixture {
 export async function createWritingFixture(): Promise<WritingFixture> {
   const testDataSource = createDataSource(testDatabaseUrl());
   await testDataSource.initialize();
+  await dropWritingAndAuthTables(testDataSource);
   await testDataSource.runMigrations();
   const authors = testDataSource.getRepository(AuthorEntity);
   const author = await authors.save(authors.create({
