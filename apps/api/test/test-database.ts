@@ -28,6 +28,9 @@ function assertTestDataSource(dataSource: DataSource): void {
 
 export async function dropWritingAndAuthTables(dataSource: DataSource): Promise<void> {
   assertTestDataSource(dataSource);
+  // M3a AI 创作基座表（先删引用表，按 FK 依赖倒序）
+  await dataSource.query('DROP TABLE IF EXISTS ai_task_events CASCADE');
+  await dataSource.query('DROP TABLE IF EXISTS ai_tasks CASCADE');
   // M2 变更协作表（先删引用表，按 FK 依赖倒序）
   await dataSource.query('DROP TABLE IF EXISTS audit_logs CASCADE');
   await dataSource.query('DROP TABLE IF EXISTS notifications CASCADE');
@@ -53,7 +56,7 @@ export async function resetTestDatabase(dataSource: DataSource): Promise<void> {
 export async function clearAuthTables(dataSource: DataSource): Promise<void> {
   assertTestDataSource(dataSource);
   await dataSource.query(
-    'TRUNCATE TABLE audit_logs, notifications, todos, comment_threads, version_snapshots, revision_sets, chapter_changes, chapters, volumes, works, sessions, authors RESTART IDENTITY CASCADE'
+    'TRUNCATE TABLE ai_task_events, ai_tasks, audit_logs, notifications, todos, comment_threads, version_snapshots, revision_sets, chapter_changes, chapters, volumes, works, sessions, authors RESTART IDENTITY CASCADE'
   );
 }
 

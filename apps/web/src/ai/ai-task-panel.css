@@ -1,0 +1,51 @@
+.ai-task-panel h2 { margin: 0 0 var(--sp-3); font-size: var(--fs-h3); font-weight: var(--fw-semibold); }
+.ai-task-panel h3 { margin: var(--sp-4) 0 var(--sp-2); font-size: var(--fs-body-lg); font-weight: var(--fw-semibold); }
+
+/* 任务发起表单 */
+.ai-task-form { display: flex; flex-direction: column; gap: var(--sp-2); margin: var(--sp-2) 0; }
+.ai-task-form label { font-size: var(--fs-body-sm); color: var(--text-secondary); }
+.ai-task-form select,
+.ai-task-form textarea {
+  width: 100%; padding: var(--sp-1) var(--sp-2);
+  color: var(--text-primary); background: var(--bg-tertiary);
+  border: 1px solid var(--border-color); border-radius: var(--radius-md);
+  font: inherit; font-size: var(--fs-body-sm);
+}
+.ai-task-form textarea { resize: vertical; }
+.ai-tool-hint { margin: 0; font-size: var(--fs-body-sm); color: var(--text-secondary); }
+.ai-task-form button,
+.ai-task-actions button {
+  min-height: 28px; padding: var(--sp-1) var(--sp-2);
+  color: var(--text-primary); background: var(--bg-tertiary);
+  border: 1px solid var(--border-color); border-radius: var(--radius-md);
+}
+.ai-task-form button:disabled, .ai-task-actions button:disabled { opacity: 0.5; cursor: not-allowed; }
+
+/* 任务卡片 */
+.ai-task { margin: var(--sp-2) 0; padding: var(--sp-2); border: 1px solid var(--border-color); border-radius: var(--radius-md); }
+.ai-task-head { display: flex; flex-wrap: wrap; align-items: center; gap: var(--sp-2); margin-bottom: var(--sp-2); }
+.ai-task-head time { margin-left: auto; font-size: var(--fs-body-sm); color: var(--text-secondary); }
+.ai-task-status { padding: 0 var(--sp-2); border-radius: var(--radius-sm); font-size: var(--fs-body-sm); }
+.ai-task-status-queued { background: var(--bg-tertiary); color: var(--text-secondary); }
+.ai-task-status-running { background: var(--brand-100, #e0e7ff); color: var(--brand-700, #4338ca); }
+.ai-task-status-succeeded { background: var(--success-100, #d1fae5); color: var(--success-700, #047857); }
+.ai-task-status-failed { background: var(--danger-100, #fee2e2); color: var(--danger-700, #b91c1c); }
+.ai-task-status-cancelled { background: var(--warning-100, #fef3c7); color: var(--warning-700, #92400e); }
+.ai-task-tool { font-size: var(--fs-body-sm); color: var(--text-secondary); }
+.ai-task-note { margin: 0 0 var(--sp-1); font-size: var(--fs-body-sm); color: var(--text-secondary); }
+.ai-task-error { margin: var(--sp-1) 0 0; font-size: var(--fs-body-sm); color: var(--danger-600, #b91c1c); }
+
+/* 进度条 */
+.ai-task-progress { display: flex; align-items: center; gap: var(--sp-2); margin: var(--sp-1) 0; }
+.ai-task-progress-track { flex: 1 1 auto; height: 6px; border-radius: var(--radius-sm); background: var(--bg-tertiary); overflow: hidden; }
+.ai-task-progress-bar { height: 100%; background: var(--brand-500, #6366f1); transition: width 0.2s ease; }
+.ai-task-progress-text { font-size: var(--fs-body-sm); color: var(--text-secondary); min-width: 3em; text-align: right; }
+
+/* 进度事件流 */
+.ai-events { margin: var(--sp-1) 0; padding-left: 0; list-style: none; }
+.ai-event { display: flex; flex-wrap: wrap; align-items: center; gap: var(--sp-1); padding: var(--sp-1) 0; font-size: var(--fs-body-sm); }
+.ai-event-type { color: var(--text-secondary); }
+.ai-event-desc { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ai-event time { color: var(--text-secondary); font-size: var(--fs-body-sm); }
+.ai-task-actions { display: flex; gap: var(--sp-1); margin-top: var(--sp-1); }
+.ai-task-empty { color: var(--text-secondary); font-size: var(--fs-body-sm); }

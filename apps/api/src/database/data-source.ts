@@ -13,9 +13,12 @@ import { CommentThreadEntity } from './comment-thread.entity';
 import { TodoEntity } from './todo.entity';
 import { NotificationEntity } from './notification.entity';
 import { AuditLogEntity } from './audit-log.entity';
+import { AiTaskEntity } from './ai-task.entity';
+import { AiTaskEventEntity } from './ai-task-event.entity';
 import { AuthBase1736899200000 } from './migrations/1736899200000-auth-base';
 import { WritingBase1736985600000 } from './migrations/1736985600000-writing-base';
 import { RevisionBase1760000000000 } from './migrations/1760000000000-revision-base';
+import { AiTaskBase1760100000000 } from './migrations/1760100000000-ai-task-base';
 
 export function createDataSource(databaseUrl: string = env.DATABASE_URL): DataSource {
   return new DataSource({
@@ -33,9 +36,11 @@ export function createDataSource(databaseUrl: string = env.DATABASE_URL): DataSo
       CommentThreadEntity,
       TodoEntity,
       NotificationEntity,
-      AuditLogEntity
+      AuditLogEntity,
+      AiTaskEntity,
+      AiTaskEventEntity
     ],
-    migrations: [AuthBase1736899200000, WritingBase1736985600000, RevisionBase1760000000000],
+    migrations: [AuthBase1736899200000, WritingBase1736985600000, RevisionBase1760000000000, AiTaskBase1760100000000],
     migrationsTableName: 'migrations',
     synchronize: false,
     migrationsRun: false,

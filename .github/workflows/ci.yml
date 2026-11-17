@@ -14,6 +14,7 @@ jobs:
       NODE_ENV: test
       DATABASE_URL: postgresql://storyforge:storyforge@127.0.0.1:5433/storyforge_test
       TEST_DATABASE_URL: postgresql://storyforge:storyforge@127.0.0.1:5433/storyforge_test
+      REDIS_URL: redis://127.0.0.1:6380
       PORT: 3001
       WEB_ORIGIN: http://127.0.0.1:5173
       SESSION_TTL_SECONDS: 604800
@@ -48,6 +49,8 @@ jobs:
         run: docker compose -f infra/docker-compose.yml up -d postgres --wait
       - name: Create isolated test database
         run: docker compose -f infra/docker-compose.yml exec -T postgres psql -U storyforge -d postgres -v ON_ERROR_STOP=1 -c "CREATE DATABASE storyforge_test"
+      - name: Start disposable Redis 7
+        run: docker compose -f infra/docker-compose.yml up -d redis --wait
       - name: Install workspace dependencies
         run: pnpm install --frozen-lockfile
       - name: Install Chromium

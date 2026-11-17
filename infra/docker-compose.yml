@@ -17,8 +17,22 @@ services:
       interval: 2s
       timeout: 2s
       retries: 20
+  # M3a AI 创作基座：任务队列 BullMQ 依赖 Redis
+  redis:
+    image: redis:7
+    ports:
+      - "6380:6379"
+    volumes:
+      - storyforge_redis:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 2s
+      timeout: 2s
+      retries: 20
 volumes:
   # 复用既有数据卷（原 project `infra` 下创建），必须 external 才能复用，避免 project 改名后新建空卷
   storyforge_pg:
     name: infra_storyforge_pg
     external: true
+  # M3a 新增 Redis 数据卷（新建，无需 external）
+  storyforge_redis:
