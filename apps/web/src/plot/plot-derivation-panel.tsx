@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState, type FormEvent, type JSX } from 'react';
-import type { DerivationStep } from '@storyforge/contracts';
+import type { AiTask, DerivationStep } from '@storyforge/contracts';
+import { subscribeTaskEvents, type TaskEventStream } from '../ai/ai-client';
 import { plotClient, type PlotClient, type PlotSessionDetail } from './plot-client';
 import { plotErrorMessage, usePlotStore } from './plot-state';
 
@@ -7,6 +8,8 @@ interface Props {
   workId: string;
   client?: PlotClient;
   pollIntervalMs?: number;
+  /** SSE 订阅器（测试可注入；默认复用 AI 任务事件流） */
+  subscribeEvents?: typeof subscribeTaskEvents;
 }
 
 interface CharacterDraft {
@@ -21,7 +24,12 @@ function sleep(ms: number): Promise<void> {
 }
 
 /** 推衍面板：配置 → 步进 → 分支 → 候选确认回写（02-技术方案 §6.3） */
-export function PlotDerivationPanel({ workId, client = plotClient, pollIntervalMs = 1500 }: Props): JSX.Element {
+export function PlotDerivationPanel({
+  workId,
+  client = plotClient,
+  pollIntervalMs = 1500,
+  subscribeEvents = subscribeTaskEvents
+}: Props): JSX.Element {
   const store = usePlotStore();
   const node = store.data.nodes.find((item) => item.id === store.selectedNodeId) ?? null;
   const [detail, setDetail] = useState<PlotSessionDetail | null>(null);
@@ -40,11 +48,14 @@ export function PlotDerivationPanel({ workId, client = plotClient, pollIntervalM
   const [status, setStatus] = useState('');
   const stoppedRef = useRef(false);
   const pollingRef = useRef(false);
+  const streamRef = useRef<TaskEventStream | null>(null);
 
   useEffect(() => {
     stoppedRef.current = false;
     return () => {
       stoppedRef.current = true;
+      streamRef.current?.close();
+      streamRef.current = null;
     };
   }, []);
 
@@ -84,6 +95,37 @@ export function PlotDerivationPanel({ workId, client = plotClient, pollIntervalM
     }
   }
 
+  function closeStream(): void {
+    streamRef.current?.close();
+    streamRef.current = null;
+  }
+
+  /** 优先订阅任务 SSE；任务缺失或通道不可用时回退轮询 */
+  function watchTask(sessionId: string, task: AiTask | undefined, previousSteps: number): void {
+    const taskId = task?.id;
+    if (typeof taskId !== 'string' || taskId === '') {
+      void waitForStep(sessionId, previousSteps);
+      return;
+    }
+    closeStream();
+    streamRef.current = subscribeEvents(workId, taskId, {
+      onEvent: (event) => {
+        if (event.type !== 'succeeded' && event.type !== 'failed') return;
+        closeStream();
+        void refresh(sessionId).then((next) => {
+          setStatus(event.type === 'succeeded'
+            ? `第 ${next.steps.length} 步已生成，已自动暂停`
+            : '推衍任务已结束');
+        }).catch((cause) => setError(plotErrorMessage(cause)));
+      },
+      onError: () => {
+        // SSE 通道不可用（端点异常 / 断网）→ 退回轮询，保证步骤仍能落地
+        closeStream();
+        void waitForStep(sessionId, previousSteps);
+      }
+    });
+  }
+
   async function start(event: FormEvent) {
     event.preventDefault();
     if (!node) return;
@@ -111,11 +153,11 @@ export function PlotDerivationPanel({ workId, client = plotClient, pollIntervalM
         random_character_enabled: randomCharacterEnabled
       });
       setDetail({ session, steps: [], candidates: [] });
-      await client.generateStep(workId, session.id);
+      const { task } = await client.generateStep(workId, session.id);
       await refresh(session.id);
       setStatus('第 1 步生成中…');
       setDetail((prev) => (prev ? { ...prev, session: { ...prev.session, status: 'running' } } : prev));
-      void waitForStep(session.id, 0);
+      watchTask(session.id, task, 0);
     } catch (cause) {
       setError(plotErrorMessage(cause));
     } finally {
@@ -129,10 +171,10 @@ export function PlotDerivationPanel({ workId, client = plotClient, pollIntervalM
     setError('');
     try {
       const previous = detail.steps.length;
-      await client.generateStep(workId, detail.session.id);
+      const { task } = await client.generateStep(workId, detail.session.id);
       setDetail((prev) => (prev ? { ...prev, session: { ...prev.session, status: 'running' } } : prev));
       setStatus(`第 ${previous + 1} 步生成中…`);
-      void waitForStep(detail.session.id, previous);
+      watchTask(detail.session.id, task, previous);
     } catch (cause) {
       setError(plotErrorMessage(cause));
     } finally {

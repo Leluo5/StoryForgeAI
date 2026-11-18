@@ -23,6 +23,28 @@ async function createTask(): Promise<AiTaskEntity> {
   return fixture.dataSource.getRepository(AiTaskEntity).findOneByOrFail({ id: task.id });
 }
 
+/** 直接落库一个 scope='plot'、无章节的推衍任务（ai_tasks.chapter_id 允许为空） */
+async function createPlotTask(): Promise<AiTaskEntity> {
+  const repo = fixture.dataSource.getRepository(AiTaskEntity);
+  return repo.save(repo.create({
+    id: randomUUID(),
+    idempotency_key: `plot-${randomUUID()}`,
+    work_id: fixture.workId,
+    chapter_id: null,
+    scope: 'plot',
+    tool: 'plot_derivation',
+    agent_id: null,
+    input_summary: { session_id: randomUUID(), step_no: 1 },
+    base_version: 0,
+    status: 'queued',
+    event_seq: 0,
+    result_revision_set_id: null,
+    error: null,
+    attempts: 0,
+    created_by: fixture.authorId
+  }));
+}
+
 /** 直接向 ai_task_events 写一个事件（模拟 appendEvent 落库，绕过广播；用于补取测试） */
 async function insertEvent(taskId: string, seq: number, type: string, payload: Record<string, unknown>): Promise<void> {
   const repo = fixture.dataSource.getRepository(AiTaskEventEntity);
@@ -206,6 +228,24 @@ describe('AiTaskSseService.handleEvents', () => {
 
   it('rejects with 404 when the task is not owned by the author', async () => {
     const task = await createTask();
+    const { res } = makeResponse();
+    const { req } = makeRequest();
+    await expect(sse.handleEvents({ authorId: fixture.otherAuthorId, workId: fixture.workId, taskId: task.id, request: req, response: res }))
+      .rejects.toThrow(/not found/i);
+  });
+
+  it('streams plot tasks without a chapter (chapter_id = null)', async () => {
+    const task = await createPlotTask();
+    const { res, chunks } = makeResponse();
+    const { req } = makeRequest();
+    await sse.handleEvents({ authorId: fixture.authorId, workId: fixture.workId, taskId: task.id, request: req, response: res });
+    const frames = parseFrames(chunks);
+    expect(frames.map((f) => f.type)).toEqual(['snapshot']);
+    expect((frames[0]!.data.payload as Record<string, unknown>).tool).toBe('plot_derivation');
+  });
+
+  it('rejects plot tasks owned by another author', async () => {
+    const task = await createPlotTask();
     const { res } = makeResponse();
     const { req } = makeRequest();
     await expect(sse.handleEvents({ authorId: fixture.otherAuthorId, workId: fixture.workId, taskId: task.id, request: req, response: res }))

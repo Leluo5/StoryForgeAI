@@ -3,6 +3,8 @@ import userEvent from '@testing-library/user-event';
 import { useEffect } from 'react';
 import { describe, expect, it, vi } from 'vitest';
 import type { DerivationCandidate, DerivationSession, DerivationStep, PlotNode, PlotTree } from '@storyforge/contracts';
+import type { SubscribeOptions, TaskEvent } from '../ai/ai-client';
+import { subscribeTaskEvents } from '../ai/ai-client';
 import type { PlotClient, PlotSessionDetail } from './plot-client';
 import { usePlotStore } from './plot-state';
 import { PlotStoreProvider } from './plot-workspace';
@@ -64,7 +66,7 @@ interface Mocks {
   rejectCandidate: ReturnType<typeof vi.fn>;
 }
 
-function makeMocks(detail: PlotSessionDetail): Mocks {
+function makeMocks(detail: PlotSessionDetail, taskId = ''): Mocks {
   let confirmed: PlotNode | null = null;
   const fetchTree = vi.fn(async () => ({
     tree,
@@ -74,7 +76,10 @@ function makeMocks(detail: PlotSessionDetail): Mocks {
   }));
   const createDerivation = vi.fn(async () => ({ session: { ...session, status: 'running' as const } }));
   const getDerivation = vi.fn(async () => detail);
-  const generateStep = vi.fn(async () => ({ task: {} as never, session: { ...session, status: 'running' as const } }));
+  const generateStep = vi.fn(async () => ({
+    task: { id: taskId } as never,
+    session: { ...session, status: 'running' as const }
+  }));
   const updateStep = vi.fn(async () => ({ step: { ...step, content: '新的内容', chosen_branch_id: 'b1' } }));
   const confirmCandidate = vi.fn(async () => {
     confirmed = node('created', '候选节点');
@@ -111,13 +116,19 @@ function SelectStart(): null {
 
 function renderPanel(
   detail: PlotSessionDetail = { session, steps: [], candidates: [] },
-  pollIntervalMs = 1_000_000
+  pollIntervalMs = 1_000_000,
+  extras: { taskId?: string; subscribeEvents?: typeof subscribeTaskEvents } = {}
 ) {
-  const mocks = makeMocks(detail);
+  const mocks = makeMocks(detail, extras.taskId);
   render(
     <PlotStoreProvider workId={workId} client={mocks.client}>
       <SelectStart />
-      <PlotDerivationPanel workId={workId} client={mocks.client} pollIntervalMs={pollIntervalMs} />
+      <PlotDerivationPanel
+        workId={workId}
+        client={mocks.client}
+        pollIntervalMs={pollIntervalMs}
+        {...(extras.subscribeEvents ? { subscribeEvents: extras.subscribeEvents } : {})}
+      />
     </PlotStoreProvider>
   );
   return mocks;
@@ -216,5 +227,60 @@ describe('PlotDerivationPanel', () => {
     await waitFor(() => expect(mocks.rejectCandidate).toHaveBeenCalledWith(workId, 'sess-1', 'cand-1'));
     expect(mocks.fetchTree).toHaveBeenCalledTimes(1);
     expect(await screen.findByText('候选已拒绝，剧情树保持不变')).toBeVisible();
+  });
+
+  it('watches the step task over SSE and refreshes the session on success', async () => {
+    const subscriptions: SubscribeOptions[] = [];
+    const close = vi.fn();
+    const subscribeEvents = vi.fn((_workId: string, _taskId: string, options: SubscribeOptions) => {
+      subscriptions.push(options);
+      return { close, getState: () => 'open' as const };
+    });
+    const mocks = renderPanel(
+      { session: { ...session, status: 'running' }, steps: [], candidates: [] },
+      1_000_000,
+      { taskId: 'task-1', subscribeEvents }
+    );
+    await screen.findByRole('button', { name: '开始推衍' });
+    await userEvent.type(screen.getByLabelText('场所'), '客栈');
+    await userEvent.type(screen.getByLabelText('核心背景'), '主角被追杀');
+    await userEvent.type(screen.getByLabelText('角色 1 名称'), '林澈');
+    await userEvent.click(screen.getByRole('button', { name: '开始推衍' }));
+
+    await waitFor(() => expect(subscribeEvents).toHaveBeenCalledWith(workId, 'task-1', expect.any(Object)));
+    const getDerivation = mocks.client.getDerivation as ReturnType<typeof vi.fn>;
+    getDerivation.mockClear();
+
+    subscriptions[0]!.onEvent({ seq: 2, type: 'succeeded', payload: { step_no: 1 } } satisfies TaskEvent);
+
+    await waitFor(() => expect(getDerivation).toHaveBeenCalledWith(workId, 'sess-1'));
+    expect(close).toHaveBeenCalled();
+    expect(await screen.findByText(/已生成，已自动暂停/)).toBeVisible();
+  });
+
+  it('falls back to polling when the SSE channel errors', async () => {
+    const subscriptions: SubscribeOptions[] = [];
+    const subscribeEvents = vi.fn((_workId: string, _taskId: string, options: SubscribeOptions) => {
+      subscriptions.push(options);
+      return { close: vi.fn(), getState: () => 'connecting' as const };
+    });
+    const mocks = renderPanel(
+      { session, steps: [step], candidates: [] },
+      10,
+      { taskId: 'task-1', subscribeEvents }
+    );
+    await screen.findByRole('button', { name: '开始推衍' });
+    await userEvent.type(screen.getByLabelText('场所'), '客栈');
+    await userEvent.type(screen.getByLabelText('核心背景'), '主角被追杀');
+    await userEvent.type(screen.getByLabelText('角色 1 名称'), '林澈');
+    await userEvent.click(screen.getByRole('button', { name: '开始推衍' }));
+
+    await waitFor(() => expect(subscribeEvents).toHaveBeenCalled());
+    const getDerivation = mocks.client.getDerivation as ReturnType<typeof vi.fn>;
+    getDerivation.mockClear();
+
+    subscriptions[0]!.onError?.(new Error('sse unavailable'));
+
+    await waitFor(() => expect(getDerivation).toHaveBeenCalledWith(workId, 'sess-1'));
   });
 });

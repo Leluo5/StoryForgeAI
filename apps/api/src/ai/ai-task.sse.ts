@@ -5,7 +5,6 @@ import { DataSource } from 'typeorm';
 import type { AiTaskEvent, AiTaskEventType } from '@storyforge/contracts';
 import { AiTaskEntity } from '../database/ai-task.entity';
 import { AiTaskEventEntity } from '../database/ai-task-event.entity';
-import { ChapterEntity } from '../database/chapter.entity';
 import { WorkEntity } from '../database/work.entity';
 
 // ───────────────────────────── 事件总线 ─────────────────────────────
@@ -166,14 +165,12 @@ export class AiTaskSseService {
     request.on('close', cleanup);
   }
 
-  /** 任务归属校验：任务 ∈ 作品 ∈ 作者，否则 404 */
+  /** 任务归属校验：任务 ∈ 作品 ∈ 作者，否则 404（不联章节，兼容无章节的剧情任务） */
   private async assertOwnedTask(authorId: string, workId: string, taskId: string): Promise<AiTaskEntity> {
     const task = await this.dataSource.getRepository(AiTaskEntity).createQueryBuilder('task')
-      .innerJoin(ChapterEntity, 'chapter', 'chapter.id = task.chapter_id')
-      .innerJoin(WorkEntity, 'work', 'work.id = chapter.work_id')
+      .innerJoin(WorkEntity, 'work', 'work.id = task.work_id')
       .where('task.id = :taskId', { taskId })
       .andWhere('task.work_id = :workId', { workId })
-      .andWhere('chapter.work_id = :workId', { workId })
       .andWhere('work.author_id = :authorId', { authorId })
       .getOne();
     if (!task) throw new NotFoundException('AI task not found');
