@@ -23,6 +23,7 @@ function task(overrides: Partial<AiTask> = {}): AiTask {
     id: crypto.randomUUID(),
     work_id: workId,
     chapter_id: chapterId,
+    scope: 'chapter',
     tool: 'continue',
     agent_id: null,
     input_summary: {},

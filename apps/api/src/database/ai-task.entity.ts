@@ -8,7 +8,10 @@ export class AiTaskEntity {
   // 幂等键（同键最多一个有效结果修订集，去重依据）
   @Column({ type: 'varchar', length: 128 }) idempotency_key!: string;
   @Column({ type: 'uuid' }) work_id!: string;
-  @Column({ type: 'uuid' }) chapter_id!: string;
+  // 章节任务必填；剧情推衍任务（scope='plot'）为空
+  @Column({ type: 'uuid', nullable: true }) chapter_id!: string | null;
+  // 任务作用域：chapter（章节正文修订）/ plot（剧情推衍与结构生成）
+  @Column({ type: 'varchar', length: 16, default: 'chapter' }) scope!: 'chapter' | 'plot';
   // 工具标识（如 continue）
   @Column({ type: 'varchar', length: 40 }) tool!: string;
   // 执行 Agent（M3a 预留，M3b 接入）

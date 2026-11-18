@@ -3,7 +3,6 @@ import { DataSource, EntityManager } from 'typeorm';
 import { randomUUID } from 'node:crypto';
 import type {
   AiTask,
-  AiTool,
   AiTaskStatus,
   CreateAiTaskRequest,
   ListAiTasksQuery,
@@ -14,6 +13,7 @@ import { AiTaskEventEntity } from '../database/ai-task-event.entity';
 import { WorkEntity } from '../database/work.entity';
 import { ChapterEntity } from '../database/chapter.entity';
 import { AuditService } from '../revision/audit.service';
+import { AgentService } from '../agent/agent.service';
 import { AiTaskEventBus, AI_TASK_EVENT_BUS } from './ai-task.sse';
 
 // ───────────────────────────── 队列端口（A5 实现，避免 A4↔A5 循环依赖） ─────────────────────────────
@@ -34,7 +34,8 @@ function toAiTask(entity: AiTaskEntity): AiTask {
     id: entity.id,
     work_id: entity.work_id,
     chapter_id: entity.chapter_id,
-    tool: entity.tool as AiTool,
+    scope: entity.scope,
+    tool: entity.tool,
     agent_id: entity.agent_id,
     input_summary: entity.input_summary,
     base_version: entity.base_version,
@@ -68,7 +69,7 @@ async function assertOwnedChapter(
   return chapter;
 }
 
-/** 悲观锁任务行 + 归属校验（任务 → 章节 → 作品 → 作者） */
+/** 悲观锁任务行 + 归属校验（任务 → 作品 → 作者；兼容无章节的剧情任务） */
 async function assertOwnedTask(
   manager: EntityManager,
   workId: string,
@@ -77,11 +78,9 @@ async function assertOwnedTask(
   lock = false
 ): Promise<AiTaskEntity> {
   const qb = manager.getRepository(AiTaskEntity).createQueryBuilder('task')
-    .innerJoin(ChapterEntity, 'chapter', 'chapter.id = task.chapter_id')
-    .innerJoin(WorkEntity, 'work', 'work.id = chapter.work_id')
+    .innerJoin(WorkEntity, 'work', 'work.id = task.work_id')
     .where('task.id = :taskId', { taskId })
     .andWhere('task.work_id = :workId', { workId })
-    .andWhere('chapter.work_id = :workId', { workId })
     .andWhere('work.author_id = :authorId', { authorId });
   if (lock) qb.setLock('pessimistic_write');
   const task = await qb.getOne();
@@ -124,7 +123,8 @@ export class AiTaskService {
     @Inject(DataSource) private readonly dataSource: DataSource,
     @Inject(AuditService) private readonly auditService: AuditService,
     @Inject(AI_TASK_QUEUE) private readonly queue: AiTaskQueuePort,
-    @Inject(AI_TASK_EVENT_BUS) private readonly eventBus: AiTaskEventBus
+    @Inject(AI_TASK_EVENT_BUS) private readonly eventBus: AiTaskEventBus,
+    @Inject(AgentService) private readonly agentService: AgentService
   ) {}
 
   /**
@@ -142,6 +142,10 @@ export class AiTaskService {
   ): Promise<{ task: AiTask; created: boolean }> {
     return this.dataSource.transaction(async (manager) => {
       const chapter = await assertOwnedChapter(manager, workId, chapterId, authorId, true);
+
+      // 步骤 0（M3b）：工具存在且启用校验 + 解析执行 Agent（缺 Agent 时懒创建默认）
+      const { agentId } = await this.agentService.resolveToolForTask(input.tool);
+      const defaultAgent = await this.agentService.ensureDefaultAgent(authorId);
 
       const existing = await manager.getRepository(AiTaskEntity).findOneBy({ idempotency_key: input.idempotency_key });
       if (existing) {
@@ -166,7 +170,8 @@ export class AiTaskService {
       task.work_id = workId;
       task.chapter_id = chapterId;
       task.tool = input.tool;
-      task.agent_id = null;
+      // 步骤 2.5（M3b）：工具绑定 Agent 优先，否则回退作者默认 Agent
+      task.agent_id = agentId ?? defaultAgent.id;
       task.input_summary = input.input_summary ?? {};
       task.base_version = chapter.version;
       task.status = 'queued';

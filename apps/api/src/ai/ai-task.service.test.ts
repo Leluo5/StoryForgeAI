@@ -4,6 +4,7 @@ import { ConflictException, NotFoundException, UnprocessableEntityException } fr
 import { createWritingFixture, destroyWritingFixture, type WritingFixture } from '../../test/writing-fixture';
 import { AiTaskService, type AiTaskQueuePort } from './ai-task.service';
 import { AiTaskEventBus } from './ai-task.sse';
+import { AgentService } from '../agent/agent.service';
 import { AiTaskEntity } from '../database/ai-task.entity';
 import { AiTaskEventEntity } from '../database/ai-task-event.entity';
 import { RevisionSetEntity } from '../database/revision-set.entity';
@@ -28,7 +29,8 @@ beforeEach(async () => {
   };
   service = new AiTaskService(fixture.dataSource, {
     record: vi.fn(async () => ({ id: randomUUID(), action: 'ai_task_create', target_type: 'ai_task', target_id: randomUUID(), detail: {}, actor_id: fixture.authorId, created_at: new Date().toISOString() }))
-  } as never, queue, new AiTaskEventBus());
+  } as never, queue, new AiTaskEventBus(),
+  new AgentService(fixture.dataSource, { record: vi.fn() } as never));
 });
 
 afterEach(() => destroyWritingFixture(fixture));

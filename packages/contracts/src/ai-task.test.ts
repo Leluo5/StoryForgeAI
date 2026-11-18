@@ -13,6 +13,7 @@ const baseTask = {
   id: crypto.randomUUID(),
   work_id: crypto.randomUUID(),
   chapter_id: crypto.randomUUID(),
+  scope: 'chapter',
   tool: 'continue',
   agent_id: null,
   input_summary: { selection: '第 3 段' },
@@ -67,10 +68,17 @@ describe('ai-task contracts', () => {
     expect(aiTaskEventTypeSchema.safeParse('heartbeat').success).toBe(false);
   });
 
+  it('supports plot scope with null chapter_id and rejects unknown scope', () => {
+    const plot = aiTaskSchema.parse({ ...baseTask, chapter_id: null, scope: 'plot' });
+    expect(plot.chapter_id).toBeNull();
+    expect(plot.scope).toBe('plot');
+    expect(aiTaskSchema.safeParse({ ...baseTask, scope: 'bogus' }).success).toBe(false);
+  });
+
   it('validates create request: tool + idempotency_key, defaults input_summary', () => {
     const req = createAiTaskRequestSchema.parse({ tool: 'rewrite', idempotency_key: 'k-1' });
     expect(req.input_summary).toEqual({});
-    expect(createAiTaskRequestSchema.safeParse({ tool: 'hack', idempotency_key: 'k-1' }).success).toBe(false);
+    expect(createAiTaskRequestSchema.safeParse({ tool: '', idempotency_key: 'k-1' }).success).toBe(false);
     expect(createAiTaskRequestSchema.safeParse({ tool: 'continue', idempotency_key: '' }).success).toBe(false);
   });
 

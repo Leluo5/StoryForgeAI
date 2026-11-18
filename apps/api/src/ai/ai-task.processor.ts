@@ -10,6 +10,18 @@ import { AuditService } from '../revision/audit.service';
 import { AI_TASK_QUEUE_NAME } from './ai-task.queue';
 import { AiModelError, type AiModelProvider, type AiModelContext, AI_MODEL_PROVIDER } from './ai-model.provider';
 import { AiTaskEventBus, AI_TASK_EVENT_BUS } from './ai-task.sse';
+import { DerivationSessionEntity } from '../database/derivation-session.entity';
+import { PlotNodeEntity } from '../database/plot-node.entity';
+import {
+  MockPlotModelProvider,
+  PlotModelError,
+  type PlotContextNode,
+  type PlotModelProvider,
+  type PlotStepCandidate,
+  type PlotStepContext,
+  PLOT_MODEL_PROVIDER
+} from '../plot/plot-model.provider';
+import { PlotTaskHandler } from '../plot/plot-task.handler';
 import { env } from '../config/env';
 
 // ───────────────────────────── 结果映射端口（A6 实现，避免 A5↔A6 循环依赖） ─────────────────────────────
@@ -65,16 +77,29 @@ async function appendEvent(
   });
 }
 
-interface ProcessContext {
+interface BaseProcessContext {
   taskId: string;
   authorId: string;
   workId: string;
-  chapterId: string;
   tool: string;
   inputSummary: Record<string, unknown>;
+}
+
+interface ChapterProcessContext extends BaseProcessContext {
+  kind: 'chapter';
+  chapterId: string;
   baseVersion: number;
   baseDocument: ProseMirrorNode;
 }
+
+interface PlotProcessContext extends BaseProcessContext {
+  kind: 'plot';
+  sessionId: string;
+  stepNo: number;
+  plot: PlotStepContext;
+}
+
+type ProcessContext = ChapterProcessContext | PlotProcessContext;
 
 /**
  * AI 任务处理器：消费 BullMQ 队列，执行一次 AI 创作任务。
@@ -90,7 +115,9 @@ export class AiTaskProcessor {
     @Inject(AuditService) private readonly auditService: AuditService,
     @Inject(AI_MODEL_PROVIDER) private readonly model: AiModelProvider,
     @Inject(AI_RESULT_MAPPER) private readonly mapper: AiResultMapperPort,
-    @Inject(AI_TASK_EVENT_BUS) private readonly eventBus: AiTaskEventBus
+    @Inject(AI_TASK_EVENT_BUS) private readonly eventBus: AiTaskEventBus,
+    @Inject(PLOT_MODEL_PROVIDER) private readonly plotModel: PlotModelProvider = new MockPlotModelProvider(),
+    @Inject(PlotTaskHandler) private readonly plotHandler: PlotTaskHandler = new PlotTaskHandler()
   ) {}
 
   /** 创建消费该队列的 BullMQ Worker（A8 在 main.ts 启动；测试可直接调用） */
@@ -118,12 +145,19 @@ export class AiTaskProcessor {
       const started = await this.startRunning(taskId, job.attemptsMade);
       if (started.skipped) return; // 任务已被取消/完成，无事可做
 
+      if (started.context.kind === 'plot') {
+        const plotCandidate = await this.plotModel.generateStep(started.context.plot);
+        await this.finishPlotSucceeded(started.context, plotCandidate);
+        return;
+      }
+
       const candidate = await this.model.generate(started.context);
       const outcome = await this.finishSucceeded(started.context, candidate.candidateDocument);
       if (outcome.skipped) return; // 执行期间被取消
     } catch (err) {
       // 不可重试或最后一次尝试 → 标 failed；否则保持 running，由 BullMQ 退避重试
-      const retryable = err instanceof AiModelError ? err.retryable : false;
+      const retryable =
+        err instanceof AiModelError || err instanceof PlotModelError ? err.retryable : false;
       const shouldMarkFailed = isFinalAttempt || !retryable;
       if (shouldMarkFailed) {
         await this.markFailed(taskId, err).catch(() => undefined);
@@ -157,10 +191,18 @@ export class AiTaskProcessor {
         await manager.save(task); // 重试进入：仅推进 attempts，不重复写 running 事件
       }
 
+      // scope='plot' 的任务无章节，按推衍会话构建上下文
+      if (task.scope === 'plot') {
+        return { skipped: false, context: await this.buildPlotContext(manager, task) };
+      }
+
+      // scope='chapter' 的任务必有章节（DB 迁移已允许 plot 任务为空）
+      if (!task.chapter_id) throw new Error(`Chapter task ${task.id} missing chapter_id`);
       const chapter = await manager.getRepository(ChapterEntity).findOneByOrFail({ id: task.chapter_id });
       return {
         skipped: false,
         context: {
+          kind: 'chapter',
           taskId: task.id,
           authorId: task.created_by,
           workId: task.work_id,
@@ -174,9 +216,102 @@ export class AiTaskProcessor {
     });
   }
 
+  /** 构建推衍任务上下文：读取会话、前置/关联节点摘要与历史步骤 */
+  private async buildPlotContext(manager: EntityManager, task: AiTaskEntity): Promise<PlotProcessContext> {
+    const sessionId = typeof task.input_summary?.session_id === 'string' ? task.input_summary.session_id : null;
+    const stepNo = Number(task.input_summary?.step_no);
+    if (!sessionId) throw new Error(`Plot task ${task.id} missing session_id`);
+    if (!Number.isInteger(stepNo) || stepNo < 1) throw new Error(`Plot task ${task.id} has invalid step_no`);
+
+    const session = await manager
+      .getRepository(DerivationSessionEntity)
+      .findOneBy({ id: sessionId, work_id: task.work_id });
+    if (!session) throw new Error(`Plot task ${task.id} session ${sessionId} not found`);
+
+    const nodeRepository = manager.getRepository(PlotNodeEntity);
+    const loadNodes = async (ids: string[]): Promise<PlotContextNode[]> => {
+      if (ids.length === 0) return [];
+      const nodes = await nodeRepository.find({ where: ids.map((id) => ({ id, tree_id: session.tree_id })) });
+      const byId = new Map(nodes.map((node) => [node.id, node]));
+      // 保持会话中记录的先后顺序，已删除的节点静默忽略
+      return ids
+        .map((id) => byId.get(id))
+        .filter((node): node is PlotNodeEntity => Boolean(node))
+        .map((node) => ({ id: node.id, title: node.title, summary: node.summary }));
+    };
+
+    const history = Array.isArray(task.input_summary?.history)
+      ? (task.input_summary.history as unknown[]).filter((item): item is string => typeof item === 'string')
+      : [];
+
+    return {
+      kind: 'plot',
+      taskId: task.id,
+      authorId: task.created_by,
+      workId: task.work_id,
+      tool: task.tool,
+      inputSummary: task.input_summary,
+      sessionId: session.id,
+      stepNo,
+      plot: {
+        workId: task.work_id,
+        sessionId: session.id,
+        stepNo,
+        place: session.place,
+        background: session.background,
+        timeNode: session.time_node,
+        premiseNodes: await loadNodes(session.premise_node_ids),
+        relatedNodes: await loadNodes(session.related_node_ids),
+        characters: session.characters,
+        randomEnabled: session.random_enabled,
+        randomCharacterEnabled: session.random_character_enabled,
+        history
+      }
+    };
+  }
+
+  /** 事务2（剧情）：锁任务，写入推衍步骤 + succeeded + 事件 + 审计（原子） */
+  private async finishPlotSucceeded(
+    context: PlotProcessContext,
+    candidate: PlotStepCandidate
+  ): Promise<{ skipped: boolean }> {
+    return this.dataSource.transaction(async (manager) => {
+      const task = await manager.getRepository(AiTaskEntity).createQueryBuilder('task')
+        .where('task.id = :taskId', { taskId: context.taskId })
+        .setLock('pessimistic_write')
+        .getOne();
+      if (!task || task.status !== 'running') return { skipped: true };
+
+      const result = await this.plotHandler.writeStep(manager, {
+        taskId: task.id,
+        sessionId: context.sessionId,
+        workId: context.workId,
+        stepNo: context.stepNo,
+        candidate
+      });
+
+      task.status = 'succeeded';
+      await appendEvent(manager, task, this.eventBus, 'succeeded', {
+        tool: context.tool,
+        session_id: context.sessionId,
+        step_no: result.step_no,
+        step_id: result.step_id
+      });
+
+      await this.auditService.record(context.authorId, 'ai_task_succeeded', 'ai_task', task.id, {
+        tool: context.tool,
+        session_id: context.sessionId,
+        step_no: result.step_no,
+        step_id: result.step_id
+      }, context.workId);
+
+      return { skipped: false };
+    });
+  }
+
   /** 事务2：锁任务，创建修订集 + succeeded + 事件 + 审计（原子；执行期间被取消则跳过） */
   private async finishSucceeded(
-    context: ProcessContext,
+    context: ChapterProcessContext,
     candidateDocument: ProseMirrorNode
   ): Promise<{ skipped: boolean }> {
     return this.dataSource.transaction(async (manager) => {
@@ -217,8 +352,10 @@ export class AiTaskProcessor {
   /** 标记任务失败：锁任务，仅 running/queued 可转 failed（终态跳过，幂等） */
   private async markFailed(taskId: string, err: unknown): Promise<void> {
     const message = err instanceof Error ? err.message : String(err);
-    const retryable = err instanceof AiModelError ? err.retryable : true;
-    const code = err instanceof AiModelError ? err.code : 'UNKNOWN';
+    const retryable =
+      err instanceof AiModelError || err instanceof PlotModelError ? err.retryable : true;
+    const code =
+      err instanceof AiModelError || err instanceof PlotModelError ? err.code : 'UNKNOWN';
     await this.dataSource.transaction(async (manager) => {
       const task = await manager.getRepository(AiTaskEntity).createQueryBuilder('task')
         .where('task.id = :taskId', { taskId })

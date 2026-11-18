@@ -11,7 +11,10 @@ export const aiTaskStatusSchema = z.enum(['queued', 'running', 'succeeded', 'fai
 export const aiTaskEventTypeSchema = z.enum(['queued', 'running', 'progress', 'succeeded', 'failed', 'cancelled', 'snapshot']);
 // ai_task_events 表持久化类型（对齐 DB CHECK，不含 snapshot）
 export const aiTaskPersistedEventTypeSchema = z.enum(['queued', 'running', 'progress', 'succeeded', 'failed', 'cancelled']);
-export const aiToolSchema = z.enum(['continue', 'rewrite', 'expand', 'polish']);
+// 工具标识：M3b 起工具权威移至 DB 表 ai_tools（tool_id 自由字符串，由服务端权威校验存在性）
+export const aiToolSchema = z.string().min(1).max(40);
+// 任务作用域：chapter（章节正文修订）/ plot（剧情推衍与结构生成）
+export const aiTaskScopeSchema = z.enum(['chapter', 'plot']);
 
 export type AiTaskStatus = z.infer<typeof aiTaskStatusSchema>;
 export type AiTaskEventType = z.infer<typeof aiTaskEventTypeSchema>;
@@ -24,7 +27,9 @@ export type AiTool = z.infer<typeof aiToolSchema>;
 export const aiTaskSchema = z.object({
   id,
   work_id: id,
-  chapter_id: id,
+  // 章节任务必填；剧情推衍任务（scope='plot'）为空
+  chapter_id: id.nullable(),
+  scope: aiTaskScopeSchema,
   tool: aiToolSchema,
   agent_id: id.nullable(),
   input_summary: z.record(z.unknown()),

@@ -7,9 +7,11 @@ import { HealthController } from './health.controller';
 import { WritingModule } from './writing/writing.module';
 import { RevisionModule } from './revision/revision.module';
 import { AiTaskModule } from './ai/ai-task.module';
+import { AgentModule } from './agent/agent.module';
+import { PlotModule } from './plot/plot.module';
 
 @Module({
-  imports: [TypeOrmModule.forRoot({ ...AppDataSource.options }), AuthModule, WritingModule, RevisionModule, AiTaskModule],
+  imports: [TypeOrmModule.forRoot({ ...AppDataSource.options }), AuthModule, WritingModule, RevisionModule, AiTaskModule, AgentModule, PlotModule],
   controllers: [HealthController]
 })
 export class AppModule implements NestModule {

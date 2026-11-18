@@ -7,6 +7,7 @@ import { createWritingFixture, destroyWritingFixture, type WritingFixture } from
 import { AiTaskProcessor, type AiResultMapperPort, type AiRevisionSetResult } from './ai-task.processor';
 import { MockAiModelProvider, AiModelError } from './ai-model.provider';
 import { AiTaskService } from './ai-task.service';
+import { AgentService } from '../agent/agent.service';
 import { AiTaskEventBus } from './ai-task.sse';
 import { AiTaskEntity } from '../database/ai-task.entity';
 import { AiTaskEventEntity } from '../database/ai-task-event.entity';
@@ -59,7 +60,8 @@ async function createQueuedTask(tool: 'continue' | 'rewrite' | 'expand' | 'polis
   } as never, {
     enqueue: vi.fn(async () => undefined),
     remove: vi.fn(async () => undefined)
-  }, new AiTaskEventBus());
+  }, new AiTaskEventBus(),
+  new AgentService(fixture.dataSource, { record: vi.fn() } as never));
   const { task } = await service.createTask(fixture.authorId, fixture.workId, fixture.chapterId, {
     tool, input_summary: { selection: { from: 0, to: 10 } }, idempotency_key: idempotencyKey()
   });

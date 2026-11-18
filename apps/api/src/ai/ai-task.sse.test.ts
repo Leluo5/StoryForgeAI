@@ -3,6 +3,7 @@ import type { Request, Response } from 'express';
 import { createWritingFixture, destroyWritingFixture, type WritingFixture } from '../../test/writing-fixture';
 import { AiTaskEventBus, AiTaskSseService } from './ai-task.sse';
 import { AiTaskService } from './ai-task.service';
+import { AgentService } from '../agent/agent.service';
 import { AiTaskEntity } from '../database/ai-task.entity';
 import { AiTaskEventEntity } from '../database/ai-task-event.entity';
 import type { AiTaskEvent } from '@storyforge/contracts';
@@ -98,7 +99,8 @@ beforeEach(async () => {
   } as never, {
     enqueue: vi.fn(async () => undefined),
     remove: vi.fn(async () => undefined)
-  }, bus);
+  }, bus,
+  new AgentService(fixture.dataSource, { record: vi.fn() } as never));
   sse = new AiTaskSseService(fixture.dataSource, bus);
 });
 
