@@ -256,4 +256,116 @@ describe('plot tree endpoints (real PostgreSQL)', () => {
     const otherWork = await new WorkService(dataSource).create(other.id, { title: '别人的作品', description: '' });
     await get(treeUrl(otherWork.work.id)).expect(404);
   });
+
+  // ── 推衍 ──
+
+  const derivationBody = (startNodeId: string) => ({
+    start_node_id: startNodeId,
+    place: '客栈',
+    background: '主角被追杀',
+    characters: [{ name: '林澈', description: '剑客' }],
+    random_enabled: true,
+    random_character_enabled: false
+  });
+
+  async function createSession(startNodeId: string): Promise<string> {
+    const response = await post(`${treeUrl()}/derivations`, derivationBody(startNodeId)).expect(201);
+    return response.body.data.session.id as string;
+  }
+
+  /** e2e 未启动队列 Worker，这里直接落一条推衍步骤，验证分支/候选/回写链路 */
+  async function seedStep(sessionId: string): Promise<void> {
+    const [{ DerivationStepEntity }] = await Promise.all([import('../src/database/derivation-step.entity')]);
+    await dataSource.getRepository(DerivationStepEntity).save({
+      id: randomUUID(),
+      session_id: sessionId,
+      step_no: 1,
+      content: '主角推门而入',
+      event: null,
+      new_characters: [],
+      branches: [
+        { id: 'branch_a', label: '追查线索', description: '' },
+        { id: 'branch_b', label: '正面冲突', description: '' }
+      ],
+      chosen_branch_id: null,
+      task_id: null
+    });
+  }
+
+  it('creates a derivation session, enqueues a step and rejects duplicates', async () => {
+    await createTree();
+    const start = await createNode('起点');
+    const sessionId = await createSession(start.id);
+
+    const started = await post(`${treeUrl()}/derivations/${sessionId}/steps`).expect(202);
+    expect(started.body.data.task.scope).toBe('plot');
+    expect(started.body.data.task.status).toBe('queued');
+    expect(started.body.data.session.status).toBe('running');
+
+    // 已有排队任务 → 409，避免重复生成
+    await post(`${treeUrl()}/derivations/${sessionId}/steps`).expect(409);
+
+    // 尚无步骤：改步骤 404、生成候选 422
+    await patch(`${treeUrl()}/derivations/${sessionId}/steps/1`, { content: 'x' }).expect(404);
+    await post(`${treeUrl()}/derivations/${sessionId}/candidates`, {
+      split_by_step: false, placement: 'child'
+    }).expect(422);
+
+    // 契约校验：角色至少 1 个
+    await post(`${treeUrl()}/derivations`, { ...derivationBody(start.id), characters: [] }).expect(422);
+  });
+
+  it('updates steps, confirms candidates into the tree and rejects without writes', async () => {
+    await createTree();
+    const start = await createNode('起点');
+    const sessionId = await createSession(start.id);
+    await seedStep(sessionId);
+
+    const branches = await patch(`${treeUrl()}/derivations/${sessionId}/steps/1`, {
+      content: '改写后的第一步',
+      chosen_branch_id: 'branch_a'
+    }).expect(200);
+    expect(branches.body.data.step.content).toBe('改写后的第一步');
+    expect(branches.body.data.step.chosen_branch_id).toBe('branch_a');
+    await patch(`${treeUrl()}/derivations/${sessionId}/steps/1`, { chosen_branch_id: 'missing' }).expect(422);
+
+    const candidateResponse = await post(`${treeUrl()}/derivations/${sessionId}/candidates`, {
+      split_by_step: false, placement: 'child'
+    }).expect(201);
+    const candidateId = candidateResponse.body.data.candidate.id as string;
+    expect(candidateResponse.body.data.candidate.status).toBe('pending');
+    expect(candidateResponse.body.data.candidate.payload.nodes).toHaveLength(1);
+
+    const before = await get(treeUrl()).expect(200);
+    const version = before.body.data.tree.version as number;
+    await post(`${treeUrl()}/derivations/${sessionId}/candidates/${candidateId}/confirm`, {
+      expected_version: version + 1
+    }).expect(409);
+
+    const confirmed = await post(`${treeUrl()}/derivations/${sessionId}/candidates/${candidateId}/confirm`, {
+      expected_version: version
+    }).expect(200);
+    const createdNodeId = confirmed.body.data.nodes[0].id as string;
+    expect(confirmed.body.data.version).toBe(version + 1);
+
+    const after = await get(treeUrl()).expect(200);
+    expect(after.body.data.nodes).toHaveLength(2);
+    expect(after.body.data.nodes.some((node: { id: string }) => node.id === createdNodeId)).toBe(true);
+
+    // 重复确认幂等：返回同一批节点，不重复写树
+    const again = await post(`${treeUrl()}/derivations/${sessionId}/candidates/${candidateId}/confirm`, {}).expect(200);
+    expect(again.body.data.nodes.map((node: { id: string }) => node.id)).toEqual([createdNodeId]);
+
+    // 拒绝不写树；拒绝后再确认返回 409
+    const nextCandidate = await post(`${treeUrl()}/derivations/${sessionId}/candidates`, {
+      split_by_step: false, placement: 'sibling'
+    }).expect(201);
+    const nextId = nextCandidate.body.data.candidate.id as string;
+    const rejected = await post(`${treeUrl()}/derivations/${sessionId}/candidates/${nextId}/reject`).expect(200);
+    expect(rejected.body.data.candidate.status).toBe('rejected');
+    await post(`${treeUrl()}/derivations/${sessionId}/candidates/${nextId}/confirm`, {}).expect(409);
+
+    const finalTree = await get(treeUrl()).expect(200);
+    expect(finalTree.body.data.nodes).toHaveLength(2);
+  });
 });
