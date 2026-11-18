@@ -19,7 +19,20 @@ export default defineConfig({
   build: {
     // 工作区契约包以 CommonJS 产物发布，pnpm 隔离布局下其真实路径不在 node_modules 内，
     // 需显式纳入 CommonJS 转换，Rollup 才能识别其具名导出。
-    commonjsOptions: { include: [/node_modules/, /packages[\\/]contracts/] }
+    commonjsOptions: { include: [/node_modules/, /packages[\\/]contracts/] },
+    rollupOptions: {
+      output: {
+        // 手动拆包：体积稳定、变更频率低的第三方库单独成块，
+        // 既缩小首屏主包，也让业务代码变更不会让整包缓存失效。
+        manualChunks(id: string) {
+          const path = id.replace(/\\/g, '/');
+          if (path.includes('prosemirror') || path.includes('packages/editor-schema')) return 'vendor-editor';
+          if (/\/(?:react|react-dom|react-router|react-router-dom|scheduler)\//.test(path)) return 'vendor-react';
+          if (path.includes('/zod/') || path.includes('packages/contracts')) return 'vendor-contracts';
+          return undefined;
+        }
+      }
+    }
   },
   test: {
     globals: true,
