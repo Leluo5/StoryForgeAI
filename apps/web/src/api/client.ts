@@ -18,7 +18,9 @@ function csrfToken(): string {
   return decodeURIComponent(cookie?.slice('storyforge_csrf='.length) ?? '');
 }
 
-export async function apiRequest<T>(path: string, schema: ZodType<T>, init: RequestInit = {}): Promise<T> {
+// 泛型取 schema 的「输出」类型（Output），避免 .default() 使 Input≠Output 时被推断成 Input。
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+export async function apiRequest<T>(path: string, schema: ZodType<T, any, any>, init: RequestInit = {}): Promise<T> {
   const method = (init.method ?? 'GET').toUpperCase();
   const response = await fetch(path, {
     ...init,

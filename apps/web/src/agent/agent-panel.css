@@ -1,0 +1,59 @@
+.agent-panel h2 { margin: 0 0 var(--sp-3); font-size: var(--fs-h3); font-weight: var(--fw-semibold); }
+.agent-panel h3 { margin: var(--sp-4) 0 var(--sp-2); font-size: var(--fs-body-lg); font-weight: var(--fw-semibold); }
+
+.agent-error { margin: var(--sp-2) 0; color: var(--danger-600, #b91c1c); font-size: var(--fs-body-sm); }
+.agent-loading { color: var(--text-secondary); font-size: var(--fs-body-sm); }
+
+/* ── 工具清单 ── */
+.agent-tools { display: flex; flex-direction: column; gap: var(--sp-2); }
+.agent-tool-card { padding: var(--sp-2); border: 1px solid var(--border-color); border-radius: var(--radius-md); }
+.agent-tool-head { display: flex; align-items: center; gap: var(--sp-2); margin-bottom: var(--sp-1); }
+.agent-tool-name { font-weight: var(--fw-semibold); }
+.agent-tool-id { font-size: var(--fs-body-sm); color: var(--text-secondary); }
+.agent-tool-actions { margin-left: auto; display: flex; gap: var(--sp-1); }
+.agent-tool-actions button,
+.agent-form button,
+.agent-card-actions button {
+  min-height: 28px; padding: var(--sp-1) var(--sp-2);
+  color: var(--text-primary); background: var(--bg-tertiary);
+  border: 1px solid var(--border-color); border-radius: var(--radius-md);
+  font: inherit; font-size: var(--fs-body-sm);
+}
+.agent-tool-actions button:disabled,
+.agent-form button:disabled,
+.agent-card-actions button:disabled { opacity: 0.5; cursor: not-allowed; }
+
+.agent-tool-meta { display: flex; flex-wrap: wrap; align-items: center; gap: var(--sp-1); font-size: var(--fs-body-sm); color: var(--text-secondary); }
+.agent-badge { padding: 0 var(--sp-1); border-radius: var(--radius-sm); font-size: var(--fs-body-sm); }
+.agent-badge-enabled { background: var(--success-100, #d1fae5); color: var(--success-700, #047857); }
+.agent-badge-disabled { background: var(--bg-tertiary); color: var(--text-secondary); }
+.agent-bound { color: var(--text-secondary); }
+.agent-bound-empty { color: var(--text-secondary); font-style: italic; }
+
+/* ── 配置表单 ── */
+.agent-form { display: flex; flex-direction: column; gap: var(--sp-2); margin: var(--sp-2) 0; padding: var(--sp-2); border: 1px solid var(--border-color); border-radius: var(--radius-md); }
+.agent-form label { font-size: var(--fs-body-sm); color: var(--text-secondary); }
+.agent-form select,
+.agent-form input[type='text'],
+.agent-form input[type='number'] {
+  width: 100%; padding: var(--sp-1) var(--sp-2);
+  color: var(--text-primary); background: var(--bg-tertiary);
+  border: 1px solid var(--border-color); border-radius: var(--radius-md);
+  font: inherit; font-size: var(--fs-body-sm);
+}
+.agent-form-row { display: flex; gap: var(--sp-2); }
+.agent-form-row > * { flex: 1 1 0; min-width: 0; }
+.agent-check { display: flex; align-items: center; gap: var(--sp-1); }
+.agent-check input { width: auto; }
+.agent-form-actions { display: flex; gap: var(--sp-2); }
+.agent-warning { margin: var(--sp-1) 0 0; font-size: var(--fs-body-sm); color: var(--warning-700, #92400e); }
+
+/* ── Agent 列表 ── */
+.agent-cards { display: flex; flex-direction: column; gap: var(--sp-2); }
+.agent-card { padding: var(--sp-2); border: 1px solid var(--border-color); border-radius: var(--radius-md); }
+.agent-card-head { display: flex; align-items: center; gap: var(--sp-2); margin-bottom: var(--sp-1); }
+.agent-card-name { font-weight: var(--fw-semibold); }
+.agent-default-tag { padding: 0 var(--sp-1); border-radius: var(--radius-sm); background: var(--brand-100, #e0e7ff); color: var(--brand-700, #4338ca); font-size: var(--fs-body-sm); }
+.agent-card-meta { font-size: var(--fs-body-sm); color: var(--text-secondary); }
+.agent-card-actions { display: flex; gap: var(--sp-1); margin-top: var(--sp-1); }
+.agent-empty { color: var(--text-secondary); font-size: var(--fs-body-sm); }

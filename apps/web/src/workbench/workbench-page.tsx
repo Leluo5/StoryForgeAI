@@ -17,6 +17,7 @@ import { VersionPanel } from '../revision/version-panel';
 import { CommentPanel } from '../revision/comment-panel';
 import { TodoPanel } from '../revision/todo-panel';
 import { AiTaskPanel } from '../ai/ai-task-panel';
+import { AgentPanel } from '../agent/agent-panel';
 import { NotificationCenter } from '../revision/notification-center';
 import { unreadCount } from '../revision/collab-client';
 import './workbench.css';
@@ -103,8 +104,8 @@ export function WorkbenchPage({ client = defaultClient }: Props) {
     return () => { active = false; };
   }, []);
 
-  // 合法右侧面板：chapter（章节信息）/ revision（修订）/ version（版本）/ comment（评论）/ todo（待办）/ ai（AI 创作）
-  const PANELS = ['chapter', 'revision', 'version', 'comment', 'todo', 'ai'];
+  // 合法右侧面板：chapter（章节信息）/ revision（修订）/ version（版本）/ comment（评论）/ todo（待办）/ ai（AI 创作）/ agent（Agent 管理）
+  const PANELS = ['chapter', 'revision', 'version', 'comment', 'todo', 'ai', 'agent'];
   const currentPanel = PANELS.includes(searchParams.get('panel') ?? '') ? (searchParams.get('panel') as string) : 'chapter';
   // M1 只有正文页签，非法深链参数就地归一化
   useEffect(() => {
@@ -210,6 +211,8 @@ export function WorkbenchPage({ client = defaultClient }: Props) {
         onClick={() => switchPanel('todo')}>待办</button>
       <button type="button" role="tab" id={`ai-tab-${idSuffix}`} aria-controls={`ai-panel-${idSuffix}`} aria-selected={currentPanel === 'ai'} className={currentPanel === 'ai' ? 'context-tab-active' : ''}
         onClick={() => switchPanel('ai')}>AI 创作</button>
+      <button type="button" role="tab" id={`agent-tab-${idSuffix}`} aria-controls={`agent-panel-${idSuffix}`} aria-selected={currentPanel === 'agent'} className={currentPanel === 'agent' ? 'context-tab-active' : ''}
+        onClick={() => switchPanel('agent')}>Agent 管理</button>
     </div>;
     let body: JSX.Element;
     if (currentPanel === 'revision') {
@@ -223,6 +226,10 @@ export function WorkbenchPage({ client = defaultClient }: Props) {
     } else if (currentPanel === 'ai') {
       body = <section id={`ai-panel-${idSuffix}`} role="tabpanel" aria-labelledby={`ai-tab-${idSuffix}`}>
         <AiTaskPanel workId={workId} chapterId={chapterId} />
+      </section>;
+    } else if (currentPanel === 'agent') {
+      body = <section id={`agent-panel-${idSuffix}`} role="tabpanel" aria-labelledby={`agent-tab-${idSuffix}`}>
+        <AgentPanel />
       </section>;
     } else {
       body = <section aria-label="章节信息">
@@ -263,7 +270,7 @@ export function WorkbenchPage({ client = defaultClient }: Props) {
         setNoticeOpenKey((key) => key + 1);
         openDialog(noticeDialog.current);
       }}>通知{noticeUnread > 0 ? `(${noticeUnread})` : ''}</button>
-      <button className="panel-trigger right-trigger" type="button" onClick={() => openDialog(rightDialog.current)}>打开{currentPanel === 'revision' ? '修订' : currentPanel === 'version' ? '版本' : currentPanel === 'comment' ? '评论' : currentPanel === 'todo' ? '待办' : currentPanel === 'ai' ? 'AI 创作' : '章节信息'}</button>
+      <button className="panel-trigger right-trigger" type="button" onClick={() => openDialog(rightDialog.current)}>打开{currentPanel === 'revision' ? '修订' : currentPanel === 'version' ? '版本' : currentPanel === 'comment' ? '评论' : currentPanel === 'todo' ? '待办' : currentPanel === 'ai' ? 'AI 创作' : currentPanel === 'agent' ? 'Agent 管理' : '章节信息'}</button>
     </header>
     {error && <p role="alert">{error}</p>}
     <div className="workbench-grid" style={style}>
@@ -296,7 +303,7 @@ export function WorkbenchPage({ client = defaultClient }: Props) {
       {navigation}
     </dialog>
     <dialog ref={rightDialog} className="workbench-dialog right-dialog" aria-labelledby="right-dialog-title" onClose={restoreDialogFocus}>
-      <h2 id="right-dialog-title">{currentPanel === 'revision' ? '修订' : currentPanel === 'version' ? '版本历史' : currentPanel === 'comment' ? '评论' : currentPanel === 'todo' ? '待办' : '章节信息'}</h2>
+      <h2 id="right-dialog-title">{currentPanel === 'revision' ? '修订' : currentPanel === 'version' ? '版本历史' : currentPanel === 'comment' ? '评论' : currentPanel === 'todo' ? '待办' : currentPanel === 'agent' ? 'Agent 管理' : '章节信息'}</h2>
       <button type="button" onClick={() => rightDialog.current?.close()}>关闭右侧面板</button>
       {context('dialog')}
     </dialog>
