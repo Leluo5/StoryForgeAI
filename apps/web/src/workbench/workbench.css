@@ -19,6 +19,10 @@
 .workbench-right { border-left: 1px solid var(--border-color); }
 .workbench-center { min-width: 0; overflow: auto; padding: var(--sp-5); }
 .workbench-center > section { width: min(100%, 720px); margin: 0 auto; }
+/* 中央页签把正文与剧情包在普通容器里，保持正文宽度约束；剧情画布独占整宽 */
+.workbench-center > div > section { width: min(100%, 720px); margin: 0 auto; }
+.workbench-center > div > .plot-workspace { width: 100%; margin: 0; }
+.plot-side { display: flex; flex-direction: column; gap: var(--sp-3); }
 .workbench-center textarea {
   width: 100%; min-height: 60vh; padding: var(--sp-4); resize: vertical;
   color: var(--text-primary); background: var(--bg-secondary); border: 1px solid var(--border-color);

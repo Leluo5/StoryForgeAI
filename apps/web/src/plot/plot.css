@@ -1,0 +1,228 @@
+/* 剧情页签：画布 / 工具栏 / 列表 / 检查器 / 推衍（M3c-1） */
+
+.workbench-center .plot-workspace {
+  width: 100%; margin: 0; display: flex; flex-direction: column; gap: var(--sp-2);
+}
+
+.plot-toolbar {
+  display: flex; flex-wrap: wrap; gap: var(--sp-2); align-items: center;
+  padding: var(--sp-2); background: var(--bg-secondary);
+  border: 1px solid var(--border-color); border-radius: var(--radius-md);
+}
+.plot-toolbar-group { display: flex; flex-wrap: wrap; gap: var(--sp-1); align-items: center; }
+.plot-toolbar button,
+.plot-workspace button,
+.plot-inspector button,
+.plot-derivation button {
+  min-height: 32px; padding: var(--sp-1) var(--sp-2); color: var(--text-primary);
+  background: var(--bg-tertiary); border: 1px solid var(--border-color);
+  border-radius: var(--radius-md); cursor: pointer;
+}
+.plot-toolbar button:hover,
+.plot-workspace button:hover,
+.plot-inspector button:hover,
+.plot-derivation button:hover { background: var(--bg-hover); }
+.plot-toolbar button:disabled,
+.plot-workspace button:disabled,
+.plot-inspector button:disabled,
+.plot-derivation button:disabled { opacity: 0.5; cursor: not-allowed; }
+.plot-toolbar button[aria-pressed='true'] { color: var(--brand-600); border-color: var(--brand-500); background: var(--brand-100); }
+[data-theme='dark'] .plot-toolbar button[aria-pressed='true'] { color: var(--brand-400); }
+.plot-zoom { min-width: 48px; text-align: center; color: var(--text-secondary); }
+.plot-search { flex: 1 1 320px; }
+.plot-search label { color: var(--text-secondary); }
+.plot-search input,
+.plot-search select { min-height: 32px; }
+.plot-search-count { color: var(--text-secondary); font-size: var(--fs-caption); }
+
+.plot-workspace input,
+.plot-workspace select,
+.plot-workspace textarea,
+.plot-inspector input,
+.plot-inspector select,
+.plot-inspector textarea,
+.plot-derivation input,
+.plot-derivation select,
+.plot-derivation textarea {
+  padding: var(--sp-1) var(--sp-2); color: var(--text-primary);
+  background: var(--bg-primary); border: 1px solid var(--border-color);
+  border-radius: var(--radius-sm); font: inherit;
+}
+.plot-workspace input:focus-visible,
+.plot-workspace select:focus-visible,
+.plot-workspace textarea:focus-visible,
+.plot-inspector input:focus-visible,
+.plot-inspector select:focus-visible,
+.plot-inspector textarea:focus-visible,
+.plot-derivation input:focus-visible,
+.plot-derivation select:focus-visible,
+.plot-derivation textarea:focus-visible {
+  outline: 2px solid var(--brand-500); outline-offset: 1px;
+}
+
+.plot-empty {
+  padding: var(--sp-6); text-align: center; background: var(--bg-secondary);
+  border: 1px dashed var(--border-color); border-radius: var(--radius-md);
+}
+.plot-empty h2 { margin-top: 0; }
+
+.plot-hint { color: var(--text-secondary); font-size: var(--fs-caption); }
+.plot-notice { margin: 0; color: var(--brand-600); font-size: var(--fs-caption); }
+[data-theme='dark'] .plot-notice { color: var(--brand-400); }
+.plot-error { margin: 0; color: var(--danger-600, #dc2626); font-size: var(--fs-caption); }
+
+.plot-confirm {
+  padding: var(--sp-2) var(--sp-3); background: var(--bg-tertiary);
+  border: 1px solid var(--brand-500); border-radius: var(--radius-md);
+}
+.plot-confirm p { margin: 0 0 var(--sp-2); }
+.plot-link-bar {
+  display: flex; flex-wrap: wrap; gap: var(--sp-2); align-items: center;
+  padding: var(--sp-2) var(--sp-3); background: var(--brand-100);
+  border-radius: var(--radius-md); color: var(--text-primary);
+}
+[data-theme='dark'] .plot-link-bar { background: var(--bg-tertiary); border: 1px solid var(--brand-500); }
+
+.plot-viewport { position: relative; min-height: 420px; height: calc(100vh - 260px); }
+
+/* ── 画布 ── */
+.plot-canvas {
+  position: relative; width: 100%; height: 100%; overflow: hidden;
+  background-color: var(--bg-primary);
+  background-image:
+    linear-gradient(var(--border-color) 1px, transparent 1px),
+    linear-gradient(90deg, var(--border-color) 1px, transparent 1px);
+  background-size: 40px 40px; background-position: 0 0;
+  border: 1px solid var(--border-color); border-radius: var(--radius-md);
+}
+.plot-canvas:focus-visible { outline: 2px solid var(--brand-500); outline-offset: -2px; }
+.plot-canvas-plane { position: absolute; left: 0; top: 0; width: 1px; height: 1px; transform-origin: 0 0; }
+.plot-canvas-empty {
+  position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%);
+  color: var(--text-secondary); pointer-events: none;
+}
+.plot-links { position: absolute; left: 0; top: 0; overflow: visible; }
+.plot-edge { fill: none; pointer-events: stroke; cursor: pointer; }
+.plot-edge-parent { stroke: var(--text-secondary); stroke-width: 2; }
+.plot-edge-linear { stroke: var(--brand-500); stroke-width: 2.5; }
+.plot-edge-nonlinear { stroke: var(--brand-500); stroke-width: 2; stroke-dasharray: 8 6; opacity: 0.75; }
+.plot-edge.is-selected { stroke: var(--danger-600, #dc2626); stroke-width: 3.5; }
+.plot-arrow-head { fill: var(--brand-500); }
+
+.plot-canvas .plot-node {
+  position: absolute; display: flex; flex-direction: column; gap: 2px;
+  padding: var(--sp-2); text-align: left; color: var(--text-primary);
+  background: var(--bg-secondary); border: 1px solid var(--border-color);
+  border-radius: var(--radius-md); box-shadow: 0 1px 2px rgb(15 23 42 / 8%);
+  cursor: grab; overflow: hidden;
+}
+.plot-canvas .plot-node:active { cursor: grabbing; }
+.plot-canvas .plot-node.is-selected { border-color: var(--brand-500); box-shadow: 0 0 0 2px var(--brand-100); }
+.plot-canvas .plot-node.is-highlight { border-color: var(--warning-500, #f59e0b); box-shadow: 0 0 0 2px var(--warning-100, #fef3c7); }
+.plot-canvas .plot-node:focus-visible { outline: 2px solid var(--brand-500); outline-offset: 2px; }
+.plot-node-title { font-weight: var(--fw-semibold); font-size: var(--fs-body); }
+.plot-node-summary { color: var(--text-secondary); font-size: var(--fs-caption); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.plot-node-meta { margin-top: auto; color: var(--text-secondary); font-size: 11px; }
+
+.plot-group-box {
+  position: absolute; border: 1px dashed var(--border-color); border-radius: var(--radius-md);
+  background: color-mix(in srgb, var(--bg-secondary) 55%, transparent); pointer-events: none;
+}
+.plot-group-swimlane { border-style: solid; border-color: var(--brand-500); }
+.plot-group-label {
+  position: absolute; left: 8px; top: -10px; padding: 0 6px;
+  color: var(--text-secondary); background: var(--bg-primary); font-size: var(--fs-caption);
+}
+
+/* ── 列表视图 ── */
+.plot-node-list {
+  height: 100%; overflow: auto; padding: var(--sp-2);
+  background: var(--bg-secondary); border: 1px solid var(--border-color); border-radius: var(--radius-md);
+}
+.plot-list-row {
+  display: flex; align-items: center; gap: var(--sp-2); min-height: 40px;
+  padding: var(--sp-1) var(--sp-2); border-radius: var(--radius-sm); cursor: pointer;
+}
+.plot-list-row:hover { background: var(--bg-hover); }
+.plot-list-row.is-selected { background: var(--brand-100); }
+[data-theme='dark'] .plot-list-row.is-selected { background: var(--bg-tertiary); outline: 1px solid var(--brand-500); }
+.plot-list-row:focus-visible { outline: 2px solid var(--brand-500); outline-offset: -2px; }
+.plot-list-title { flex: 1 1 auto; font-weight: var(--fw-medium); }
+.plot-list-meta { color: var(--text-secondary); font-size: var(--fs-caption); }
+.plot-list-delete { min-height: 28px; }
+.plot-list-empty { padding: var(--sp-4); color: var(--text-secondary); }
+
+/* ── 检查器 / 推衍 ── */
+.plot-inspector, .plot-derivation { display: flex; flex-direction: column; gap: var(--sp-3); }
+.plot-inspector h3, .plot-derivation h3 { margin: 0; font-size: var(--fs-h3); }
+.plot-form { display: flex; flex-direction: column; gap: var(--sp-2); }
+.plot-form label, .plot-derivation label { display: flex; flex-direction: column; gap: 4px; font-size: var(--fs-caption); color: var(--text-secondary); }
+.plot-form input, .plot-form select, .plot-form textarea,
+.plot-derivation input:not([type='checkbox']):not([type='radio']),
+.plot-derivation select, .plot-derivation textarea { width: 100%; }
+.plot-form-row { display: grid; grid-template-columns: repeat(auto-fit, minmax(80px, 1fr)); gap: var(--sp-2); }
+.plot-form-actions { display: flex; flex-wrap: wrap; gap: var(--sp-1); }
+.plot-danger { color: var(--danger-600, #dc2626); }
+.plot-subsection { display: flex; flex-direction: column; gap: var(--sp-2); border-top: 1px solid var(--border-color); padding-top: var(--sp-2); }
+.plot-subsection h3, .plot-subsection h4 { margin: 0; font-size: var(--fs-body); }
+fieldset { margin: 0; padding: var(--sp-2); border: 1px solid var(--border-color); border-radius: var(--radius-sm); }
+legend { padding: 0 4px; color: var(--text-secondary); font-size: var(--fs-caption); }
+.plot-check { flex-direction: row; align-items: center; gap: var(--sp-1); color: var(--text-primary); }
+.plot-checklist { display: flex; flex-wrap: wrap; gap: var(--sp-1) var(--sp-2); max-height: 120px; overflow: auto; }
+.plot-character-row { display: grid; grid-template-columns: 1fr 1.4fr auto; gap: var(--sp-1); margin-bottom: var(--sp-1); }
+.plot-link-list, .plot-group-list, .plot-candidate-list, .plot-step-list {
+  margin: 0; padding: 0; list-style: none; display: flex; flex-direction: column; gap: var(--sp-1);
+}
+.plot-link-list li, .plot-group-list li, .plot-candidate-list li {
+  display: flex; flex-wrap: wrap; align-items: center; gap: var(--sp-1);
+  padding: var(--sp-1); background: var(--bg-tertiary); border-radius: var(--radius-sm);
+}
+.plot-link-list li.is-selected { outline: 2px solid var(--danger-600, #dc2626); }
+.plot-group-list li input { flex: 1 1 80px; }
+.plot-link-type { color: var(--text-secondary); font-size: 11px; }
+.plot-step { padding: var(--sp-2); background: var(--bg-tertiary); border-radius: var(--radius-sm); }
+.plot-step h4 { margin: 0 0 var(--sp-1); }
+.plot-step-event { margin: 0 0 var(--sp-1); color: var(--brand-600); font-size: var(--fs-caption); }
+[data-theme='dark'] .plot-step-event { color: var(--brand-400); }
+.plot-step-editor { display: flex; flex-direction: column; gap: var(--sp-1); }
+.plot-step-editor textarea { width: 100%; }
+
+/* ── 中央页签 ── */
+.center-tabs { display: flex; gap: var(--sp-1); margin-bottom: var(--sp-3); }
+.center-tabs button {
+  min-height: 34px; padding: var(--sp-1) var(--sp-3); color: var(--text-primary);
+  background: var(--bg-tertiary); border: 1px solid var(--border-color);
+  border-radius: var(--radius-md); cursor: pointer;
+}
+.center-tabs button[aria-selected='true'] { color: var(--brand-600); border-color: var(--brand-500); background: var(--brand-100); }
+[data-theme='dark'] .center-tabs button[aria-selected='true'] { color: var(--brand-400); background: var(--bg-tertiary); }
+
+/* ── 响应式：375 / 768 / 1024 / 1440 ── */
+@media (max-width: 1023px) {
+  .plot-viewport { height: calc(100vh - 320px); }
+  .plot-search { flex-basis: 100%; }
+}
+@media (max-width: 767px) {
+  .plot-toolbar { padding: var(--sp-1); }
+  .plot-toolbar-group { flex: 1 1 100%; }
+  .plot-toolbar-group button { flex: 1 1 auto; }
+  .plot-viewport { height: 56vh; min-height: 320px; }
+  .plot-form-row, .plot-character-row { grid-template-columns: 1fr; }
+  .plot-canvas { background-size: 24px 24px; }
+}
+@media (max-width: 480px) {
+  .plot-workspace { gap: var(--sp-1); }
+  /* 窄屏隐藏标签文本但保留无障碍名称 */
+  .plot-search label {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    padding: 0;
+    margin: -1px;
+    overflow: hidden;
+    clip: rect(0 0 0 0);
+    white-space: nowrap;
+    border: 0;
+  }
+  .plot-node { padding: 6px; }
+}
