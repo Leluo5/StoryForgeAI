@@ -61,7 +61,7 @@ async function createQueuedTask(tool: 'continue' | 'rewrite' | 'expand' | 'polis
     enqueue: vi.fn(async () => undefined),
     remove: vi.fn(async () => undefined)
   }, new AiTaskEventBus(),
-  new AgentService(fixture.dataSource, { record: vi.fn() } as never));
+  new AgentService(fixture.dataSource, { record: vi.fn() } as never, {} as never, {} as never, {} as never, {} as never));
   const { task } = await service.createTask(fixture.authorId, fixture.workId, fixture.chapterId, {
     tool, input_summary: { selection: { from: 0, to: 10 } }, idempotency_key: idempotencyKey()
   });

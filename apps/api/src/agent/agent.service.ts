@@ -1,4 +1,4 @@
-import { Inject, Injectable, NotFoundException, ConflictException } from '@nestjs/common';
+import { Injectable, NotFoundException, ConflictException, BadRequestException, Inject } from '@nestjs/common';
 import { DataSource, EntityManager } from 'typeorm';
 import { randomUUID } from 'node:crypto';
 import type {
@@ -10,11 +10,21 @@ import type {
   UpdateAgentInput,
   UpdateToolInput,
   ListAgentsResponse,
-  ListToolsResponse
+  ListToolsResponse,
+  CreateAgentV2Input,
+  UpdateAgentV2Input,
+  ListAgentsV2Query,
+  AgentVersionSummary,
+  AgentStatusV2
 } from '@storyforge/contracts';
+import { validateAgentIdentity } from '@storyforge/contracts';
 import { AgentEntity } from '../database/agent.entity';
 import { AiToolEntity } from '../database/ai-tool.entity';
 import { AuditService } from '../revision/audit.service';
+import { AgentVersionService } from './agent-version.service';
+import { AgentProvisionService } from './agent-provision.service';
+import { AgentGroupService } from './agent-group.service';
+import { FlowProgressService } from './flow-progress.service';
 
 // ───────────────────────────── 实体 ↔ 契约映射 ─────────────────────────────
 
@@ -61,7 +71,11 @@ function toToolListItem(entity: AiToolEntity, boundAgent: AgentEntity | null): A
 export class AgentService {
   constructor(
     @Inject(DataSource) private readonly dataSource: DataSource,
-    @Inject(AuditService) private readonly auditService: AuditService
+    @Inject(AuditService) private readonly auditService: AuditService,
+    private readonly versionService: AgentVersionService,
+    private readonly provisionService: AgentProvisionService,
+    private readonly groupService: AgentGroupService,
+    private readonly flowProgressService: FlowProgressService
   ) {}
 
   /**
@@ -279,6 +293,337 @@ export class AgentService {
       .update()
       .set({ is_default: false })
       .where('author_id = :authorId', { authorId })
+      .andWhere('is_default = true')
+      .execute();
+  }
+
+  // ═══════════════════════════════════════════════════════════════════
+  // V2 方法：作品级 Agent 管理（版本快照 / 分组 / 流程进度）
+  // 所有 V2 方法开头先校验 authorId 归属
+  // ═══════════════════════════════════════════════════════════════════
+
+  /**
+   * V2 创建 Agent（作品级）：kind 互斥校验 + 版本快照 version_no=1。
+   */
+  async createAgentV2(authorId: string, input: CreateAgentV2Input): Promise<AgentEntity> {
+    try {
+      validateAgentIdentity({
+        kind: input.kind ?? 'legacy',
+        role_id: input.role_id ?? null,
+        tool_name: input.tool_name ?? null,
+        step_order: input.step_order ?? null
+      });
+    } catch (e) {
+      throw new BadRequestException((e as Error).message);
+    }
+
+    return this.dataSource.transaction(async (manager) => {
+      const repo = manager.getRepository(AgentEntity);
+      const agent = repo.create();
+      agent.id = randomUUID();
+      agent.author_id = authorId;
+      agent.project_id = input.project_id ?? null;
+      agent.kind = input.kind ?? 'legacy';
+      agent.name = input.name;
+      agent.description = input.description ?? '';
+      agent.platform = input.platform ?? 'mock';
+      agent.platform_config = input.platform_config ?? {};
+      agent.model_id = input.model_id ?? 'default';
+      agent.model_config = input.model_config ?? {};
+      agent.role_id = input.role_id ?? null;
+      agent.tool_name = input.tool_name ?? null;
+      agent.step_order = input.step_order ?? null;
+      agent.scope = input.scope ?? 'project';
+      agent.source = input.source ?? 'manual';
+      agent.tags = input.tags ?? [];
+      agent.status = 'active';
+      agent.is_default = input.is_default ?? false;
+      agent.version_no = 1;
+      agent.versions = [];
+      agent.archived_at = null;
+
+      if (agent.is_default && agent.project_id) {
+        await this.clearOtherDefaultsV2(manager, authorId, agent.project_id, agent.kind);
+      }
+
+      // 初始版本快照
+      this.versionService.snapshot(agent, 'create', '创建 Agent');
+
+      await manager.save(agent);
+      await this.auditService.record(authorId, 'agent_create_v2', 'ai_agent', agent.id, {
+        kind: agent.kind,
+        project_id: agent.project_id,
+        name: agent.name
+      });
+
+      return agent;
+    });
+  }
+
+  /**
+   * V2 列出 Agent：支持多维度过滤 + 分页。
+   */
+  async listAgentsV2(
+    authorId: string,
+    query: ListAgentsV2Query
+  ): Promise<{ items: AgentEntity[]; total: number; page: number; page_size: number }> {
+    const page = query.page ?? 1;
+    const pageSize = query.page_size ?? 20;
+
+    const qb = this.dataSource.getRepository(AgentEntity)
+      .createQueryBuilder('agent')
+      .where('agent.author_id = :authorId', { authorId });
+
+    if (query.project_id) {
+      qb.andWhere('agent.project_id = :projectId', { projectId: query.project_id });
+    }
+    if (query.kind) {
+      qb.andWhere('agent.kind = :kind', { kind: query.kind });
+    }
+    if (query.status) {
+      qb.andWhere('agent.status = :status', { status: query.status });
+    }
+    if (query.role_id) {
+      qb.andWhere('agent.role_id = :roleId', { roleId: query.role_id });
+    }
+    if (query.tool_name) {
+      qb.andWhere('agent.tool_name = :toolName', { toolName: query.tool_name });
+    }
+    if (query.keyword) {
+      qb.andWhere('agent.name ILIKE :keyword', { keyword: `%${query.keyword}%` });
+    }
+
+    const [items, total] = await qb
+      .orderBy('agent.created_at', 'DESC')
+      .skip((page - 1) * pageSize)
+      .take(pageSize)
+      .getManyAndCount();
+
+    return { items, total, page, page_size: pageSize };
+  }
+
+  /**
+   * V2 获取 Agent 详情。includeVersions=false 时从返回中剥 versions 字段。
+   */
+  async getAgentV2(
+    authorId: string,
+    agentId: string,
+    includeVersions = true
+  ): Promise<AgentEntity> {
+    const agent = await this.dataSource.getRepository(AgentEntity)
+      .findOneBy({ id: agentId, author_id: authorId });
+    if (!agent) throw new NotFoundException('Agent not found');
+
+    if (!includeVersions) {
+      // 返回前克隆并剥掉 versions 数组
+      const { versions, ...rest } = agent as unknown as { versions: unknown[]; [k: string]: unknown };
+      void versions; // 静默未使用
+      return rest as unknown as AgentEntity;
+    }
+    return agent;
+  }
+
+  /**
+   * V2 更新 Agent（白名单字段 + 版本快照 + 审计）。
+   */
+  async updateAgentV2(
+    authorId: string,
+    agentId: string,
+    input: UpdateAgentV2Input
+  ): Promise<AgentEntity> {
+    return this.dataSource.transaction(async (manager) => {
+      const repo = manager.getRepository(AgentEntity);
+      const agent = await repo.findOneBy({ id: agentId, author_id: authorId });
+      if (!agent) throw new NotFoundException('Agent not found');
+
+      // 白名单：只更新 input 中存在的字段
+      if (input.name !== undefined) agent.name = input.name;
+      if (input.description !== undefined) agent.description = input.description;
+      if (input.platform !== undefined) agent.platform = input.platform;
+      if (input.platform_config !== undefined) agent.platform_config = input.platform_config;
+      if (input.model_id !== undefined) agent.model_id = input.model_id;
+      if (input.model_config !== undefined) agent.model_config = input.model_config;
+      if (input.status !== undefined) {
+        const status = input.status as AgentStatusV2;
+        // 不允许禁用默认 Agent
+        if (status === 'disabled' && agent.is_default) {
+          throw new ConflictException('Cannot disable the default agent');
+        }
+        agent.status = status;
+        if (status === 'archived') {
+          agent.archived_at = new Date();
+        } else {
+          // 非 archived 状态清除归档时间
+          agent.archived_at = null;
+        }
+      }
+      if (input.is_default !== undefined) {
+        if (input.is_default && agent.project_id) {
+          await this.clearOtherDefaultsV2(manager, authorId, agent.project_id, agent.kind);
+        }
+        agent.is_default = input.is_default;
+      }
+      if (input.tags !== undefined) agent.tags = input.tags;
+      if (input.manual_group_key !== undefined) {
+        agent.manual_group_key = input.manual_group_key;
+      }
+
+      // 版本快照 + 审计
+      this.versionService.snapshot(agent, 'update', `更新字段: ${Object.keys(input).join(',')}`);
+      await manager.save(agent);
+      await this.auditService.record(authorId, 'agent_update_v2', 'ai_agent', agent.id, {
+        fields: Object.keys(input)
+      });
+
+      return agent;
+    });
+  }
+
+  /**
+   * 归档 Agent：status=archived + archived_at=now + 版本快照 + 审计。
+   * 仅对非已归档 Agent 生效。
+   */
+  async archiveAgent(authorId: string, agentId: string): Promise<AgentEntity> {
+    return this.dataSource.transaction(async (manager) => {
+      const repo = manager.getRepository(AgentEntity);
+      const agent = await repo.findOneBy({ id: agentId, author_id: authorId });
+      if (!agent) throw new NotFoundException('Agent not found');
+      if (agent.status === 'archived') {
+        throw new ConflictException('Agent is already archived');
+      }
+
+      agent.status = 'archived';
+      agent.archived_at = new Date();
+      this.versionService.snapshot(agent, 'archive', '归档 Agent');
+      await manager.save(agent);
+      await this.auditService.record(authorId, 'agent_archive', 'ai_agent', agent.id, {
+        name: agent.name
+      });
+
+      return agent;
+    });
+  }
+
+  /**
+   * 恢复 Agent：status=active + archived_at=null + 版本快照 + 审计。
+   * 仅对已归档 Agent 生效。
+   */
+  async restoreAgent(authorId: string, agentId: string): Promise<AgentEntity> {
+    return this.dataSource.transaction(async (manager) => {
+      const repo = manager.getRepository(AgentEntity);
+      const agent = await repo.findOneBy({ id: agentId, author_id: authorId });
+      if (!agent) throw new NotFoundException('Agent not found');
+      if (agent.status !== 'archived') {
+        throw new ConflictException('Agent is not archived');
+      }
+
+      agent.status = 'active';
+      agent.archived_at = null;
+      this.versionService.snapshot(agent, 'restore', '恢复 Agent');
+      await manager.save(agent);
+      await this.auditService.record(authorId, 'agent_restore', 'ai_agent', agent.id, {
+        name: agent.name
+      });
+
+      return agent;
+    });
+  }
+
+  /**
+   * 强制删除 Agent（硬删）。
+   * 规则：未归档且 !force → 抛 409；已归档 → 硬删；同时解除 role_agent_bindings。
+   */
+  async forceDeleteAgent(authorId: string, agentId: string, force = false): Promise<{ ok: boolean }> {
+    return this.dataSource.transaction(async (manager) => {
+      const agentRepo = manager.getRepository(AgentEntity);
+      const bindingRepo = manager.getRepository('role_agent_bindings' as any);
+
+      const agent = await agentRepo.findOneBy({ id: agentId, author_id: authorId });
+      if (!agent) throw new NotFoundException('Agent not found');
+
+      if (agent.status !== 'archived' && !force) {
+        throw new ConflictException({
+          message: 'Agent is not archived. Set force=true to hard-delete an active/disabled agent.',
+          current_status: agent.status
+        });
+      }
+
+      // 解除 role_agent_bindings
+      await bindingRepo
+        .createQueryBuilder()
+        .delete()
+        .where('agent_id = :agentId', { agentId })
+        .execute();
+
+      // 解除 ai_tools 绑定
+      await manager.getRepository(AiToolEntity)
+        .createQueryBuilder()
+        .update()
+        .set({ agent_id: null })
+        .where('agent_id = :agentId', { agentId })
+        .execute();
+
+      // 硬删
+      await agentRepo.remove(agent);
+
+      await this.auditService.record(authorId, 'agent_force_delete', 'ai_agent', agent.id, {
+        name: agent.name,
+        was_archived: agent.status === 'archived'
+      });
+
+      return { ok: true };
+    });
+  }
+
+  /**
+   * 获取 Agent 的版本历史摘要（不含 snapshot 内容）。
+   */
+  async listVersions(authorId: string, agentId: string): Promise<AgentVersionSummary[]> {
+    const agent = await this.dataSource.getRepository(AgentEntity)
+      .findOneBy({ id: agentId, author_id: authorId });
+    if (!agent) throw new NotFoundException('Agent not found');
+
+    return this.versionService.summarize(agent);
+  }
+
+  /**
+   * 回滚 Agent 到指定版本（事务 + 版本服务 + 审计）。
+   */
+  async rollbackVersion(authorId: string, agentId: string, versionNo: number): Promise<AgentEntity> {
+    return this.dataSource.transaction(async (manager) => {
+      const repo = manager.getRepository(AgentEntity);
+      const agent = await repo.findOneBy({ id: agentId, author_id: authorId });
+      if (!agent) throw new NotFoundException('Agent not found');
+
+      // 版本回滚
+      this.versionService.rollback(agent, versionNo);
+      await manager.save(agent);
+
+      await this.auditService.record(authorId, 'agent_rollback', 'ai_agent', agent.id, {
+        target_version: versionNo,
+        new_version: agent.version_no
+      });
+
+      return agent;
+    });
+  }
+
+  // ───────────────────────────── V2 内部辅助 ─────────────────────────────
+
+  /** V2 的默认互斥清理：按 (project_id, kind) 维度清掉其他默认 */
+  private async clearOtherDefaultsV2(
+    manager: EntityManager,
+    authorId: string,
+    projectId: string,
+    kind: string
+  ): Promise<void> {
+    await manager.getRepository(AgentEntity)
+      .createQueryBuilder()
+      .update()
+      .set({ is_default: false })
+      .where('author_id = :authorId', { authorId })
+      .andWhere('project_id = :projectId', { projectId })
+      .andWhere('kind = :kind', { kind })
       .andWhere('is_default = true')
       .execute();
   }

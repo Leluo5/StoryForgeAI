@@ -122,7 +122,7 @@ beforeEach(async () => {
     enqueue: vi.fn(async () => undefined),
     remove: vi.fn(async () => undefined)
   }, bus,
-  new AgentService(fixture.dataSource, { record: vi.fn() } as never));
+  new AgentService(fixture.dataSource, { record: vi.fn() } as never, {} as never, {} as never, {} as never, {} as never));
   sse = new AiTaskSseService(fixture.dataSource, bus);
 });
 

@@ -30,7 +30,7 @@ beforeEach(async () => {
   service = new AiTaskService(fixture.dataSource, {
     record: vi.fn(async () => ({ id: randomUUID(), action: 'ai_task_create', target_type: 'ai_task', target_id: randomUUID(), detail: {}, actor_id: fixture.authorId, created_at: new Date().toISOString() }))
   } as never, queue, new AiTaskEventBus(),
-  new AgentService(fixture.dataSource, { record: vi.fn() } as never));
+  new AgentService(fixture.dataSource, { record: vi.fn() } as never, {} as never, {} as never, {} as never, {} as never));
 });
 
 afterEach(() => destroyWritingFixture(fixture));

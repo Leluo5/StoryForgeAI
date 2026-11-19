@@ -13,13 +13,13 @@ let service: AgentService;
 
 beforeEach(async () => {
   fixture = await createWritingFixture();
-  service = new AgentService(fixture.dataSource, { record: vi.fn() } as never);
+  service = new AgentService(fixture.dataSource, { record: vi.fn() } as never, {} as never, {} as never, {} as never, {} as never);
 });
 
 afterEach(() => destroyWritingFixture(fixture));
 
 function agentService(): AgentService {
-  return new AgentService(fixture.dataSource, { record: vi.fn() } as never);
+  return new AgentService(fixture.dataSource, { record: vi.fn() } as never, {} as never, {} as never, {} as never, {} as never);
 }
 
 describe('AgentService', () => {

@@ -20,7 +20,7 @@ let treeId: string;
 
 function buildService(): PlotDerivationService {
   const audit = { record: vi.fn(async () => ({ id: randomUUID() })) };
-  const agentService = new AgentService(fixture.dataSource, audit as never);
+  const agentService = new AgentService(fixture.dataSource, audit as never, {} as never, {} as never, {} as never, {} as never);
   const queue = {
     enqueue: vi.fn(async (taskId: string) => {
       enqueued.push(taskId);
