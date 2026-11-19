@@ -100,6 +100,15 @@ export function PlotDerivationPanel({
     streamRef.current = null;
   }
 
+  /** 终止事件可能早于步骤落库可见，只有状态与步数都落地才算收口 */
+  function terminalStatus(next: PlotSessionDetail, previousSteps: number): string | null {
+    if (next.session.status === 'failed' || next.session.status === 'finished') return '推衍任务已结束';
+    if (next.session.status !== 'running' && next.steps.length > previousSteps) {
+      return `第 ${next.steps.length} 步已生成，已自动暂停`;
+    }
+    return null;
+  }
+
   /** 优先订阅任务 SSE；任务缺失或通道不可用时回退轮询 */
   function watchTask(sessionId: string, task: AiTask | undefined, previousSteps: number): void {
     const taskId = task?.id;
@@ -113,9 +122,13 @@ export function PlotDerivationPanel({
         if (event.type !== 'succeeded' && event.type !== 'failed') return;
         closeStream();
         void refresh(sessionId).then((next) => {
-          setStatus(event.type === 'succeeded'
-            ? `第 ${next.steps.length} 步已生成，已自动暂停`
-            : '推衍任务已结束');
+          const settledText = terminalStatus(next, previousSteps);
+          if (settledText) {
+            setStatus(settledText);
+            return;
+          }
+          // 事件先于落库可见：继续轮询等待步骤与暂停状态同步
+          void waitForStep(sessionId, previousSteps);
         }).catch((cause) => setError(plotErrorMessage(cause)));
       },
       onError: () => {
@@ -124,6 +137,17 @@ export function PlotDerivationPanel({
         void waitForStep(sessionId, previousSteps);
       }
     });
+    // 任务可能在订阅建立前就已结束，终止事件不会重放：订阅后补一次快照兜底
+    void refresh(sessionId).then((next) => {
+      if (next.session.status === 'running') return;
+      closeStream();
+      const settledText = terminalStatus(next, previousSteps);
+      if (settledText) {
+        setStatus(settledText);
+        return;
+      }
+      void waitForStep(sessionId, previousSteps);
+    }).catch((cause) => setError(plotErrorMessage(cause)));
   }
 
   async function start(event: FormEvent) {

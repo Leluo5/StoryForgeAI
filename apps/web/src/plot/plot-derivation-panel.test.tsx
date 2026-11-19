@@ -250,12 +250,70 @@ describe('PlotDerivationPanel', () => {
     await waitFor(() => expect(subscribeEvents).toHaveBeenCalledWith(workId, 'task-1', expect.any(Object)));
     const getDerivation = mocks.client.getDerivation as ReturnType<typeof vi.fn>;
     getDerivation.mockClear();
+    getDerivation.mockResolvedValue({ session, steps: [step], candidates: [] });
 
     subscriptions[0]!.onEvent({ seq: 2, type: 'succeeded', payload: { step_no: 1 } } satisfies TaskEvent);
 
     await waitFor(() => expect(getDerivation).toHaveBeenCalledWith(workId, 'sess-1'));
     expect(close).toHaveBeenCalled();
     expect(await screen.findByText(/已生成，已自动暂停/)).toBeVisible();
+  });
+
+  it('settles the session when the task finished before the SSE stream connected', async () => {
+    const subscribeEvents = vi.fn(() => ({ close: vi.fn(), getState: () => 'open' as const }));
+    const mocks = renderPanel(
+      { session: { ...session, status: 'running' }, steps: [], candidates: [] },
+      1_000_000,
+      { taskId: 'task-1', subscribeEvents }
+    );
+    let calls = 0;
+    mocks.client.getDerivation = vi.fn(async () => {
+      calls += 1;
+      return calls === 1
+        ? { session: { ...session, status: 'running' as const }, steps: [step], candidates: [] }
+        : { session, steps: [step], candidates: [] };
+    });
+
+    await screen.findByRole('button', { name: '开始推衍' });
+    await userEvent.type(screen.getByLabelText('场所'), '客栈');
+    await userEvent.type(screen.getByLabelText('核心背景'), '主角被追杀');
+    await userEvent.type(screen.getByLabelText('角色 1 名称'), '林澈');
+    await userEvent.click(screen.getByRole('button', { name: '开始推衍' }));
+
+    await screen.findByRole('heading', { name: '第 1 步' });
+    await waitFor(() => expect(screen.getByRole('button', { name: '结束推衍' })).toBeEnabled());
+  });
+
+  it('keeps polling when the terminal event arrives before the step is visible', async () => {
+    const subscriptions: SubscribeOptions[] = [];
+    const subscribeEvents = vi.fn((_workId: string, _taskId: string, options: SubscribeOptions) => {
+      subscriptions.push(options);
+      return { close: vi.fn(), getState: () => 'open' as const };
+    });
+    const mocks = renderPanel(
+      { session: { ...session, status: 'running' }, steps: [], candidates: [] },
+      10,
+      { taskId: 'task-1', subscribeEvents }
+    );
+    let calls = 0;
+    mocks.client.getDerivation = vi.fn(async () => {
+      calls += 1;
+      return calls <= 3
+        ? { session: { ...session, status: 'running' as const }, steps: [], candidates: [] }
+        : { session, steps: [step], candidates: [] };
+    });
+
+    await screen.findByRole('button', { name: '开始推衍' });
+    await userEvent.type(screen.getByLabelText('场所'), '客栈');
+    await userEvent.type(screen.getByLabelText('核心背景'), '主角被追杀');
+    await userEvent.type(screen.getByLabelText('角色 1 名称'), '林澈');
+    await userEvent.click(screen.getByRole('button', { name: '开始推衍' }));
+
+    await waitFor(() => expect(subscribeEvents).toHaveBeenCalledWith(workId, 'task-1', expect.any(Object)));
+    subscriptions[0]!.onEvent({ seq: 2, type: 'succeeded', payload: {} } satisfies TaskEvent);
+
+    expect(await screen.findByRole('heading', { name: '第 1 步' })).toBeVisible();
+    expect(screen.getByRole('button', { name: '结束推衍' })).toBeEnabled();
   });
 
   it('falls back to polling when the SSE channel errors', async () => {
