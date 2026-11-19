@@ -25,6 +25,9 @@ import { DerivationSessionEntity } from './derivation-session.entity';
 import { DerivationStepEntity } from './derivation-step.entity';
 import { DerivationCandidateEntity } from './derivation-candidate.entity';
 import { PlotGenerationDraftEntity } from './plot-generation-draft.entity';
+import { FlowProgressEntity } from './flow-progress.entity';
+import { AgentGroupOverrideEntity } from './agent-group-override.entity';
+import { RoleAgentBindingEntity } from './role-agent-binding.entity';
 import { AuthBase1736899200000 } from './migrations/1736899200000-auth-base';
 import { WritingBase1736985600000 } from './migrations/1736985600000-writing-base';
 import { RevisionBase1760000000000 } from './migrations/1760000000000-revision-base';
@@ -33,6 +36,7 @@ import { AgentConfigBase1760200000000 } from './migrations/1760200000000-agent-c
 import { PlotBase1760300000000 } from './migrations/1760300000000-plot-base';
 import { AiTaskPlotScope1760300001000 } from './migrations/1760300001000-ai-task-plot-scope';
 import { DerivationSessionStartNodeNoFk1760300002000 } from './migrations/1760300002000-derivation-session-start-node-no-fk';
+import { AgentProjectLevelUp1760400000000 } from './migrations/1760400000000-agent-project-level-up';
 
 export function createDataSource(databaseUrl: string = env.DATABASE_URL): DataSource {
   return new DataSource({
@@ -62,7 +66,10 @@ export function createDataSource(databaseUrl: string = env.DATABASE_URL): DataSo
       DerivationSessionEntity,
       DerivationStepEntity,
       DerivationCandidateEntity,
-      PlotGenerationDraftEntity
+      PlotGenerationDraftEntity,
+      FlowProgressEntity,
+      AgentGroupOverrideEntity,
+      RoleAgentBindingEntity
     ],
     migrations: [
       AuthBase1736899200000,
@@ -72,7 +79,8 @@ export function createDataSource(databaseUrl: string = env.DATABASE_URL): DataSo
       AgentConfigBase1760200000000,
       PlotBase1760300000000,
       AiTaskPlotScope1760300001000,
-      DerivationSessionStartNodeNoFk1760300002000
+      DerivationSessionStartNodeNoFk1760300002000,
+      AgentProjectLevelUp1760400000000
     ],
     migrationsTableName: 'migrations',
     synchronize: false,

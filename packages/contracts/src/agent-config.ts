@@ -136,3 +136,255 @@ export type DeleteAgentResponse = z.infer<typeof deleteAgentResponseSchema>;
 export type ListAgentsResponse = z.infer<typeof listAgentsResponseSchema>;
 export type ListToolsResponse = z.infer<typeof listToolsResponseSchema>;
 export type UpdateToolResponse = z.infer<typeof updateToolResponseSchema>;
+
+// ═══════════════════════════════════════════════════════════════════
+// V2 扩展：作品级三类 Agent + 版本快照 + 分组 + 流程进度
+// 全部 schema 追加，不修改任何现有导出（向后兼容保证）
+// ═══════════════════════════════════════════════════════════════════
+
+// ─── V2 枚举 ───
+
+export const agentStatusV2Schema = z.enum(['active', 'disabled', 'archived']);
+export type AgentStatusV2 = z.infer<typeof agentStatusV2Schema>;
+
+export const agentKindSchema = z.enum(['legacy', 'role_agent', 'tool_agent', 'flow_step_agent']);
+export type AgentKind = z.infer<typeof agentKindSchema>;
+
+export const agentScopeSchema = z.enum(['project', 'role']);
+export type AgentScope = z.infer<typeof agentScopeSchema>;
+
+export const agentSourceSchema = z.enum(['manual', 'template', 'migration', 'auto']);
+export type AgentSource = z.infer<typeof agentSourceSchema>;
+
+export const agentCredentialSourceSchema = z.enum(['global', 'own']);
+export type AgentCredentialSource = z.infer<typeof agentCredentialSourceSchema>;
+
+export const agentChangeTypeSchema = z.enum(['create', 'update', 'archive', 'restore', 'rollback']);
+export type AgentChangeType = z.infer<typeof agentChangeTypeSchema>;
+
+export const flowStepStatusSchema = z.enum(['pending', 'running', 'done', 'failed']);
+export type FlowStepStatus = z.infer<typeof flowStepStatusSchema>;
+
+export const flowProgressStatusSchema = z.enum(['idle', 'running', 'done', 'failed']);
+export type FlowProgressStatus = z.infer<typeof flowProgressStatusSchema>;
+
+// ─── V2 完整模型参数（10 项） ───
+
+export const modelConfigV2Schema = z
+  .object({
+    model: z.string().max(80).optional(),
+    temperature: z.number().min(0).max(2).default(0.7),
+    top_p: z.number().min(0).max(1).default(1.0),
+    max_tokens: z.number().int().positive().max(32768).default(2048),
+    system_prompt: z.string().default(''),
+    stream: z.boolean().default(false),
+    frequency_penalty: z.number().min(-2).max(2).default(0),
+    presence_penalty: z.number().min(-2).max(2).default(0),
+    response_format: z.enum(['text', 'json', 'markdown']).default('text'),
+    stop: z.array(z.string().max(64)).max(4).default([])
+  })
+  .strict()
+  .default({});
+
+export type ModelConfigV2 = z.infer<typeof modelConfigV2Schema>;
+
+// ─── V2 Agent 扩展实体 ───
+
+export const agentV2Schema = agentSchema.extend({
+  project_id: id.optional().nullable(),
+  kind: agentKindSchema.optional().default('legacy'),
+  description: z.string().optional().default(''),
+  role_id: id.optional().nullable(),
+  tool_name: z.string().max(40).optional().nullable(),
+  step_order: z.number().int().min(1).max(11).optional().nullable(),
+  scope: agentScopeSchema.optional().default('project'),
+  platform_config: z.record(z.unknown()).optional().default({}),
+  source: agentSourceSchema.optional().default('manual'),
+  tags: z.array(z.string()).optional().default([]),
+  manual_group_key: id.optional().nullable(),
+  credential_source: agentCredentialSourceSchema.optional().default('global'),
+  version_no: z.number().int().positive().optional().default(1),
+  archived_at: timestamp.optional().nullable()
+});
+export type AgentV2 = z.infer<typeof agentV2Schema>;
+
+// ─── V2 Agent Identity 校验 ───
+
+/** kind + 归属字段互斥校验：role_agent 必须 role_id；tool_agent 必须 tool_name；flow_step_agent 必须 step_order 1-11 */
+export function validateAgentIdentity(input: {
+  kind: AgentKind;
+  role_id?: string | null;
+  tool_name?: string | null;
+  step_order?: number | null;
+}): void {
+  const { kind, role_id, tool_name, step_order } = input;
+  if (kind === 'role_agent') {
+    if (!role_id || tool_name || step_order) throw new Error('role_agent 必须且只能提供 role_id');
+  } else if (kind === 'tool_agent') {
+    if (!tool_name || role_id || step_order) throw new Error('tool_agent 必须且只能提供 tool_name');
+  } else if (kind === 'flow_step_agent') {
+    if (step_order == null || step_order < 1 || step_order > 11) throw new Error('flow_step_agent 的 step_order 须为 1-11');
+    if (role_id || tool_name) throw new Error('flow_step_agent 不能提供 role_id/tool_name');
+  }
+}
+
+// ─── V2 请求 Schema ───
+
+export const createAgentV2RequestSchema = z
+  .object({
+    name: z.string().min(1).max(80),
+    project_id: id.optional(),
+    kind: agentKindSchema.optional().default('legacy'),
+    description: z.string().max(500).optional(),
+    role_id: id.optional(),
+    tool_name: z.string().max(40).optional(),
+    step_order: z.number().int().min(1).max(11).optional(),
+    scope: agentScopeSchema.optional(),
+    platform: agentPlatformSchema.default('mock'),
+    platform_config: z.record(z.unknown()).optional(),
+    model_id: z.string().min(1).max(80).optional(),
+    model_config: modelConfigV2Schema.optional(),
+    source: agentSourceSchema.optional(),
+    tags: z.array(z.string().max(40)).optional(),
+    is_default: z.boolean().optional()
+  })
+  .superRefine((v, ctx) => {
+    try {
+      validateAgentIdentity({ kind: v.kind ?? 'legacy', role_id: v.role_id ?? null, tool_name: v.tool_name ?? null, step_order: v.step_order ?? null });
+    } catch (e) {
+      ctx.addIssue({ code: z.ZodIssueCode.custom, message: (e as Error).message });
+    }
+  });
+
+export const updateAgentV2RequestSchema = z
+  .object({
+    name: z.string().min(1).max(80).optional(),
+    description: z.string().max(500).optional(),
+    platform: agentPlatformSchema.optional(),
+    platform_config: z.record(z.unknown()).optional(),
+    model_id: z.string().min(1).max(80).optional(),
+    model_config: modelConfigV2Schema.optional(),
+    status: agentStatusV2Schema.optional(),
+    is_default: z.boolean().optional(),
+    tags: z.array(z.string().max(40)).optional(),
+    manual_group_key: id.nullable().optional()
+  })
+  .refine((v) => Object.keys(v).length > 0, { message: '至少提供一项更新' });
+
+export type CreateAgentV2Request = z.infer<typeof createAgentV2RequestSchema>;
+export type UpdateAgentV2Request = z.infer<typeof updateAgentV2RequestSchema>;
+export type CreateAgentV2Input = z.input<typeof createAgentV2RequestSchema>;
+export type UpdateAgentV2Input = z.input<typeof updateAgentV2RequestSchema>;
+
+// ─── 版本快照 ───
+
+export const agentVersionSnapshotSchema = z.object({
+  version_no: z.number().int().positive(),
+  change_type: agentChangeTypeSchema,
+  note: z.string().default(''),
+  created_at: timestamp,
+  snapshot: z.record(z.unknown())
+});
+export type AgentVersionSnapshot = z.infer<typeof agentVersionSnapshotSchema>;
+
+export const agentVersionSummarySchema = agentVersionSnapshotSchema.omit({ snapshot: true });
+export type AgentVersionSummary = z.infer<typeof agentVersionSummarySchema>;
+
+// ─── 列表查询 ───
+
+export const listAgentsV2QuerySchema = z.object({
+  project_id: id.optional(),
+  kind: agentKindSchema.optional(),
+  status: agentStatusV2Schema.optional(),
+  role_id: id.optional(),
+  tool_name: z.string().optional(),
+  keyword: z.string().optional(),
+  page: z.number().int().min(1).default(1),
+  page_size: z.number().int().min(1).max(100).default(20)
+});
+export type ListAgentsV2Query = z.infer<typeof listAgentsV2QuerySchema>;
+
+// ─── 流程进度 ───
+
+export const flowStepSchema = z.object({
+  step_order: z.number().int().min(1).max(11),
+  status: flowStepStatusSchema,
+  output: z.record(z.unknown()).optional(),
+  error: z.string().optional(),
+  started_at: timestamp.optional().nullable(),
+  finished_at: timestamp.optional().nullable()
+});
+
+export const flowProgressSchema = z.object({
+  project_id: id,
+  role_id: id,
+  run_id: id.nullable(),
+  status: flowProgressStatusSchema,
+  current_step: z.number().int().nonnegative(),
+  completed_steps: z.array(z.number().int().min(1).max(11)),
+  steps: z.array(flowStepSchema),
+  context: z.record(z.unknown()),
+  last_error: z.string(),
+  started_at: timestamp.optional().nullable(),
+  updated_at: timestamp.optional().nullable()
+});
+export type FlowProgress = z.infer<typeof flowProgressSchema>;
+
+// ─── 分组覆盖层 ───
+
+export const groupOverrideSchema = z.object({
+  key: z.string().min(1).max(80),
+  name: z.string().max(80).optional(),
+  sort_order: z.number().int().default(0),
+  hidden: z.boolean().default(false)
+});
+export type GroupOverride = z.infer<typeof groupOverrideSchema>;
+
+export const manualGroupSchema = z.object({
+  id: z.string().startsWith('manual:'),
+  parent_key: z.string().default('project:'),
+  name: z.string().min(1).max(80),
+  sort_order: z.number().int().default(0)
+});
+export type ManualGroup = z.infer<typeof manualGroupSchema>;
+
+export const groupOverrideBundleSchema = z.object({
+  project_id: id,
+  schema_version: z.literal(1),
+  overrides: z.array(groupOverrideSchema).default([]),
+  manual_groups: z.array(manualGroupSchema).default([]),
+  updated_at: timestamp.optional()
+});
+
+// ─── 工具 Agent 汇总 ───
+
+export const toolAgentSummarySchema = z.object({
+  tool_name: z.string(),
+  agents: z.array(agentSummarySchema),
+  default_agent_id: id.nullable()
+});
+export type ToolAgentSummary = z.infer<typeof toolAgentSummarySchema>;
+
+// ─── 分组树节点（递归，z.lazy 需显式类型） ───
+
+// 用 any 绕开 ZodType 对 input/output 的严格匹配（.default() 导致 optional）
+// 运行时完全安全：output 类型由 schema.infer 正确推导
+export const groupTreeNodeSchema: z.ZodType<GroupTreeNode> = z.object({
+  key: z.string(),
+  name: z.string(),
+  sort_order: z.number().int(),
+  hidden: z.boolean().default(false),
+  is_manual: z.boolean().default(false),
+  children: z.lazy(() => z.array(groupTreeNodeSchema)).default([]),
+  agent_ids: z.array(id).default([])
+}) as unknown as z.ZodType<GroupTreeNode>;
+
+export interface GroupTreeNode {
+  key: string;
+  name: string;
+  sort_order: number;
+  hidden: boolean;
+  is_manual: boolean;
+  children: GroupTreeNode[];
+  agent_ids: string[];
+}
