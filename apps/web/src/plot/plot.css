@@ -226,3 +226,18 @@ legend { padding: 0 4px; color: var(--text-secondary); font-size: var(--fs-capti
   }
   .plot-node { padding: 6px; }
 }
+
+/* ── 自动建树预览 ── */
+.plot-generation {
+  display: flex; flex-direction: column; gap: var(--sp-2); padding: var(--sp-3);
+  background: var(--bg-secondary); border: 1px solid var(--border-color);
+  border-radius: var(--radius-md); overflow-y: auto;
+}
+.plot-generation h3 { margin: 0; font-size: 1rem; color: var(--text-primary); }
+.plot-generation-nodes { display: flex; flex-direction: column; gap: var(--sp-2); margin: 0; padding-left: var(--sp-4); }
+.plot-generation-nodes li {
+  display: grid; gap: var(--sp-1); padding: var(--sp-2);
+  background: var(--bg-tertiary); border-radius: var(--radius-sm);
+}
+.plot-generation-nodes label { display: flex; flex-direction: column; gap: 4px; font-size: 0.875rem; }
+.plot-generation-nodes input, .plot-generation-nodes select { min-height: 32px; }

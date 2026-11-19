@@ -5,7 +5,12 @@ import { loginAndOpenChapter } from './m1-helpers';
 
 interface PlotTreePayload {
   tree: { id: string; title: string; version: number };
-  nodes: Array<{ id: string; title: string; position: { x: number; y: number } }>;
+  nodes: Array<{
+    id: string;
+    title: string;
+    parent_id: string | null;
+    position: { x: number; y: number };
+  }>;
   links: unknown[];
   groups: unknown[];
 }
@@ -186,6 +191,72 @@ test('derives a step and writes the confirmed candidate into the tree', async ({
 
   const tree = await readTree(page, workId);
   expect(tree.nodes).toHaveLength(3);
+});
+
+test('generates a plot tree from an outline and replaces the tree after confirmation', async ({ page }, testInfo) => {
+  const { workId } = await loginAndOpenChapter(page, `M3c 自动建树 ${Date.now()}`);
+  await buildTree(page, '开端');
+  const before = await readTree(page, workId);
+
+  await page.getByRole('button', { name: '自动建树', exact: true }).click();
+  const panel = page.getByRole('region', { name: '自动建树' });
+  await expect(panel.getByRole('heading', { name: '自动建树', exact: true })).toBeVisible();
+
+  await panel.getByLabel('大纲内容').fill('归乡线\n第一幕：主角回到家乡。\n第二幕：发现旧案。');
+  await page.getByRole('button', { name: '开始解析', exact: true }).click();
+
+  await expect(page.getByRole('heading', { name: '解析预览' })).toBeVisible({ timeout: 40_000 });
+  const rootTitle = page.getByLabel('节点 1 标题');
+  await expect(rootTitle).toHaveValue('归乡线');
+  await expect(page.getByLabel('节点 2 标题')).toHaveValue('开端');
+
+  await rootTitle.fill('归乡线（修订）');
+  await page.getByRole('button', { name: '保存修改', exact: true }).click();
+  await expect(page.getByRole('status').filter({ hasText: '预览已保存' })).toBeVisible();
+
+  const submit = page.getByRole('button', { name: '提交到剧情树', exact: true });
+  await expect(submit).toBeDisabled();
+  await page.getByRole('checkbox', { name: '我确认覆盖现有剧情树' }).check();
+  await audit(page, testInfo, 'plot-generation');
+  await submit.click();
+
+  await expect(notice(page, '自动建树已写入剧情树').first()).toBeVisible({ timeout: 20_000 });
+  const after = await readTree(page, workId);
+  expect(after.tree.version).toBe(before.tree.version + 1);
+  expect(after.nodes).toHaveLength(3);
+  expect(after.nodes.map((node) => node.title)).toContain('归乡线（修订）');
+  expect(after.nodes.map((node) => node.title)).not.toContain('转折');
+});
+
+test('appends a chapter-generated subtree under an existing node', async ({ page }) => {
+  const { workId, chapterId } = await loginAndOpenChapter(page, `M3c 章节自动建树 ${Date.now()}`);
+  await buildTree(page, '开端');
+  const before = await readTree(page, workId);
+  const existingRoot = before.nodes.find((node) => node.title === '开端')!;
+
+  await page.getByRole('button', { name: '自动建树', exact: true }).click();
+  const panel = page.getByRole('region', { name: '自动建树' });
+  await panel.getByRole('radio', { name: '章节正文' }).check();
+  const chapterSelect = panel.getByRole('combobox');
+  await expect.poll(async () => chapterSelect.locator('option').count()).toBeGreaterThan(1);
+  await chapterSelect.selectOption(chapterId);
+  await panel.getByRole('button', { name: '开始解析', exact: true }).click();
+
+  await expect(page.getByRole('heading', { name: '解析预览' })).toBeVisible({ timeout: 40_000 });
+  await panel.getByRole('radio', { name: '追加为子树' }).check();
+  await panel.getByRole('combobox').last().selectOption(existingRoot.id);
+  await page.getByRole('button', { name: '提交到剧情树', exact: true }).click();
+
+  await expect(notice(page, '自动建树已写入剧情树').first()).toBeVisible({ timeout: 20_000 });
+  const after = await readTree(page, workId);
+  expect(after.tree.version).toBe(before.tree.version + 1);
+  expect(after.nodes).toHaveLength(before.nodes.length + 3);
+  const generatedRoot = after.nodes.find(
+    (node) => node.id !== existingRoot.id && node.title === '自动剧情树'
+  );
+  expect(generatedRoot).toBeTruthy();
+  expect(generatedRoot!.parent_id).toBe(existingRoot.id);
+  expect(after.nodes.some((node) => node.id === existingRoot.id)).toBe(true);
 });
 
 test('keeps the plot workspace usable at 375/768/1024/1440', async ({ page }, testInfo) => {

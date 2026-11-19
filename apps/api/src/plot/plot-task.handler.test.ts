@@ -5,6 +5,7 @@ import { PlotTreeService } from './plot-tree.service';
 import { PlotTaskHandler, type PlotStepCandidate } from './plot-task.handler';
 import { DerivationSessionEntity } from '../database/derivation-session.entity';
 import { DerivationStepEntity } from '../database/derivation-step.entity';
+import { PlotGenerationDraftEntity } from '../database/plot-generation-draft.entity';
 
 let fixture: WritingFixture;
 let handler: PlotTaskHandler;
@@ -111,5 +112,42 @@ describe('PlotTaskHandler', () => {
         })
       )
     ).rejects.toThrow();
+  });
+
+  it('does not overwrite an edited generation draft on duplicate task delivery', async () => {
+    const taskId = randomUUID();
+    const repository = fixture.dataSource.getRepository(PlotGenerationDraftEntity);
+    const draft = await repository.save(repository.create({
+      id: randomUUID(),
+      work_id: fixture.workId,
+      source: 'outline',
+      input_text: '用于验证重复任务投递的原始大纲。',
+      input_chapter_id: null,
+      status: 'pending',
+      payload: null,
+      error: null,
+      task_id: taskId
+    }));
+    const input = {
+      taskId,
+      draftId: draft.id,
+      workId: fixture.workId,
+      payload: {
+        nodes: [{ title: '初始标题', summary: null, content: '初始内容', parent_index: null }]
+      }
+    };
+
+    const first = await fixture.dataSource.transaction((manager) => handler.writeGeneration(manager, input));
+    expect(first.created).toBe(true);
+    const editedPayload = {
+      nodes: [{ title: '人工编辑', summary: null, content: '保留编辑', parent_index: null }]
+    };
+    await repository.update({ id: draft.id }, { payload: editedPayload });
+
+    const second = await fixture.dataSource.transaction((manager) => handler.writeGeneration(manager, input));
+
+    expect(second).toEqual({ draft_id: draft.id, created: false });
+    const stored = await repository.findOneByOrFail({ id: draft.id });
+    expect(stored.payload).toEqual(editedPayload);
   });
 });

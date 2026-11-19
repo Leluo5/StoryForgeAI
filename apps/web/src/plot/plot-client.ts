@@ -2,9 +2,11 @@ import { z } from 'zod';
 import {
   aiTaskSchema,
   assignPlotNodeGroupRequestSchema,
+  commitPlotGenerationRequestSchema,
   confirmDerivationCandidateRequestSchema,
   createDerivationCandidateRequestSchema,
   createDerivationSessionRequestSchema,
+  createPlotGenerationRequestSchema,
   createPlotGroupRequestSchema,
   createPlotLinkRequestSchema,
   createPlotNodeRequestSchema,
@@ -15,6 +17,7 @@ import {
   exportPlotTreeSchema,
   importPlotTreeRequestSchema,
   movePlotNodeRequestSchema,
+  plotGenerationDraftSchema,
   plotGroupSchema,
   plotLinkSchema,
   plotNodeSchema,
@@ -22,14 +25,17 @@ import {
   plotTreeSchema,
   updateDerivationSessionRequestSchema,
   updateDerivationStepRequestSchema,
+  updatePlotGenerationDraftRequestSchema,
   updatePlotGroupRequestSchema,
   updatePlotNodeRequestSchema,
   updatePlotPositionsRequestSchema,
   updatePlotTreeRequestSchema,
+  type PlotGenerationDraft,
   type PlotGroup,
   type PlotLink,
   type PlotNode,
   type PlotTree,
+  type PlotTreeDraftPayload,
   type PlotTreeResponse
 } from '@storyforge/contracts';
 import { apiRequest } from '../api/client';
@@ -56,6 +62,14 @@ const stepTaskResultSchema = z.object({ task: aiTaskSchema, session: derivationS
 const stepResultSchema = z.object({ step: derivationStepSchema });
 const candidateResultSchema = z.object({ candidate: derivationCandidateSchema });
 const confirmResultSchema = z.object({ nodes: z.array(plotNodeSchema), version: z.number().int() });
+const generationDraftResultSchema = z.object({ draft: plotGenerationDraftSchema });
+const generationCommitResultSchema = z.object({ draft: plotGenerationDraftSchema, version: z.number().int() });
+
+export interface CommitGenerationInput {
+  mode: 'replace' | 'append';
+  parent_node_id?: string | null | undefined;
+  confirm_overwrite: boolean;
+}
 
 export type PlotNodeResult = { node: PlotNode; version: number };
 export type PlotSessionDetail = {
@@ -146,6 +160,22 @@ export interface PlotClient {
     sessionId: string,
     candidateId: string
   ): Promise<{ candidate: z.output<typeof derivationCandidateSchema> }>;
+  createGeneration(
+    workId: string,
+    input: z.input<typeof createPlotGenerationRequestSchema>
+  ): Promise<{ draft: PlotGenerationDraft }>;
+  getGeneration(workId: string, draftId: string): Promise<{ draft: PlotGenerationDraft }>;
+  updateGeneration(
+    workId: string,
+    draftId: string,
+    payload: PlotTreeDraftPayload
+  ): Promise<{ draft: PlotGenerationDraft }>;
+  commitGeneration(
+    workId: string,
+    draftId: string,
+    input: CommitGenerationInput
+  ): Promise<{ draft: PlotGenerationDraft; version: number }>;
+  discardGeneration(workId: string, draftId: string): Promise<{ draft: PlotGenerationDraft }>;
 }
 
 export const plotClient: PlotClient = {
@@ -252,6 +282,37 @@ export const plotClient: PlotClient = {
     return apiRequest(
       `${root(workId)}/derivations/${part(sessionId)}/candidates/${part(candidateId)}/reject`,
       candidateResultSchema,
+      { method: 'POST' }
+    );
+  },
+  createGeneration(workId, input) {
+    return apiRequest(
+      `${root(workId)}/generations`,
+      generationDraftResultSchema,
+      json('POST', createPlotGenerationRequestSchema.parse(input))
+    );
+  },
+  getGeneration(workId, draftId) {
+    return apiRequest(`${root(workId)}/generations/${part(draftId)}`, generationDraftResultSchema);
+  },
+  updateGeneration(workId, draftId, payload) {
+    return apiRequest(
+      `${root(workId)}/generations/${part(draftId)}`,
+      generationDraftResultSchema,
+      json('PATCH', updatePlotGenerationDraftRequestSchema.parse({ payload }))
+    );
+  },
+  commitGeneration(workId, draftId, input) {
+    return apiRequest(
+      `${root(workId)}/generations/${part(draftId)}/commit`,
+      generationCommitResultSchema,
+      json('POST', commitPlotGenerationRequestSchema.parse(input))
+    );
+  },
+  discardGeneration(workId, draftId) {
+    return apiRequest(
+      `${root(workId)}/generations/${part(draftId)}/discard`,
+      generationDraftResultSchema,
       { method: 'POST' }
     );
   }

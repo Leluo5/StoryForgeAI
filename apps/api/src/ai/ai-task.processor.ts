@@ -2,7 +2,7 @@ import { Inject, Injectable, Logger } from '@nestjs/common';
 import { DataSource, EntityManager } from 'typeorm';
 import { randomUUID } from 'node:crypto';
 import { Job, Worker, UnrecoverableError } from 'bullmq';
-import type { ProseMirrorNode } from '@storyforge/contracts';
+import type { PlotTreeDraftPayload, ProseMirrorNode } from '@storyforge/contracts';
 import { AiTaskEntity } from '../database/ai-task.entity';
 import { AiTaskEventEntity } from '../database/ai-task-event.entity';
 import { ChapterEntity } from '../database/chapter.entity';
@@ -11,6 +11,7 @@ import { AI_TASK_QUEUE_NAME } from './ai-task.queue';
 import { AiModelError, type AiModelProvider, type AiModelContext, AI_MODEL_PROVIDER } from './ai-model.provider';
 import { AiTaskEventBus, AI_TASK_EVENT_BUS } from './ai-task.sse';
 import { DerivationSessionEntity } from '../database/derivation-session.entity';
+import { PlotGenerationDraftEntity } from '../database/plot-generation-draft.entity';
 import { PlotNodeEntity } from '../database/plot-node.entity';
 import {
   MockPlotModelProvider,
@@ -19,6 +20,7 @@ import {
   type PlotModelProvider,
   type PlotStepCandidate,
   type PlotStepContext,
+  type PlotTreeContext,
   PLOT_MODEL_PROVIDER
 } from '../plot/plot-model.provider';
 import { PlotTaskHandler } from '../plot/plot-task.handler';
@@ -92,13 +94,22 @@ interface ChapterProcessContext extends BaseProcessContext {
   baseDocument: ProseMirrorNode;
 }
 
-interface PlotProcessContext extends BaseProcessContext {
+interface PlotDerivationProcessContext extends BaseProcessContext {
   kind: 'plot';
+  operation: 'derivation';
   sessionId: string;
   stepNo: number;
   plot: PlotStepContext;
 }
 
+interface PlotGenerationProcessContext extends BaseProcessContext {
+  kind: 'plot';
+  operation: 'generation';
+  draftId: string;
+  plot: PlotTreeContext;
+}
+
+type PlotProcessContext = PlotDerivationProcessContext | PlotGenerationProcessContext;
 type ProcessContext = ChapterProcessContext | PlotProcessContext;
 
 /**
@@ -146,6 +157,11 @@ export class AiTaskProcessor {
       if (started.skipped) return; // 任务已被取消/完成，无事可做
 
       if (started.context.kind === 'plot') {
+        if (started.context.operation === 'generation') {
+          const payload = await this.plotModel.generateTree(started.context.plot);
+          await this.finishPlotGenerationSucceeded(started.context, payload);
+          return;
+        }
         const plotCandidate = await this.plotModel.generateStep(started.context.plot);
         await this.finishPlotSucceeded(started.context, plotCandidate);
         return;
@@ -216,8 +232,11 @@ export class AiTaskProcessor {
     });
   }
 
-  /** 构建推衍任务上下文：读取会话、前置/关联节点摘要与历史步骤 */
+  /** 按工具构建剧情任务上下文，避免自动建树误入推衍会话链路。 */
   private async buildPlotContext(manager: EntityManager, task: AiTaskEntity): Promise<PlotProcessContext> {
+    if (task.tool === 'plot_generate') return this.buildPlotGenerationContext(manager, task);
+    if (task.tool !== 'plot_derivation') throw new Error(`Unsupported plot tool ${task.tool}`);
+
     const sessionId = typeof task.input_summary?.session_id === 'string' ? task.input_summary.session_id : null;
     const stepNo = Number(task.input_summary?.step_no);
     if (!sessionId) throw new Error(`Plot task ${task.id} missing session_id`);
@@ -246,6 +265,7 @@ export class AiTaskProcessor {
 
     return {
       kind: 'plot',
+      operation: 'derivation',
       taskId: task.id,
       authorId: task.created_by,
       workId: task.work_id,
@@ -270,9 +290,66 @@ export class AiTaskProcessor {
     };
   }
 
+  private async buildPlotGenerationContext(
+    manager: EntityManager,
+    task: AiTaskEntity
+  ): Promise<PlotGenerationProcessContext> {
+    const draftId = typeof task.input_summary?.draft_id === 'string' ? task.input_summary.draft_id : null;
+    if (!draftId) throw new Error(`Plot generation task ${task.id} missing draft_id`);
+    const draft = await manager.getRepository(PlotGenerationDraftEntity).findOneBy({ id: draftId, work_id: task.work_id });
+    if (!draft || draft.task_id !== task.id) throw new Error(`Plot generation task ${task.id} draft not found`);
+
+    return {
+      kind: 'plot',
+      operation: 'generation',
+      taskId: task.id,
+      authorId: task.created_by,
+      workId: task.work_id,
+      tool: task.tool,
+      inputSummary: task.input_summary,
+      draftId: draft.id,
+      plot: {
+        workId: task.work_id,
+        draftId: draft.id,
+        source: draft.source as PlotTreeContext['source'],
+        inputText: draft.input_text
+      }
+    };
+  }
+
+  private async finishPlotGenerationSucceeded(
+    context: PlotGenerationProcessContext,
+    payload: PlotTreeDraftPayload
+  ): Promise<{ skipped: boolean }> {
+    return this.dataSource.transaction(async (manager) => {
+      const task = await manager.getRepository(AiTaskEntity).createQueryBuilder('task')
+        .where('task.id = :taskId', { taskId: context.taskId })
+        .setLock('pessimistic_write')
+        .getOne();
+      if (!task || task.status !== 'running') return { skipped: true };
+
+      const result = await this.plotHandler.writeGeneration(manager, {
+        taskId: task.id,
+        draftId: context.draftId,
+        workId: context.workId,
+        payload
+      });
+      task.status = 'succeeded';
+      await appendEvent(manager, task, this.eventBus, 'succeeded', {
+        tool: context.tool,
+        draft_id: result.draft_id
+      });
+      await this.auditService.record(context.authorId, 'ai_task_succeeded', 'ai_task', task.id, {
+        tool: context.tool,
+        draft_id: result.draft_id
+      }, context.workId);
+      return { skipped: false };
+    });
+  }
+
   /** 事务2（剧情）：锁任务，写入推衍步骤 + succeeded + 事件 + 审计（原子） */
   private async finishPlotSucceeded(
-    context: PlotProcessContext,
+    context: PlotDerivationProcessContext,
     candidate: PlotStepCandidate
   ): Promise<{ skipped: boolean }> {
     return this.dataSource.transaction(async (manager) => {
@@ -366,6 +443,13 @@ export class AiTaskProcessor {
 
       task.status = 'failed';
       task.error = { message, code, retryable };
+      if (task.scope === 'plot' && task.tool === 'plot_generate') {
+        await this.plotHandler.failGeneration(manager, {
+          taskId: task.id,
+          workId: task.work_id,
+          error: task.error
+        });
+      }
       await appendEvent(manager, task, this.eventBus, 'failed', { message, code, retryable });
 
       await this.auditService.record(task.created_by, 'ai_task_failed', 'ai_task', task.id, {

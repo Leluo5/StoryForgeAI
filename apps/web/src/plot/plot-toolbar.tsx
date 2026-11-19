@@ -25,6 +25,7 @@ interface Props {
   onUndoLayout: () => void;
   onExport: () => void;
   onImport: () => void;
+  onGenerate: () => void;
   busy: boolean;
 }
 
@@ -41,6 +42,7 @@ export function PlotToolbar(props: Props): JSX.Element {
         <button type="button" onClick={props.onUndoLayout} disabled={props.busy || !props.canUndoLayout}>撤销布局</button>
         <button type="button" onClick={props.onExport} disabled={props.busy}>导出 JSON</button>
         <button type="button" onClick={props.onImport} disabled={props.busy}>导入 JSON</button>
+        <button type="button" onClick={props.onGenerate} disabled={props.busy}>自动建树</button>
       </div>
       <div className="plot-toolbar-group" role="group" aria-label="视图切换">
         <button type="button" aria-pressed={props.view === 'canvas'} onClick={() => props.onView('canvas')}>画布</button>

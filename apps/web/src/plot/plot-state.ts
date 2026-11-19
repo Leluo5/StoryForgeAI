@@ -47,6 +47,7 @@ export interface PlotNodePatch {
 }
 
 export interface PlotStore {
+  workId: string;
   data: PlotData;
   loading: boolean;
   error: string;

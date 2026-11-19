@@ -417,4 +417,5 @@ export type DerivationBranch = z.infer<typeof derivationBranchSchema>;
 export type DerivationSession = z.infer<typeof derivationSessionSchema>;
 export type DerivationStep = z.infer<typeof derivationStepSchema>;
 export type DerivationCandidate = z.infer<typeof derivationCandidateSchema>;
+export type PlotGenerationSource = z.infer<typeof plotGenerationSourceSchema>;
 export type PlotGenerationDraft = z.infer<typeof plotGenerationDraftSchema>;

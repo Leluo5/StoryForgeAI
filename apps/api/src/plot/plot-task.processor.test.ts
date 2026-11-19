@@ -10,6 +10,7 @@ import { AiTaskEntity } from '../database/ai-task.entity';
 import { AiTaskEventEntity } from '../database/ai-task-event.entity';
 import { DerivationSessionEntity } from '../database/derivation-session.entity';
 import { DerivationStepEntity } from '../database/derivation-step.entity';
+import { PlotGenerationDraftEntity } from '../database/plot-generation-draft.entity';
 import { PlotTreeService } from './plot-tree.service';
 import { PlotTaskHandler } from './plot-task.handler';
 import { MockPlotModelProvider, PlotModelError } from './plot-model.provider';
@@ -63,6 +64,42 @@ async function createPlotTask(stepNo = 1): Promise<AiTaskEntity> {
       created_by: fixture.authorId
     })
   );
+}
+
+async function createGenerationTask(inputText = '第一幕：主角回到家乡。\n第二幕：主角发现旧案真相。') {
+  const draftRepository = fixture.dataSource.getRepository(PlotGenerationDraftEntity);
+  const draft = await draftRepository.save(draftRepository.create({
+    id: randomUUID(),
+    work_id: fixture.workId,
+    source: 'outline',
+    input_text: inputText,
+    input_chapter_id: null,
+    status: 'pending',
+    payload: null,
+    error: null,
+    task_id: null
+  }));
+  const taskRepository = fixture.dataSource.getRepository(AiTaskEntity);
+  const task = await taskRepository.save(taskRepository.create({
+    id: randomUUID(),
+    idempotency_key: `plot-generate-${draft.id}`,
+    work_id: fixture.workId,
+    chapter_id: null,
+    scope: 'plot',
+    tool: 'plot_generate',
+    agent_id: null,
+    input_summary: { draft_id: draft.id },
+    base_version: 0,
+    status: 'queued',
+    event_seq: 0,
+    result_revision_set_id: null,
+    error: null,
+    attempts: 0,
+    created_by: fixture.authorId
+  }));
+  draft.task_id = task.id;
+  await draftRepository.save(draft);
+  return { task, draft };
 }
 
 beforeEach(async () => {
@@ -177,5 +214,66 @@ describe('AiTaskProcessor (plot scope)', () => {
     const stored = await fixture.dataSource.getRepository(AiTaskEntity).findOneByOrFail({ id: task.id });
     expect(stored.status).toBe('failed');
     expect(stored.error).toMatchObject({ code: 'MOCK_PLOT_FAIL', retryable: true });
+  });
+
+  it('routes plot_generate to generateTree and stores a succeeded draft', async () => {
+    const { task, draft } = await createGenerationTask();
+    const seen: unknown[] = [];
+    const payload = {
+      nodes: [
+        { title: '归乡', summary: null, content: '主角回到家乡', parent_index: null },
+        { title: '旧案', summary: null, content: '发现旧案真相', parent_index: 0 }
+      ]
+    };
+    const model = {
+      async generateStep(): Promise<never> {
+        throw new Error('plot_generate must not run derivation');
+      },
+      async generateTree(context: never) {
+        seen.push(context);
+        return payload;
+      }
+    };
+    const processor = buildProcessor(model as never);
+
+    await processor.process(makeJob(task.id));
+
+    expect(seen).toHaveLength(1);
+    expect(seen[0]).toMatchObject({
+      workId: fixture.workId,
+      draftId: draft.id,
+      source: 'outline',
+      inputText: draft.input_text
+    });
+    const storedTask = await fixture.dataSource.getRepository(AiTaskEntity).findOneByOrFail({ id: task.id });
+    expect(storedTask.status).toBe('succeeded');
+    const storedDraft = await fixture.dataSource
+      .getRepository(PlotGenerationDraftEntity)
+      .findOneByOrFail({ id: draft.id });
+    expect(storedDraft.status).toBe('succeeded');
+    expect(storedDraft.payload).toEqual(payload);
+    expect(storedDraft.error).toBeNull();
+    const succeeded = await fixture.dataSource
+      .getRepository(AiTaskEventEntity)
+      .findOneBy({ task_id: task.id, type: 'succeeded' });
+    expect(succeeded!.payload.draft_id).toBe(draft.id);
+  });
+
+  it('marks a generation draft failed on the final attempt and preserves its input', async () => {
+    const inputText = '这段大纲必须在模型失败后完整保留。';
+    const { task, draft } = await createGenerationTask(inputText);
+    const processor = buildProcessor(new MockPlotModelProvider({ fail: true }));
+
+    await expect(processor.process(makeJob(task.id, 2, 3))).rejects.toBeInstanceOf(PlotModelError);
+
+    const storedTask = await fixture.dataSource.getRepository(AiTaskEntity).findOneByOrFail({ id: task.id });
+    expect(storedTask.status).toBe('failed');
+    const storedDraft = await fixture.dataSource
+      .getRepository(PlotGenerationDraftEntity)
+      .findOneByOrFail({ id: draft.id });
+    expect(storedDraft.status).toBe('failed');
+    expect(storedDraft.input_text).toBe(inputText);
+    expect(storedDraft.payload).toBeNull();
+    expect(storedDraft.error).toMatchObject({ code: 'MOCK_PLOT_FAIL', retryable: true });
   });
 });

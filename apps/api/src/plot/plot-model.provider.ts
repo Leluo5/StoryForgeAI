@@ -1,5 +1,6 @@
 // 剧情推衍模型端口：与章节创作模型（AiModelProvider）隔离，
 // 避免剧情任务复用 ProseMirror 文档生成路径。
+import type { PlotGenerationSource, PlotTreeDraftPayload } from '@storyforge/contracts';
 
 export interface PlotContextNode {
   id: string;
@@ -29,8 +30,16 @@ export interface PlotStepCandidate {
   branches: Array<{ id: string; label: string; description: string }>;
 }
 
+export interface PlotTreeContext {
+  workId: string;
+  draftId: string;
+  source: PlotGenerationSource;
+  inputText: string;
+}
+
 export interface PlotModelProvider {
   generateStep(context: PlotStepContext): Promise<PlotStepCandidate>;
+  generateTree(context: PlotTreeContext): Promise<PlotTreeDraftPayload>;
 }
 
 export const PLOT_MODEL_PROVIDER = Symbol('PLOT_MODEL_PROVIDER');
@@ -77,6 +86,28 @@ export class MockPlotModelProvider implements PlotModelProvider {
       branches: [
         { id: 'branch_a', label: '追查线索', description: '顺藤摸瓜，风险较低' },
         { id: 'branch_b', label: '正面冲突', description: '直接对峙，代价更高' }
+      ]
+    };
+  }
+
+  async generateTree(context: PlotTreeContext): Promise<PlotTreeDraftPayload> {
+    if (this.options.delayMs) await new Promise((resolve) => setTimeout(resolve, this.options.delayMs));
+    if (this.options.fail) throw new PlotModelError('mock plot generation failure', true, 'MOCK_PLOT_FAIL');
+
+    const heading = context.inputText
+      .split(/\r?\n/)
+      .map((line) => line.trim().replace(/^#{1,6}\s*/, ''))
+      .find(Boolean) ?? '自动剧情树';
+    return {
+      nodes: [
+        {
+          title: heading.slice(0, 120),
+          summary: context.source === 'outline' ? '由大纲解析生成' : '由章节正文解析生成',
+          content: context.inputText.slice(0, 20_000),
+          parent_index: null
+        },
+        { title: '开端', summary: '故事起点与核心冲突', content: '', parent_index: 0 },
+        { title: '发展', summary: '人物行动与矛盾升级', content: '', parent_index: 0 }
       ]
     };
   }

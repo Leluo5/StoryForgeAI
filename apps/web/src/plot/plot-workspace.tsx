@@ -5,6 +5,7 @@ import { autoLayout, diffPositions, positionSnapshot, NODE_HEIGHT, NODE_WIDTH, R
 import { PlotCanvas } from './plot-canvas';
 import { PlotNodeList } from './plot-node-list';
 import { PlotToolbar } from './plot-toolbar';
+import { PlotGenerationPreview } from './plot-generation-preview';
 import {
   PlotStoreContext,
   emptyPlotData,
@@ -247,6 +248,7 @@ export function PlotStoreProvider({ workId, enabled = true, client = plotClient,
   }, [client, run, workId]);
 
   const store: PlotStore = {
+    workId,
     data,
     loading,
     error,
@@ -298,6 +300,7 @@ export function PlotWorkspace(): JSX.Element {
   const [zoom, setZoom] = useState(1);
   const [pan, setPan] = useState({ x: 40, y: 40 });
   const [linking, setLinking] = useState(false);
+  const [generating, setGenerating] = useState(false);
   const [linkSourceId, setLinkSourceId] = useState<string | null>(null);
   const [linkType, setLinkType] = useState<PlotLink['type']>('linear');
   const [pendingDeleteId, setPendingDeleteId] = useState<string | null>(null);
@@ -447,6 +450,7 @@ export function PlotWorkspace(): JSX.Element {
         onUndoLayout={() => void store.undoLayout()}
         onExport={handleExport}
         onImport={() => fileRef.current?.click()}
+        onGenerate={() => setGenerating(true)}
         busy={store.busy}
       />
       <input ref={fileRef} type="file" accept="application/json,.json" hidden onChange={handleImportFile} />
@@ -494,6 +498,9 @@ export function PlotWorkspace(): JSX.Element {
       {store.error ? <p className="plot-error" role="alert">{store.error}</p> : null}
       {store.notice ? <p className="plot-notice" role="status">{store.notice}</p> : null}
 
+      {generating ? (
+        <PlotGenerationPreview workId={store.workId} onClose={() => setGenerating(false)} />
+      ) : (
       <div className="plot-viewport" ref={viewportRef}>
         {store.view === 'canvas' ? (
           <PlotCanvas
@@ -520,6 +527,7 @@ export function PlotWorkspace(): JSX.Element {
           />
         )}
       </div>
+      )}
     </section>
   );
 }

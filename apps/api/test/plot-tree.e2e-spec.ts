@@ -368,4 +368,249 @@ describe('plot tree endpoints (real PostgreSQL)', () => {
     const finalTree = await get(treeUrl()).expect(200);
     expect(finalTree.body.data.nodes).toHaveLength(2);
   });
+
+  // ── 自动建树 ──
+
+  async function seedSucceededGeneration(): Promise<{ draftId: string; payload: { nodes: unknown[] } }> {
+    const created = await post(`${treeUrl()}/generations`, {
+      source: 'outline',
+      text: '第一幕：主角回到家乡。\n第二幕：主角发现旧案真相。'
+    }).expect(202);
+    const draftId = created.body.data.draft.id as string;
+    const payload = {
+      nodes: [
+        { title: '返乡', summary: '主角回到家乡', content: '家乡已经物是人非', parent_index: null },
+        { title: '旧案', summary: '发现旧案线索', content: '旧案另有隐情', parent_index: 0 }
+      ]
+    };
+    const [{ PlotGenerationDraftEntity }] = await Promise.all([
+      import('../src/database/plot-generation-draft.entity')
+    ]);
+    await dataSource.getRepository(PlotGenerationDraftEntity).update(
+      { id: draftId },
+      { status: 'succeeded', payload }
+    );
+    return { draftId, payload };
+  }
+
+  it('creates an outline generation draft and queues plot_generate', async () => {
+    const text = '第一幕：主角回到家乡。\n第二幕：主角发现旧案真相。';
+    const created = await post(`${treeUrl()}/generations`, { source: 'outline', text }).expect(202);
+    const draft = created.body.data.draft;
+    expect(draft).toMatchObject({
+      work_id: workId,
+      source: 'outline',
+      input_text: text,
+      input_chapter_id: null,
+      status: 'pending',
+      payload: null,
+      error: null
+    });
+    expect(draft.task_id).toEqual(expect.any(String));
+
+    const [{ AiTaskEntity }] = await Promise.all([import('../src/database/ai-task.entity')]);
+    const task = await dataSource.getRepository(AiTaskEntity).findOneByOrFail({ id: draft.task_id });
+    expect(task).toMatchObject({
+      work_id: workId,
+      chapter_id: null,
+      scope: 'plot',
+      tool: 'plot_generate',
+      status: 'queued',
+      input_summary: { draft_id: draft.id, source: 'outline', input_chapter_id: null }
+    });
+
+    const detail = await get(`${treeUrl()}/generations/${draft.id}`).expect(200);
+    expect(detail.body.data.draft).toMatchObject({ id: draft.id, input_text: text, status: 'pending' });
+  });
+
+  it('snapshots chapter markdown and rejects a chapter from another work', async () => {
+    const [{ VolumeEntity }, { ChapterEntity }, { WorkService }] = await Promise.all([
+      import('../src/database/volume.entity'),
+      import('../src/database/chapter.entity'),
+      import('../src/writing/work.service')
+    ]);
+    const volume = await dataSource.getRepository(VolumeEntity).save({
+      id: randomUUID(), work_id: workId, title: '卷一', position: 0
+    });
+    const document = {
+      type: 'doc',
+      content: [
+        { type: 'paragraph', content: [{ type: 'text', text: '第一章 归乡' }] },
+        { type: 'paragraph', content: [{ type: 'text', text: '主角推开旧宅的大门。' }] }
+      ]
+    };
+    const chapter = await dataSource.getRepository(ChapterEntity).save({
+      id: randomUUID(),
+      work_id: workId,
+      volume_id: volume.id,
+      title: '第一章',
+      position: 0,
+      document,
+      version: 0,
+      content_hash: '0'.repeat(64)
+    });
+
+    const created = await post(`${treeUrl()}/generations`, {
+      source: 'novel_text', chapter_id: chapter.id
+    }).expect(202);
+    expect(created.body.data.draft).toMatchObject({
+      source: 'novel_text',
+      input_chapter_id: chapter.id,
+      input_text: '第一章 归乡\n\n主角推开旧宅的大门。',
+      status: 'pending'
+    });
+
+    const otherWork = await new WorkService(dataSource).create(authorId, { title: '另一作品', description: '' });
+    const otherVolume = await dataSource.getRepository(VolumeEntity).save({
+      id: randomUUID(), work_id: otherWork.work.id, title: '卷一', position: 0
+    });
+    const foreignChapter = await dataSource.getRepository(ChapterEntity).save({
+      id: randomUUID(),
+      work_id: otherWork.work.id,
+      volume_id: otherVolume.id,
+      title: '外部章节',
+      position: 0,
+      document,
+      version: 0,
+      content_hash: '1'.repeat(64)
+    });
+    await post(`${treeUrl()}/generations`, {
+      source: 'novel_text', chapter_id: foreignChapter.id
+    }).expect(404);
+  });
+
+  it('edits the payload of a succeeded generation draft', async () => {
+    const { draftId } = await seedSucceededGeneration();
+    const payload = {
+      nodes: [
+        { title: '编辑后的返乡', summary: '人工修订概要', content: '人工修订内容', parent_index: null },
+        { title: '新增转折', summary: null, content: '', parent_index: 0 }
+      ]
+    };
+
+    const response = await patch(`${treeUrl()}/generations/${draftId}`, { payload }).expect(200);
+    expect(response.body.data.draft).toMatchObject({ id: draftId, status: 'succeeded', payload });
+  });
+
+  it('replaces the formal tree and audits a confirmed generation commit', async () => {
+    await createTree();
+    await createNode('旧节点');
+    const { draftId } = await seedSucceededGeneration();
+
+    const committed = await post(`${treeUrl()}/generations/${draftId}/commit`, {
+      mode: 'replace',
+      confirm_overwrite: true
+    }).expect(200);
+    expect(committed.body.data).toMatchObject({ draft: { id: draftId, status: 'committed' }, version: 3 });
+
+    const snapshot = await get(treeUrl()).expect(200);
+    expect(snapshot.body.data.tree).toMatchObject({ source: 'outline', version: 3 });
+    expect(snapshot.body.data.nodes).toHaveLength(2);
+    expect(snapshot.body.data.nodes.map((node: { title: string }) => node.title)).toEqual(['返乡', '旧案']);
+    expect(snapshot.body.data.nodes.every((node: { origin: string }) => node.origin === 'outline')).toBe(true);
+    expect(snapshot.body.data.nodes.some((node: { title: string }) => node.title === '旧节点')).toBe(false);
+    const root = snapshot.body.data.nodes.find((node: { title: string }) => node.title === '返乡');
+    const child = snapshot.body.data.nodes.find((node: { title: string }) => node.title === '旧案');
+    expect(child.parent_id).toBe(root.id);
+
+    const [{ AuditLogEntity }] = await Promise.all([import('../src/database/audit-log.entity')]);
+    const audit = await dataSource.getRepository(AuditLogEntity).findOneBy({
+      action: 'plot_generation_commit',
+      target_type: 'plot_generation',
+      target_id: draftId
+    });
+    expect(audit).toMatchObject({ actor_id: authorId, detail: { mode: 'replace', version: 3 } });
+  });
+
+  it('appends a generation draft beneath an existing node', async () => {
+    await createTree();
+    const parent = await createNode('既有主线');
+    const { draftId } = await seedSucceededGeneration();
+
+    const committed = await post(`${treeUrl()}/generations/${draftId}/commit`, {
+      mode: 'append',
+      parent_node_id: parent.id
+    }).expect(200);
+    expect(committed.body.data).toMatchObject({ draft: { id: draftId, status: 'committed' }, version: 3 });
+
+    const snapshot = await get(treeUrl()).expect(200);
+    expect(snapshot.body.data.tree).toMatchObject({ source: 'manual', version: 3 });
+    expect(snapshot.body.data.nodes).toHaveLength(3);
+    const generatedRoot = snapshot.body.data.nodes.find((node: { title: string }) => node.title === '返乡');
+    const generatedChild = snapshot.body.data.nodes.find((node: { title: string }) => node.title === '旧案');
+    expect(generatedRoot).toMatchObject({ parent_id: parent.id, sibling_order: 0, origin: 'outline' });
+    expect(generatedChild.parent_id).toBe(generatedRoot.id);
+    expect(snapshot.body.data.nodes.some((node: { id: string }) => node.id === parent.id)).toBe(true);
+  });
+
+  it('discards a generation draft without changing the formal tree', async () => {
+    await createTree();
+    await createNode('保留节点');
+    const { draftId } = await seedSucceededGeneration();
+
+    const discarded = await post(`${treeUrl()}/generations/${draftId}/discard`).expect(200);
+    expect(discarded.body.data.draft).toMatchObject({ id: draftId, status: 'discarded' });
+
+    const snapshot = await get(treeUrl()).expect(200);
+    expect(snapshot.body.data.tree.version).toBe(2);
+    expect(snapshot.body.data.nodes).toHaveLength(1);
+    expect(snapshot.body.data.nodes[0].title).toBe('保留节点');
+  });
+
+  it('enforces edit, commit and discard state transitions', async () => {
+    await createTree();
+    const [{ PlotGenerationDraftEntity }] = await Promise.all([
+      import('../src/database/plot-generation-draft.entity')
+    ]);
+    const repository = dataSource.getRepository(PlotGenerationDraftEntity);
+
+    for (const status of ['pending', 'failed', 'discarded', 'committed'] as const) {
+      const { draftId, payload } = await seedSucceededGeneration();
+      await repository.update({ id: draftId }, { status });
+
+      const edited = await patch(`${treeUrl()}/generations/${draftId}`, { payload }).expect(409);
+      expect(edited.body.error.details.code).toBe('PLOT_GENERATION_NOT_EDITABLE');
+      const committed = await post(`${treeUrl()}/generations/${draftId}/commit`, { mode: 'append' }).expect(409);
+      expect(committed.body.error.details.code).toBe('PLOT_GENERATION_NOT_READY');
+
+      const discarded = await post(`${treeUrl()}/generations/${draftId}/discard`);
+      if (status === 'committed') {
+        expect(discarded.status).toBe(409);
+        expect(discarded.body.error.details.code).toBe('PLOT_GENERATION_COMMITTED');
+      } else {
+        expect(discarded.status).toBe(200);
+        expect(discarded.body.data.draft.status).toBe('discarded');
+      }
+    }
+
+    const snapshot = await get(treeUrl()).expect(200);
+    expect(snapshot.body.data.tree.version).toBe(1);
+    expect(snapshot.body.data.nodes).toEqual([]);
+  });
+
+  it('rejects an invalid parent_index without partially replacing the formal tree', async () => {
+    await createTree();
+    await createNode('保留节点');
+    const { draftId, payload } = await seedSucceededGeneration();
+    const invalidPayload = {
+      nodes: [
+        payload.nodes[0],
+        { ...payload.nodes[1] as object, parent_index: 1 }
+      ]
+    };
+    await patch(`${treeUrl()}/generations/${draftId}`, { payload: invalidPayload }).expect(200);
+
+    const response = await post(`${treeUrl()}/generations/${draftId}/commit`, {
+      mode: 'replace',
+      confirm_overwrite: true
+    }).expect(422);
+    expect(response.body.error.details.code).toBe('PLOT_PAYLOAD_INVALID');
+
+    const snapshot = await get(treeUrl()).expect(200);
+    expect(snapshot.body.data.tree.version).toBe(2);
+    expect(snapshot.body.data.nodes).toHaveLength(1);
+    expect(snapshot.body.data.nodes[0].title).toBe('保留节点');
+    const detail = await get(`${treeUrl()}/generations/${draftId}`).expect(200);
+    expect(detail.body.data.draft.status).toBe('succeeded');
+  });
 });

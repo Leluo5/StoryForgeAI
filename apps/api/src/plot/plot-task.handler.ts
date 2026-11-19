@@ -3,6 +3,8 @@ import type { EntityManager } from 'typeorm';
 import { randomUUID } from 'node:crypto';
 import { DerivationSessionEntity } from '../database/derivation-session.entity';
 import { DerivationStepEntity } from '../database/derivation-step.entity';
+import { PlotGenerationDraftEntity } from '../database/plot-generation-draft.entity';
+import { plotTreeDraftPayloadSchema, type PlotTreeDraftPayload } from '@storyforge/contracts';
 import type { PlotStepCandidate } from './plot-model.provider';
 
 export type { PlotStepCandidate } from './plot-model.provider';
@@ -19,6 +21,13 @@ export interface PlotStepWriteResult {
   step_id: string;
   step_no: number;
   created: boolean;
+}
+
+export interface PlotGenerationWriteInput {
+  taskId: string;
+  draftId: string;
+  workId: string;
+  payload: PlotTreeDraftPayload;
 }
 
 /**
@@ -62,5 +71,46 @@ export class PlotTaskHandler {
     await sessionRepository.save(session);
 
     return { step_id: step.id, step_no: step.step_no, created: true };
+  }
+
+  async writeGeneration(
+    manager: EntityManager,
+    input: PlotGenerationWriteInput
+  ): Promise<{ draft_id: string; created: boolean }> {
+    const repository = manager.getRepository(PlotGenerationDraftEntity);
+    const draft = await repository.createQueryBuilder('draft')
+      .setLock('pessimistic_write')
+      .where('draft.id = :draftId', { draftId: input.draftId })
+      .andWhere('draft.work_id = :workId', { workId: input.workId })
+      .getOne();
+    if (!draft || draft.task_id !== input.taskId) {
+      throw new Error(`Plot generation draft ${input.draftId} not found for task ${input.taskId}`);
+    }
+    if (draft.status === 'succeeded') return { draft_id: draft.id, created: false };
+    if (draft.status !== 'pending' && draft.status !== 'failed') {
+      throw new Error(`Plot generation draft ${draft.id} cannot accept a task result`);
+    }
+
+    draft.payload = plotTreeDraftPayloadSchema.parse(input.payload) as unknown as Record<string, unknown>;
+    draft.status = 'succeeded';
+    draft.error = null;
+    await repository.save(draft);
+    return { draft_id: draft.id, created: true };
+  }
+
+  async failGeneration(
+    manager: EntityManager,
+    input: { taskId: string; workId: string; error: Record<string, unknown> }
+  ): Promise<void> {
+    const repository = manager.getRepository(PlotGenerationDraftEntity);
+    const draft = await repository.createQueryBuilder('draft')
+      .setLock('pessimistic_write')
+      .where('draft.task_id = :taskId', { taskId: input.taskId })
+      .andWhere('draft.work_id = :workId', { workId: input.workId })
+      .getOne();
+    if (!draft || (draft.status !== 'pending' && draft.status !== 'failed')) return;
+    draft.status = 'failed';
+    draft.error = input.error;
+    await repository.save(draft);
   }
 }

@@ -11,6 +11,8 @@ import { AiTaskEntity } from '../database/ai-task.entity';
 import { AiTaskEventEntity } from '../database/ai-task-event.entity';
 import { AuditLogEntity } from '../database/audit-log.entity';
 import { WorkEntity } from '../database/work.entity';
+import { ChapterEntity } from '../database/chapter.entity';
+import { PlotGenerationDraftEntity } from '../database/plot-generation-draft.entity';
 import { AuditService } from '../revision/audit.service';
 import { AuthModule } from '../auth/auth.module';
 import { AgentModule } from '../agent/agent.module';
@@ -18,8 +20,10 @@ import { AiTaskModule } from '../ai/ai-task.module';
 import { PlotController } from './plot.controller';
 import { PlotTreeService } from './plot-tree.service';
 import { PlotDerivationService } from './plot-derivation.service';
+import { PlotGenerationController } from './plot-generation.controller';
+import { PlotGenerationService } from './plot-generation.service';
 
-// M3c-1 剧情模块：剧情树（树/节点/关联/分组/导入导出）+ 推衍（会话/步骤/候选回写）
+// M3c-1 剧情模块：剧情树 + 推衍 + 自动建树草稿
 @Module({
   imports: [
     TypeOrmModule.forFeature([
@@ -33,14 +37,16 @@ import { PlotDerivationService } from './plot-derivation.service';
       AiTaskEntity,
       AiTaskEventEntity,
       WorkEntity,
+      ChapterEntity,
+      PlotGenerationDraftEntity,
       AuditLogEntity
     ]),
     AuthModule,
     AgentModule,
     AiTaskModule
   ],
-  providers: [PlotTreeService, PlotDerivationService, AuditService],
-  controllers: [PlotController],
-  exports: [PlotTreeService, PlotDerivationService]
+  providers: [PlotTreeService, PlotDerivationService, PlotGenerationService, AuditService],
+  controllers: [PlotController, PlotGenerationController],
+  exports: [PlotTreeService, PlotDerivationService, PlotGenerationService]
 })
 export class PlotModule {}

@@ -21,6 +21,7 @@ import { env } from '../config/env';
 import { DerivationSessionEntity } from '../database/derivation-session.entity';
 import { DerivationStepEntity } from '../database/derivation-step.entity';
 import { PlotNodeEntity } from '../database/plot-node.entity';
+import { PlotGenerationDraftEntity } from '../database/plot-generation-draft.entity';
 import { PlotTaskHandler } from '../plot/plot-task.handler';
 import { MockPlotModelProvider, PLOT_MODEL_PROVIDER } from '../plot/plot-model.provider';
 
@@ -41,7 +42,8 @@ import { MockPlotModelProvider, PLOT_MODEL_PROVIDER } from '../plot/plot-model.p
       AuditLogEntity,
       DerivationSessionEntity,
       DerivationStepEntity,
-      PlotNodeEntity
+      PlotNodeEntity,
+      PlotGenerationDraftEntity
     ]),
     AuthModule,
     AgentModule

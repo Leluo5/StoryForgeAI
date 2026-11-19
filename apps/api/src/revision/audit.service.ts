@@ -1,5 +1,5 @@
 import { Inject, Injectable, NotFoundException } from '@nestjs/common';
-import { DataSource } from 'typeorm';
+import { DataSource, EntityManager } from 'typeorm';
 import { randomUUID } from 'node:crypto';
 import type { ListAuditLogsQuery, ListAuditLogsResponse } from '@storyforge/contracts';
 import { AuditLogEntity } from '../database/audit-log.entity';
@@ -36,16 +36,18 @@ export class AuditService {
     targetType: string,
     targetId: string | null,
     detail: AuditDetail,
-    workId?: string
+    workId?: string,
+    manager?: EntityManager
   ): Promise<AuditLogEntity> {
-    const log = this.dataSource.getRepository(AuditLogEntity).create();
+    const repository = (manager ?? this.dataSource).getRepository(AuditLogEntity);
+    const log = repository.create();
     log.id = randomUUID();
     log.actor_id = actorId;
     log.action = action;
     log.target_type = targetType;
     log.target_id = targetId;
     log.detail = workId ? { ...detail, work_id: workId } : detail;
-    return this.dataSource.getRepository(AuditLogEntity).save(log);
+    return repository.save(log);
   }
 
   /**
