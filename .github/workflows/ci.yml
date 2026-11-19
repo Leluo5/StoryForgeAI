@@ -26,6 +26,9 @@ jobs:
           pnpm --version
       - name: Install workspace dependencies
         run: pnpm install --frozen-lockfile
+      # editor-schema / api / web 等依赖 contracts 的类型声明，lint/typecheck 前必须先构建 contracts（与根 pnpm run ci 一致）
+      - name: Build @storyforge/contracts (type declarations for dependents)
+        run: pnpm --filter @storyforge/contracts build
       - name: Lint
         run: pnpm lint
       - name: Typecheck
@@ -42,9 +45,10 @@ jobs:
       DATABASE_URL: postgresql://storyforge:storyforge@127.0.0.1:5433/storyforge_test
       TEST_DATABASE_URL: postgresql://storyforge:storyforge@127.0.0.1:5433/storyforge_test
       REDIS_URL: redis://127.0.0.1:6380
-      AUTHOR_EMAIL: ${{ secrets.M0_AUTHOR_EMAIL }}
+      # 仓库未配置 M0_AUTHOR_* secret 时回退到内置测试账号；prepare-e2e 会在测试库自举该 author（幂等）
+      AUTHOR_EMAIL: ${{ secrets.M0_AUTHOR_EMAIL || 'ci-author@example.com' }}
       AUTHOR_DISPLAY_NAME: M1 CI Author
-      AUTHOR_PASSWORD: ${{ secrets.M0_AUTHOR_PASSWORD }}
+      AUTHOR_PASSWORD: ${{ secrets.M0_AUTHOR_PASSWORD || 'ci-author-pass-1234' }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -56,6 +60,9 @@ jobs:
         run: |
           corepack enable
           corepack prepare pnpm@10.12.4 --activate
+      # infra/docker-compose.yml 将 storyforge_pg 标为 external（复用本地数据卷），CI 干净环境需预先创建，否则 compose up 失败
+      - name: Ensure disposable PG volume exists
+        run: docker volume create infra_storyforge_pg
       - name: Start disposable PostgreSQL 16
         run: docker compose -f infra/docker-compose.yml up -d postgres --wait
       - name: Create isolated test database
@@ -89,9 +96,10 @@ jobs:
       PORT: 3001
       WEB_ORIGIN: http://127.0.0.1:5173
       SESSION_TTL_SECONDS: 604800
-      AUTHOR_EMAIL: ${{ secrets.M0_AUTHOR_EMAIL }}
+      # 仓库未配置 M0_AUTHOR_* secret 时回退到内置测试账号；prepare-e2e 会在测试库自举该 author（幂等）
+      AUTHOR_EMAIL: ${{ secrets.M0_AUTHOR_EMAIL || 'ci-author@example.com' }}
       AUTHOR_DISPLAY_NAME: M1 CI Author
-      AUTHOR_PASSWORD: ${{ secrets.M0_AUTHOR_PASSWORD }}
+      AUTHOR_PASSWORD: ${{ secrets.M0_AUTHOR_PASSWORD || 'ci-author-pass-1234' }}
       M1_ALLOW_DATABASE_RESTART: "1"
     steps:
       - name: Checkout
@@ -116,6 +124,9 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r requirements.txt
           pip install pytest
+      # infra/docker-compose.yml 将 storyforge_pg 标为 external（复用本地数据卷），CI 干净环境需预先创建，否则 compose up 失败
+      - name: Ensure disposable PG volume exists
+        run: docker volume create infra_storyforge_pg
       - name: Start disposable PostgreSQL 16
         run: docker compose -f infra/docker-compose.yml up -d postgres --wait
       - name: Create isolated test database
