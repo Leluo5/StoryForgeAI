@@ -95,6 +95,8 @@ describe('AiTaskPanel', () => {
 
     render(<AiTaskPanel workId={workId} chapterId={chapterId} />);
     await screen.findByRole('progressbar', { name: '任务进度' });
+    // 订阅 effect 异步执行：高负载（全量并发）下可能滞后于进度条渲染，等待订阅句柄建立再触发事件
+    await waitFor(() => expect(streams).toHaveLength(1));
 
     // 模拟服务端推送进度事件
     const stream = streams[0]!;
@@ -116,6 +118,7 @@ describe('AiTaskPanel', () => {
 
     render(<AiTaskPanel workId={workId} chapterId={chapterId} />);
     await screen.findByRole('progressbar', { name: '任务进度' });
+    await waitFor(() => expect(streams).toHaveLength(1));
 
     const stream = streams[0]!;
     act(() => {
@@ -177,6 +180,7 @@ describe('AiTaskPanel', () => {
 
     const { unmount } = render(<AiTaskPanel workId={workId} chapterId={chapterId} />);
     await screen.findByRole('progressbar', { name: '任务进度' });
+    await waitFor(() => expect(streams).toHaveLength(1));
 
     unmount();
     expect(stream.close).toHaveBeenCalled();
