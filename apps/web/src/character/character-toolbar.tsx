@@ -1,6 +1,7 @@
 import { useRef, useState, type ChangeEvent, type JSX } from 'react';
-import { characterImportFileSchema } from '@storyforge/contracts';
+import { characterImportFileSchema, type CharacterBoardResponse } from '@storyforge/contracts';
 import type { CharacterClient } from './character-client';
+import { CharacterCreateTools } from './character-create-panel';
 import { characterErrorMessage, type CharacterFilters } from './character-state';
 
 export type CharacterFilterDimension = 'country_region' | 'faith' | 'faction' | 'race' | 'occupation' | 'age_band';
@@ -40,6 +41,12 @@ interface Props {
   onDimensionChange: (dim: CharacterFilterDimension, value: string) => void;
   resultCount: number;
   busy: boolean;
+  /** 当前版图角色（新建关系时选择两端）；缺省为空 */
+  characters?: CharacterBoardResponse['characters'];
+  /** 当前视图：新建角色后补入该视图成员 */
+  viewId?: string | null;
+  /** 新建角色 / 关系成功后刷新版图 */
+  onCreated?: (() => void) | undefined;
 }
 
 type ImportFile = Awaited<ReturnType<CharacterClient['exportFile']>>;
@@ -276,6 +283,13 @@ export function CharacterToolbar(props: Props): JSX.Element {
         <button type="button" aria-pressed={props.view === 'list'} onClick={() => props.onView('list')}>列表</button>
         <button type="button" aria-pressed={props.view === 'archive'} onClick={() => props.onView('archive')}>归档</button>
       </div>
+      <CharacterCreateTools
+        workId={props.workId}
+        viewId={props.viewId ?? null}
+        client={props.client}
+        characters={props.characters ?? []}
+        onCreated={props.onCreated ?? (() => {})}
+      />
       <CharacterPortability workId={props.workId} client={props.client} onImported={props.onImported} />
       <div className="character-toolbar-group character-search" role="group" aria-label="筛选">
         <label htmlFor="character-keyword-input">搜索</label>

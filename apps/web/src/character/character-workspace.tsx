@@ -328,6 +328,9 @@ function CharacterBoard(props: CharacterBoardProps): JSX.Element {
         onDimensionChange={handleDimensionChange}
         resultCount={filtered.length}
         busy={store.busy}
+        characters={store.board?.characters ?? []}
+        viewId={store.viewId}
+        onCreated={() => void store.reload()}
       />
       {store.loading ? <p className="character-status" role="status">正在加载角色版图…</p> : null}
       {store.error ? <p className="character-error" role="alert">{store.error}</p> : null}
