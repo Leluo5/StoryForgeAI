@@ -4,6 +4,9 @@ import {
   plotPositionSchema,
   plotNodeSchema,
   plotTreeResponseSchema,
+  plotTreeQuerySchema,
+  setPlotNodeOwnersRequestSchema,
+  plotNodeOwnersResponseSchema,
   importPlotTreeRequestSchema,
   createPlotLinkRequestSchema,
   createDerivationSessionRequestSchema,
@@ -165,5 +168,54 @@ describe('plot contracts', () => {
     expect(plotNodeSchema.safeParse(node()).success).toBe(true);
     expect(plotNodeSchema.safeParse(node({ origin: 'bogus' })).success).toBe(false);
     expect(plotNodeSchema.safeParse(node({ title: '' })).success).toBe(false);
+  });
+
+  it('validates node owner requests without duplicate characters', () => {
+    const characterId = uuid();
+    expect(setPlotNodeOwnersRequestSchema.safeParse({ owners: [] }).success).toBe(true);
+    expect(
+      setPlotNodeOwnersRequestSchema.safeParse({
+        owners: [{ character_id: characterId, is_exclusive: true }]
+      }).success
+    ).toBe(true);
+    expect(
+      setPlotNodeOwnersRequestSchema.safeParse({
+        owners: [
+          { character_id: characterId, is_exclusive: true },
+          { character_id: characterId, is_exclusive: false }
+        ]
+      }).success
+    ).toBe(false);
+    expect(
+      setPlotNodeOwnersRequestSchema.safeParse({
+        owners: Array.from({ length: 11 }, () => ({ character_id: uuid(), is_exclusive: false }))
+      }).success
+    ).toBe(false);
+  });
+
+  it('parses old tree responses and responses carrying owners', () => {
+    expect(plotTreeResponseSchema.safeParse({ tree: null, nodes: [], links: [], groups: [] }).success).toBe(true);
+    const characterId = uuid();
+    const nodeId = uuid();
+    const response = {
+      tree: null,
+      nodes: [],
+      links: [],
+      groups: [],
+      owners: [{ node_id: nodeId, character_id: characterId, is_exclusive: true }],
+      archived_owner_nodes: [{ node_id: nodeId, character_ids: [characterId], position: { x: 1, y: 2 } }]
+    };
+    expect(plotTreeResponseSchema.safeParse(response).success).toBe(true);
+    expect(
+      plotNodeOwnersResponseSchema.safeParse({
+        node_id: nodeId,
+        owners: [{ node_id: nodeId, character_id: characterId, is_exclusive: false }]
+      }).success
+    ).toBe(true);
+  });
+
+  it('defaults includeArchivedOwner to false and coerces query strings', () => {
+    expect(plotTreeQuerySchema.parse({})).toEqual({ includeArchivedOwner: false });
+    expect(plotTreeQuerySchema.parse({ includeArchivedOwner: 'true' })).toEqual({ includeArchivedOwner: true });
   });
 });

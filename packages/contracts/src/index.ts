@@ -5,3 +5,7 @@ export * from './revision';
 export * from './ai-task';
 export * from './agent-config';
 export * from './plot';
+export * from './character';
+export * from './character-anchor';
+export * from './character-ai';
+export * from './character-portability';

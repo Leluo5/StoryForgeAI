@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { characterStatusSchema } from './character';
 
 // M3c-1 剧情契约：剧情树 / 节点 / 关联 / 分组 / 推衍 / 自动建树
 // 字段对齐 database/plot-*.entity.ts、derivation-*.entity.ts
@@ -97,12 +98,71 @@ export const plotLinkSchema = z
   })
   .refine((v) => v.source_id !== v.target_id, { message: '关联两端不能是同一节点', path: ['target_id'] });
 
+// ───────────────────────────── 剧情节点归属（M3c-2 扩展） ─────────────────────────────
+
+// 只读视图：只存归属关系，不复制节点内容
+export const plotNodeOwnerSchema = z.object({
+  node_id: id,
+  character_id: id,
+  is_exclusive: z.boolean(),
+  character: z
+    .object({
+      id,
+      name: z.string().trim().min(1).max(60),
+      status: characterStatusSchema
+    })
+    .optional()
+});
+
+// 归档视图：因专属归属者全部归档而被隐藏的节点（仅用于展示，不回写 plot_nodes）
+export const archivedOwnerNodeSchema = z.object({
+  node_id: id,
+  character_ids: z.array(id).min(1),
+  position: plotPositionSchema
+});
+
+// 整组写入请求：≤10 且 character_id 不得重复；空数组表示清空 active 归属
+export const setPlotNodeOwnersRequestSchema = z
+  .object({
+    owners: z
+      .array(
+        z.object({
+          character_id: id,
+          is_exclusive: z.boolean().default(false)
+        })
+      )
+      .max(10)
+  })
+  .refine((value) => new Set(value.owners.map((owner) => owner.character_id)).size === value.owners.length, {
+    message: '同一节点不能重复归属同一角色',
+    path: ['owners']
+  });
+
+export const plotNodeOwnersResponseSchema = z.object({
+  node_id: id,
+  owners: z.array(plotNodeOwnerSchema)
+});
+
+// 查询串布尔值：兼容 "true"/"false"/"1"/"0"
+const queryBoolean = (defaultValue: boolean) =>
+  z.preprocess((value) => {
+    if (typeof value === 'string') return value === 'true' || value === '1';
+    return value;
+  }, z.boolean().optional().default(defaultValue));
+
+export const plotTreeQuerySchema = z.object({
+  includeArchivedOwner: queryBoolean(false)
+});
+
 // 整树读取响应：无树时 tree 为 null，其余为空数组
 export const plotTreeResponseSchema = z.object({
   tree: plotTreeSchema.nullable(),
   nodes: z.array(plotNodeSchema),
   links: z.array(plotLinkSchema),
-  groups: z.array(plotGroupSchema)
+  groups: z.array(plotGroupSchema),
+  // M3c-2 新增可选字段：旧客户端忽略，nodes/links/groups 结构不变
+  owners: z.array(plotNodeOwnerSchema).optional(),
+  archived_owner_nodes: z.array(archivedOwnerNodeSchema).optional()
 });
 
 // ───────────────────────────── 剧情树请求 ─────────────────────────────
@@ -409,6 +469,8 @@ export type PlotNode = z.infer<typeof plotNodeSchema>;
 export type PlotLink = z.infer<typeof plotLinkSchema>;
 export type PlotGroup = z.infer<typeof plotGroupSchema>;
 export type PlotTreeResponse = z.infer<typeof plotTreeResponseSchema>;
+export type PlotNodeOwner = z.infer<typeof plotNodeOwnerSchema>;
+export type ArchivedOwnerNode = z.infer<typeof archivedOwnerNodeSchema>;
 export type PlotNodeAttributes = z.infer<typeof plotNodeAttributesSchema>;
 export type PlotDraftNode = z.infer<typeof plotDraftNodeSchema>;
 export type PlotTreeDraftPayload = z.infer<typeof plotTreeDraftPayloadSchema>;
