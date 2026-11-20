@@ -196,11 +196,21 @@ describe('agent config endpoints (real PostgreSQL)', () => {
 
   // ── 工具列表（种子） ──
 
-  it('lists 6 seeded tools with bound_agent info', async () => {
+  it('lists 9 seeded tools with bound_agent info', async () => {
     const listed = await get('/api/v1/ai-tools').expect(200);
     const tools = listed.body.data.tools as Array<{ tool_id: string; enabled: boolean }>;
-    expect(tools).toHaveLength(6);
-    expect(tools.map((t) => t.tool_id).sort()).toEqual(['continue', 'expand', 'plot_derivation', 'plot_generate', 'polish', 'rewrite']);
+    expect(tools).toHaveLength(9);
+    expect(tools.map((t) => t.tool_id).sort()).toEqual([
+      'character_avatar_generate',
+      'character_extract',
+      'character_growth_extract',
+      'continue',
+      'expand',
+      'plot_derivation',
+      'plot_generate',
+      'polish',
+      'rewrite'
+    ]);
     for (const t of tools) expect(t.enabled).toBe(true);
   });
 

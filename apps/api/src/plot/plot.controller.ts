@@ -11,6 +11,7 @@ import {
   Patch,
   Post,
   Put,
+  Query,
   Req,
   UnprocessableEntityException,
   UseGuards
@@ -27,6 +28,7 @@ import {
   createPlotTreeRequestSchema,
   importPlotTreeRequestSchema,
   movePlotNodeRequestSchema,
+  plotTreeQuerySchema,
   updateDerivationSessionRequestSchema,
   updateDerivationStepRequestSchema,
   updatePlotGroupRequestSchema,
@@ -71,8 +73,17 @@ export class PlotController {
   ) {}
 
   @Get('works/:workId/plot-tree')
-  async getTree(@Req() request: AuthenticatedRequest, @Param('workId') workId: string) {
-    return ok(request, await this.plotTree.getTree(request.author.id, workId));
+  async getTree(
+    @Req() request: AuthenticatedRequest,
+    @Param('workId') workId: string,
+    @Query(new ZodValidationPipe(plotTreeQuerySchema)) query: { includeArchivedOwner: boolean }
+  ) {
+    return ok(
+      request,
+      await this.plotTree.getTree(request.author.id, workId, {
+        includeArchivedOwner: query.includeArchivedOwner
+      })
+    );
   }
 
   @Post('works/:workId/plot-tree')

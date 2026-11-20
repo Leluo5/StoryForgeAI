@@ -153,11 +153,21 @@ describe('AgentService', () => {
 
   // ── M3b-B4 listTools / updateTool ──
 
-  it('lists all seeded tools (6) with bound agent summary', async () => {
+  it('lists all seeded tools (9) with bound agent summary', async () => {
     const { tools } = await service.listTools(fixture.authorId);
-    expect(tools).toHaveLength(6);
+    expect(tools).toHaveLength(9);
     const ids = tools.map((t) => t.tool_id).sort();
-    expect(ids).toEqual(['continue', 'expand', 'plot_derivation', 'plot_generate', 'polish', 'rewrite']);
+    expect(ids).toEqual([
+      'character_avatar_generate',
+      'character_extract',
+      'character_growth_extract',
+      'continue',
+      'expand',
+      'plot_derivation',
+      'plot_generate',
+      'polish',
+      'rewrite'
+    ]);
     for (const t of tools) expect(t.bound_agent).toBeNull(); // 未绑定
   });
 

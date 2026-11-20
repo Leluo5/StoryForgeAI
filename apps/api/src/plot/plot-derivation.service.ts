@@ -97,7 +97,8 @@ function toAiTaskView(task: AiTaskEntity): AiTaskView {
     idempotency_key: task.idempotency_key,
     work_id: task.work_id,
     chapter_id: task.chapter_id,
-    scope: task.scope,
+    // 契约 scope 仅 chapter/plot；character 为运行时扩展值
+    scope: task.scope as AiTaskView['scope'],
     tool: task.tool,
     agent_id: task.agent_id,
     input_summary: task.input_summary,

@@ -1,4 +1,4 @@
-import { Module } from '@nestjs/common';
+import { Module, forwardRef } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { AuthModule } from '../auth/auth.module';
 import { AiTaskEntity } from '../database/ai-task.entity';
@@ -24,6 +24,7 @@ import { PlotNodeEntity } from '../database/plot-node.entity';
 import { PlotGenerationDraftEntity } from '../database/plot-generation-draft.entity';
 import { PlotTaskHandler } from '../plot/plot-task.handler';
 import { MockPlotModelProvider, PLOT_MODEL_PROVIDER } from '../plot/plot-model.provider';
+import { CharacterModule } from '../character/character.module';
 
 /**
  * AI 创作基座模块（M3a）。
@@ -46,7 +47,8 @@ import { MockPlotModelProvider, PLOT_MODEL_PROVIDER } from '../plot/plot-model.p
       PlotGenerationDraftEntity
     ]),
     AuthModule,
-    AgentModule
+    AgentModule,
+    forwardRef(() => CharacterModule)
   ],
   providers: [
     AuditService,

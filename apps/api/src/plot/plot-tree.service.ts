@@ -1,7 +1,14 @@
 import { randomUUID } from 'node:crypto';
-import { ConflictException, Inject, Injectable, NotFoundException, UnprocessableEntityException } from '@nestjs/common';
+import {
+  ConflictException,
+  Inject,
+  Injectable,
+  NotFoundException,
+  Optional,
+  UnprocessableEntityException
+} from '@nestjs/common';
 import type { EntityManager, QueryDeepPartialEntity } from 'typeorm';
-import { DataSource, QueryFailedError } from 'typeorm';
+import { DataSource, In, QueryFailedError } from 'typeorm';
 import {
   type PlotGroup,
   type PlotLink,
@@ -11,6 +18,7 @@ import {
   type PlotNodeAttributes
 } from '@storyforge/contracts';
 import { WorkEntity } from '../database/work.entity';
+import { CharacterEntity } from '../database/character.entity';
 import { PlotTreeEntity } from '../database/plot-tree.entity';
 import { PlotNodeEntity } from '../database/plot-node.entity';
 import { PlotLinkEntity } from '../database/plot-link.entity';
@@ -18,6 +26,7 @@ import { PlotGroupEntity } from '../database/plot-group.entity';
 import { AuditService } from '../revision/audit.service';
 import { assertLinearAcyclic, assertParentAcyclic } from './plot-cycle';
 import { PlotImportError, validateImportPayload } from './plot-import';
+import { PlotOwnerService } from './plot-owner.service';
 
 export interface CreateTreeInput {
   title?: string | undefined;
@@ -185,7 +194,8 @@ function isUniqueViolation(error: unknown): boolean {
 export class PlotTreeService {
   constructor(
     @Inject(DataSource) private readonly dataSource: DataSource,
-    @Inject(AuditService) private readonly audit: AuditService
+    @Inject(AuditService) private readonly audit: AuditService,
+    @Optional() @Inject(PlotOwnerService) private readonly owners?: PlotOwnerService
   ) {}
 
   /** 校验作品归属；不存在或不属于当前作者一律 404，避免泄露存在性 */
@@ -257,7 +267,11 @@ export class PlotTreeService {
     return Number(row?.max ?? -1) + 1;
   }
 
-  async getTree(authorId: string, workId: string): Promise<PlotTreeResponse> {
+  async getTree(
+    authorId: string,
+    workId: string,
+    options: { includeArchivedOwner?: boolean } = {}
+  ): Promise<PlotTreeResponse> {
     await this.assertOwnedWork(this.dataSource.manager, authorId, workId);
     const tree = await this.findTree(this.dataSource.manager, workId);
     if (!tree) return { tree: null, nodes: [], links: [], groups: [] };
@@ -272,11 +286,68 @@ export class PlotTreeService {
         order: { order_index: 'ASC', created_at: 'ASC' }
       })
     ]);
+
+    const includeArchivedOwner = options.includeArchivedOwner === true;
+    const ownerMap = this.owners
+      ? await this.owners.bulkList(authorId, workId, nodes.map((n) => n.id))
+      : new Map<string, { owners: Array<{ character_id: string; is_exclusive?: boolean }>; hidden: boolean }>();
+
+    const owners = nodes.flatMap((node) => {
+      const entry = ownerMap.get(node.id);
+      return (entry?.owners ?? []).map((owner) => ({
+        node_id: node.id,
+        character_id: owner.character_id,
+        is_exclusive: owner.is_exclusive === true
+      }));
+    });
+
+    if (includeArchivedOwner) {
+      return {
+        tree: mapTree(tree),
+        nodes: nodes.map(mapNode),
+        links: links.map(mapLink),
+        groups: groups.map(mapGroup),
+        owners,
+        archived_owner_nodes: []
+      };
+    }
+
+    const hiddenNodeIds = new Set(nodes.filter((n) => ownerMap.get(n.id)?.hidden === true).map((n) => n.id));
+    const visibleNodes = nodes.filter((n) => !hiddenNodeIds.has(n.id));
+    const visibleLinks = links.filter(
+      (link) => !hiddenNodeIds.has(link.source_id) && !hiddenNodeIds.has(link.target_id)
+    );
+
+    // 隐藏节点上的专属且全部非 active 的角色 id
+    const ownerCharacterIds = Array.from(
+      new Set(
+        nodes
+          .filter((n) => hiddenNodeIds.has(n.id))
+          .flatMap((n) => (ownerMap.get(n.id)?.owners ?? []).map((o) => o.character_id))
+      )
+    );
+    const characters = ownerCharacterIds.length
+      ? await this.dataSource.getRepository(CharacterEntity).find({ where: { id: In(ownerCharacterIds) } })
+      : [];
+    const statusById = new Map(characters.map((c) => [c.id, c.status]));
+    const archived_owner_nodes = nodes
+      .filter((n) => hiddenNodeIds.has(n.id))
+      .map((n) => ({
+        node_id: n.id,
+        character_ids: (ownerMap.get(n.id)?.owners ?? [])
+          .filter((o) => o.is_exclusive === true && (statusById.get(o.character_id) ?? 'unknown') !== 'active')
+          .map((o) => o.character_id),
+        position: { x: n.position_x, y: n.position_y }
+      }))
+      .filter((item) => item.character_ids.length > 0);
+
     return {
       tree: mapTree(tree),
-      nodes: nodes.map(mapNode),
-      links: links.map(mapLink),
-      groups: groups.map(mapGroup)
+      nodes: visibleNodes.map(mapNode),
+      links: visibleLinks.map(mapLink),
+      groups: groups.map(mapGroup),
+      owners,
+      archived_owner_nodes
     };
   }
 

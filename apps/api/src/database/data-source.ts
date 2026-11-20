@@ -56,6 +56,7 @@ import { AiTaskCharacterScope1760500001000 } from './migrations/1760500001000-ai
 import { CharacterRelationTypeSeed1760500002000 } from './migrations/1760500002000-character-relation-type-seed';
 import { CharacterAnchors1760500003000 } from './migrations/1760500003000-character-anchors';
 import { PlotNodeCharacterOwners1760500004000 } from './migrations/1760500004000-plot-node-character-owners';
+import { CharacterAiTools1760500005000 } from './migrations/1760500005000-character-ai-tools';
 
 export function createDataSource(databaseUrl: string = env.DATABASE_URL): DataSource {
   return new DataSource({
@@ -118,7 +119,8 @@ export function createDataSource(databaseUrl: string = env.DATABASE_URL): DataSo
       AiTaskCharacterScope1760500001000,
       CharacterRelationTypeSeed1760500002000,
       CharacterAnchors1760500003000,
-      PlotNodeCharacterOwners1760500004000
+      PlotNodeCharacterOwners1760500004000,
+      CharacterAiTools1760500005000
     ],
     migrationsTableName: 'migrations',
     synchronize: false,

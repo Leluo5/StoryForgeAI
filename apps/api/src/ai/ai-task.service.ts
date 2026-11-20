@@ -34,7 +34,8 @@ function toAiTask(entity: AiTaskEntity): AiTask {
     id: entity.id,
     work_id: entity.work_id,
     chapter_id: entity.chapter_id,
-    scope: entity.scope,
+    // 契约冻结未含 character，运行时按扩展值返回（DB 已允许）
+    scope: entity.scope as AiTask['scope'],
     tool: entity.tool,
     agent_id: entity.agent_id,
     input_summary: entity.input_summary,
@@ -196,6 +197,70 @@ export class AiTaskService {
       return { task, created: true };
     }).then(async (result) => {
       // 仅新建任务才入队；幂等命中不重复执行
+      if (result.created) await this.queue.enqueue(result.task.id).catch(() => undefined);
+      return { task: toAiTask(result.task), created: result.created };
+    });
+  }
+
+  /**
+   * 角色域任务（M3c-2）：scope='character'，无章节，基准版本 0。
+   * 工具未启用/不存在 → 409 AI_TOOL_DISABLED；幂等键命中直接返回既有任务。
+   */
+  createCharacterTask(
+    authorId: string,
+    workId: string,
+    input: { tool: string; inputSummary: Record<string, unknown>; idempotencyKey: string }
+  ): Promise<{ task: AiTask; created: boolean }> {
+    return this.dataSource.transaction(async (manager) => {
+      const work = await manager
+        .getRepository(WorkEntity)
+        .findOneBy({ id: workId, author_id: authorId });
+      if (!work) throw new NotFoundException('作品不存在');
+
+      let agentId: string | null = null;
+      try {
+        const resolved = await this.agentService.resolveToolForTask(input.tool);
+        agentId = resolved.agentId;
+      } catch {
+        throw new ConflictException({ code: 'AI_TOOL_DISABLED', tool: input.tool });
+      }
+      const defaultAgent = await this.agentService.ensureDefaultAgent(authorId);
+
+      const existing = await manager
+        .getRepository(AiTaskEntity)
+        .findOneBy({ idempotency_key: input.idempotencyKey });
+      if (existing) return { task: existing, created: false };
+
+      const task = manager.getRepository(AiTaskEntity).create();
+      task.id = randomUUID();
+      task.idempotency_key = input.idempotencyKey;
+      task.work_id = workId;
+      task.chapter_id = null;
+      task.scope = 'character';
+      task.tool = input.tool;
+      task.agent_id = agentId ?? defaultAgent.id;
+      task.input_summary = input.inputSummary;
+      task.base_version = 0;
+      task.status = 'queued';
+      task.event_seq = 0;
+      task.result_revision_set_id = null;
+      task.error = null;
+      task.attempts = 0;
+      task.created_by = authorId;
+      await manager.save(task);
+
+      await appendEvent(manager, task, this.eventBus, 'queued', {
+        tool: task.tool,
+        scope: 'character'
+      });
+
+      await this.auditService.record(authorId, 'ai_task_create', 'ai_task', task.id, {
+        tool: task.tool,
+        scope: 'character'
+      }, workId);
+
+      return { task, created: true };
+    }).then(async (result) => {
       if (result.created) await this.queue.enqueue(result.task.id).catch(() => undefined);
       return { task: toAiTask(result.task), created: result.created };
     });

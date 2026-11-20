@@ -1,4 +1,4 @@
-import { Inject, Injectable, Logger } from '@nestjs/common';
+import { Inject, Injectable, Logger, Optional, forwardRef } from '@nestjs/common';
 import { DataSource, EntityManager } from 'typeorm';
 import { randomUUID } from 'node:crypto';
 import { Job, Worker, UnrecoverableError } from 'bullmq';
@@ -24,6 +24,10 @@ import {
   PLOT_MODEL_PROVIDER
 } from '../plot/plot-model.provider';
 import { PlotTaskHandler } from '../plot/plot-task.handler';
+import {
+  CharacterTaskHandler,
+  type CharacterTaskContext
+} from '../character/character-task.handler';
 import { env } from '../config/env';
 
 // ───────────────────────────── 结果映射端口（A6 实现，避免 A5↔A6 循环依赖） ─────────────────────────────
@@ -110,7 +114,12 @@ interface PlotGenerationProcessContext extends BaseProcessContext {
 }
 
 type PlotProcessContext = PlotDerivationProcessContext | PlotGenerationProcessContext;
-type ProcessContext = ChapterProcessContext | PlotProcessContext;
+
+interface CharacterProcessContext extends BaseProcessContext {
+  kind: 'character';
+}
+
+type ProcessContext = ChapterProcessContext | PlotProcessContext | CharacterProcessContext;
 
 /**
  * AI 任务处理器：消费 BullMQ 队列，执行一次 AI 创作任务。
@@ -128,7 +137,10 @@ export class AiTaskProcessor {
     @Inject(AI_RESULT_MAPPER) private readonly mapper: AiResultMapperPort,
     @Inject(AI_TASK_EVENT_BUS) private readonly eventBus: AiTaskEventBus,
     @Inject(PLOT_MODEL_PROVIDER) private readonly plotModel: PlotModelProvider = new MockPlotModelProvider(),
-    @Inject(PlotTaskHandler) private readonly plotHandler: PlotTaskHandler = new PlotTaskHandler()
+    @Inject(PlotTaskHandler) private readonly plotHandler: PlotTaskHandler = new PlotTaskHandler(),
+    @Optional()
+    @Inject(forwardRef(() => CharacterTaskHandler))
+    private readonly characterHandler?: CharacterTaskHandler
   ) {}
 
   /** 创建消费该队列的 BullMQ Worker（A8 在 main.ts 启动；测试可直接调用） */
@@ -155,6 +167,21 @@ export class AiTaskProcessor {
     try {
       const started = await this.startRunning(taskId, job.attemptsMade);
       if (started.skipped) return; // 任务已被取消/完成，无事可做
+
+      if (started.context.kind === 'character') {
+        if (!this.characterHandler) {
+          throw new Error('CharacterTaskHandler 未装配');
+        }
+        const summary = await this.characterHandler.handle({
+          taskId: started.context.taskId,
+          authorId: started.context.authorId,
+          workId: started.context.workId,
+          tool: started.context.tool,
+          inputSummary: started.context.inputSummary
+        });
+        await this.finishCharacterSucceeded(started.context, summary);
+        return;
+      }
 
       if (started.context.kind === 'plot') {
         if (started.context.operation === 'generation') {
@@ -205,6 +232,21 @@ export class AiTaskProcessor {
         await appendEvent(manager, task, this.eventBus, 'running', { tool: task.tool, attempts: task.attempts });
       } else {
         await manager.save(task); // 重试进入：仅推进 attempts，不重复写 running 事件
+      }
+
+      // scope='character' 的任务无章节，直接构建角色上下文
+      if (task.scope === 'character') {
+        return {
+          skipped: false,
+          context: {
+            kind: 'character',
+            taskId: task.id,
+            authorId: task.created_by,
+            workId: task.work_id,
+            tool: task.tool,
+            inputSummary: task.input_summary
+          }
+        };
       }
 
       // scope='plot' 的任务无章节，按推衍会话构建上下文
@@ -426,6 +468,34 @@ export class AiTaskProcessor {
     });
   }
 
+  /** 事务2（角色）：锁任务，succeeded + SSE 事件 + 审计（原子） */
+  private async finishCharacterSucceeded(
+    context: CharacterProcessContext,
+    summary: Record<string, unknown>
+  ): Promise<{ skipped: boolean }> {
+    return this.dataSource.transaction(async (manager) => {
+      const task = await manager.getRepository(AiTaskEntity).createQueryBuilder('task')
+        .where('task.id = :taskId', { taskId: context.taskId })
+        .setLock('pessimistic_write')
+        .getOne();
+      if (!task || task.status !== 'running') return { skipped: true };
+
+      task.status = 'succeeded';
+      await appendEvent(manager, task, this.eventBus, 'succeeded', {
+        tool: context.tool,
+        ...summary
+      });
+
+      await this.auditService.record(context.authorId, 'ai_task_succeeded', 'ai_task', task.id, {
+        tool: context.tool,
+        scope: 'character',
+        ...summary
+      }, context.workId);
+
+      return { skipped: false };
+    });
+  }
+
   /** 标记任务失败：锁任务，仅 running/queued 可转 failed（终态跳过，幂等） */
   private async markFailed(taskId: string, err: unknown): Promise<void> {
     const message = err instanceof Error ? err.message : String(err);
@@ -433,6 +503,11 @@ export class AiTaskProcessor {
       err instanceof AiModelError || err instanceof PlotModelError ? err.retryable : true;
     const code =
       err instanceof AiModelError || err instanceof PlotModelError ? err.code : 'UNKNOWN';
+    const pendingCharacter: {
+      context: CharacterTaskContext | null;
+      error: Record<string, unknown> | null;
+    } = { context: null, error: null };
+
     await this.dataSource.transaction(async (manager) => {
       const task = await manager.getRepository(AiTaskEntity).createQueryBuilder('task')
         .where('task.id = :taskId', { taskId })
@@ -450,6 +525,16 @@ export class AiTaskProcessor {
           error: task.error
         });
       }
+      if (task.scope === 'character') {
+        pendingCharacter.context = {
+          taskId: task.id,
+          authorId: task.created_by,
+          workId: task.work_id,
+          tool: task.tool,
+          inputSummary: task.input_summary
+        };
+        pendingCharacter.error = task.error;
+      }
       await appendEvent(manager, task, this.eventBus, 'failed', { message, code, retryable });
 
       await this.auditService.record(task.created_by, 'ai_task_failed', 'ai_task', task.id, {
@@ -460,6 +545,12 @@ export class AiTaskProcessor {
         retryable
       }, task.work_id);
     });
+
+    if (pendingCharacter.context && this.characterHandler) {
+      await this.characterHandler
+        .failDraft(pendingCharacter.context, pendingCharacter.error ?? { message, code, retryable })
+        .catch(() => undefined);
+    }
   }
 
   /** Worker 'failed' 兜底：最终失败但 DB 仍非终态 → 标 failed（process 内已处理则幂等跳过） */
