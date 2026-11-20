@@ -8,15 +8,21 @@ import {
 import { useCallback, useEffect, useState } from 'react';
 import { MarkdownEditor } from './markdown-editor';
 import { ProseMirrorEditor } from './prosemirror-editor';
+import type { ChapterRoleMarkNotice, RoleMark } from './role-marks';
 
 export interface EditorPaneProps {
   initialDocument: ProseMirrorNode;
   readOnly: boolean;
   onDocument(operations: Array<Record<string, unknown>>, document: ProseMirrorNode): void;
   onMarkdownDraft(source: string): Promise<void>;
+  roleMarks?: RoleMark[] | undefined;
+  chapterMarks?: ChapterRoleMarkNotice[] | undefined;
+  onDismissMark?: ((mark: RoleMark) => void) | undefined;
 }
 
-export function EditorPane({ initialDocument, readOnly, onDocument, onMarkdownDraft }: EditorPaneProps) {
+export function EditorPane({
+  initialDocument, readOnly, onDocument, onMarkdownDraft, roleMarks, chapterMarks, onDismissMark
+}: EditorPaneProps) {
   const [document, setDocument] = useState(initialDocument);
   const [mode, setMode] = useState<'rich' | 'markdown'>('rich');
   const [source, setSource] = useState('');
@@ -57,9 +63,11 @@ export function EditorPane({ initialDocument, readOnly, onDocument, onMarkdownDr
       <button type="button" aria-pressed={mode === 'markdown'} onClick={showMarkdown}>Markdown</button>
     </div>
     {mode === 'rich'
-      ? <ProseMirrorEditor initialDocument={document} readOnly={readOnly} onDocument={(operations, next) => {
+      ? <ProseMirrorEditor initialDocument={document} readOnly={readOnly} roleMarks={roleMarks}
+          chapterMarks={chapterMarks} onDismissMark={onDismissMark} onDocument={(operations, next) => {
           setDocument(next); onDocument(operations, next);
         }} />
-      : <MarkdownEditor source={source} readOnly={readOnly} error={error} onChange={changeSource} />}
+      : <MarkdownEditor source={source} readOnly={readOnly} error={error} onChange={changeSource}
+          roleMarks={roleMarks} chapterMarks={chapterMarks} onDismissMark={onDismissMark} />}
   </section>;
 }
