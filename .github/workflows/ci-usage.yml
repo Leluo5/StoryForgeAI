@@ -1,0 +1,33 @@
+name: CI Usage
+
+on:
+  schedule:
+    # 每周一 01:00 UTC（北京时间 09:00）统计当月已用免费额度，提前暴露额度耗尽风险
+    - cron: "0 1 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: read
+
+concurrency:
+  group: ci-usage
+  cancel-in-progress: true
+
+jobs:
+  usage:
+    name: 免费额度统计与预警
+    runs-on: ubuntu-22.04
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22.16.0"
+      # 使用率 >= 70% 输出预警，>= 85% 以退出码 1 触发 GitHub 失败通知
+      - name: Report CI usage
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: node scripts/ci-billing.mjs

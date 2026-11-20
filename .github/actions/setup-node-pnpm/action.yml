@@ -1,0 +1,28 @@
+name: Setup Node and pnpm
+description: 安装固定版本 Node.js / pnpm，并启用 pnpm store 依赖缓存（命中后 install 只需数秒）
+
+inputs:
+  node-version:
+    description: Node.js 版本，需与 package.json engines 保持一致
+    required: false
+    default: "22.16.0"
+
+runs:
+  using: composite
+  steps:
+    # pnpm 版本由 package.json 的 packageManager 字段（pnpm@10.12.4）锁定，此处不再重复指定避免版本冲突
+    - name: Enable pnpm
+      uses: pnpm/action-setup@v4
+
+    - name: Setup Node.js with pnpm store cache
+      uses: actions/setup-node@v4
+      with:
+        node-version: ${{ inputs.node-version }}
+        cache: pnpm
+        cache-dependency-path: pnpm-lock.yaml
+
+    - name: Print toolchain versions
+      shell: bash
+      run: |
+        node --version
+        pnpm --version
