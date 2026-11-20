@@ -143,7 +143,29 @@ describe('character anchors (real PostgreSQL)', () => {
     status?: 'active' | 'invalid';
     invalidReason?: 'pid_missing' | 'text_changed' | null;
   }): Promise<string> {
-    const { CharacterTextAnchorEntity } = await import('../src/database/character-text-anchor.entity');
+    const [{ CharacterTextAnchorEntity }, { CharacterArchiveScanEntity }] = await Promise.all([
+      import('../src/database/character-text-anchor.entity'),
+      import('../src/database/character-archive-scan.entity')
+    ]);
+    const scanRepo = dataSource.getRepository(CharacterArchiveScanEntity);
+    let scan = await scanRepo.findOne({ where: { character_id: input.characterId } });
+    if (!scan) {
+      scan = await scanRepo.save(
+        scanRepo.create({
+          id: randomUUID(),
+          work_id: workId,
+          character_id: input.characterId,
+          requested_by: authorId,
+          status: 'succeeded',
+          total_chapters: 0,
+          scanned_chapters: 0,
+          matched_paragraphs: 0,
+          error: null,
+          started_at: new Date(),
+          finished_at: new Date()
+        })
+      );
+    }
     const repo = dataSource.getRepository(CharacterTextAnchorEntity);
     const saved = await repo.save(
       repo.create({
@@ -151,7 +173,7 @@ describe('character anchors (real PostgreSQL)', () => {
         work_id: workId,
         character_id: input.characterId,
         chapter_id: chapterId,
-        scan_id: randomUUID(),
+        scan_id: scan.id,
         paragraph_pid: input.paragraphPid,
         matched_name: '林昭',
         excerpt: input.excerpt,

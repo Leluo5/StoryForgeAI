@@ -94,6 +94,19 @@ describe('character endpoints (real PostgreSQL)', () => {
     return response.body.data.id as string;
   }
 
+  async function waitForScans(): Promise<void> {
+    const { CharacterArchiveScanEntity } = await import(
+      '../src/database/character-archive-scan.entity'
+    );
+    const repo = dataSource.getRepository(CharacterArchiveScanEntity);
+    for (let i = 0; i < 40; i += 1) {
+      const pending = await repo.count({ where: { work_id: workId, status: 'pending' } });
+      const running = await repo.count({ where: { work_id: workId, status: 'running' } });
+      if (pending + running === 0) return;
+      await new Promise((resolve) => setTimeout(resolve, 50));
+    }
+  }
+
   it('rejects unauthenticated reads (401) and writes without CSRF (403)', async () => {
     await request(app.getHttpServer()).get(charactersUrl()).expect(401);
     await request(app.getHttpServer()).post(charactersUrl()).send({ name: 'x' }).expect(401);
@@ -146,6 +159,7 @@ describe('character endpoints (real PostgreSQL)', () => {
     expect(second.body.data.changed).toBe(false);
     expect(second.body.data.scan.id).toBe(scanId);
     expect(second.body.data.version).toBe(2);
+    await waitForScans();
   });
 
   it('restores an archived character and returns duplicate candidates', async () => {
@@ -162,6 +176,7 @@ describe('character endpoints (real PostgreSQL)', () => {
       matched_on: string;
     }>;
     expect(candidates.some((c) => c.character_id === second && c.matched_on === 'name')).toBe(true);
+    await waitForScans();
   });
 
   it('does not expose a purge/delete character route', async () => {
@@ -235,7 +250,11 @@ describe('character endpoints (real PostgreSQL)', () => {
     expect(expected).toHaveLength(50);
     const missing = expected.filter((route) => !routes.has(route));
     expect(missing).toEqual([]);
-    expect([...routes].some((route) => route.toLowerCase().includes('purge'))).toBe(false);
+    const characterRoutes = [...routes].filter(
+      (route) => route.includes('/characters') || route.includes('/character-')
+    );
+    expect(characterRoutes.some((route) => route.toLowerCase().includes('purge'))).toBe(false);
+    expect(routes.has('DELETE /api/v1/works/:workId/characters/:characterId')).toBe(false);
     expect([...routes].some((route) => /agent-persona|impersonat/.test(route))).toBe(false);
   });
 

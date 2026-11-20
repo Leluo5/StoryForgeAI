@@ -764,8 +764,13 @@ export class CharacterService {
           .execute();
       }
 
-      // 扫描中恢复：pending/running 置 failed
-      await manager
+      await this.audit.record(authorId, 'character_restore', 'character', characterId, {}, workId, manager);
+      return { changed: true };
+    });
+
+    if (outcome.changed) {
+      // 扫描置失败放在主事务提交后，避免与异步扫描事务的扫描行锁形成循环等待
+      await this.dataSource
         .getRepository(CharacterArchiveScanEntity)
         .createQueryBuilder()
         .update()
@@ -775,10 +780,7 @@ export class CharacterService {
           statuses: ['pending', 'running']
         })
         .execute();
-
-      await this.audit.record(authorId, 'character_restore', 'character', characterId, {}, workId, manager);
-      return { changed: true };
-    });
+    }
 
     if (outcome.changed && this.anchors) {
       await this.anchors.markAnchorsRestored(authorId, workId, characterId);
