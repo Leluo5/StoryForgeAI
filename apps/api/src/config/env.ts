@@ -8,7 +8,8 @@ const envSchema = z.object({
   NODE_ENV: z.enum(['development', 'test', 'production']).default('development'),
   PORT: z.coerce.number().int().positive().max(65535).default(3001),
   WEB_ORIGIN: z.string().url().default('http://127.0.0.1:5173'),
-  DATABASE_URL: z.string().url().startsWith('postgresql://').default('postgresql://storyforge:storyforge@127.0.0.1:5432/storyforge'),
+  DATABASE_URL: z.string().url().startsWith('postgresql://').default('postgresql://storyforge:storyforge@127.0.0.1:5433/storyforge'),
+  REDIS_URL: z.string().url().startsWith('redis://').default('redis://127.0.0.1:6380'),
   SESSION_TTL_SECONDS: z.coerce.number().int().positive().max(2_592_000).default(604_800)
 });
 

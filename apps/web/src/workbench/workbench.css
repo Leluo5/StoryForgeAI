@@ -19,6 +19,10 @@
 .workbench-right { border-left: 1px solid var(--border-color); }
 .workbench-center { min-width: 0; overflow: auto; padding: var(--sp-5); }
 .workbench-center > section { width: min(100%, 720px); margin: 0 auto; }
+/* 中央页签把正文与剧情包在普通容器里，保持正文宽度约束；剧情画布独占整宽 */
+.workbench-center > div > section { width: min(100%, 720px); margin: 0 auto; }
+.workbench-center > div > .plot-workspace { width: 100%; margin: 0; }
+.plot-side { display: flex; flex-direction: column; gap: var(--sp-3); }
 .workbench-center textarea {
   width: 100%; min-height: 60vh; padding: var(--sp-4); resize: vertical;
   color: var(--text-primary); background: var(--bg-secondary); border: 1px solid var(--border-color);
@@ -39,6 +43,19 @@
 [data-theme='dark'] [role='treeitem'][aria-selected='true'] > a { color: var(--brand-400); }
 .volume-row { display: flex; flex-wrap: wrap; align-items: center; gap: var(--sp-1); margin-top: var(--sp-3); }
 .tree-actions { margin: var(--sp-3) 0; }
+.context-body { display: flex; flex-direction: column; gap: var(--sp-3); }
+.context-tabs {
+  display: flex; flex-wrap: wrap; gap: var(--sp-1); padding: var(--sp-1);
+  background: var(--bg-tertiary); border: 1px solid var(--border-color); border-radius: var(--radius-md);
+}
+.context-tabs button {
+  flex: 1 1 auto; min-height: 28px; padding: var(--sp-1) var(--sp-2);
+  color: var(--text-primary); background: transparent; border: 0; border-radius: var(--radius-sm);
+  cursor: pointer;
+}
+.context-tabs button:hover { background: var(--bg-hover); }
+.context-tabs button.context-tab-active { color: var(--brand-600); background: var(--brand-100); font-weight: var(--fw-semibold); }
+[data-theme='dark'] .context-tabs button.context-tab-active { color: var(--brand-400); }
 .panel-trigger { display: none; }
 .workbench-dialog {
   width: min(88vw, 360px); height: 100dvh; max-height: none; padding: var(--sp-4);
@@ -62,5 +79,6 @@
   .left-trigger { display: inline-flex; }
 }
 @media (min-width: 1024px) {
-  .workbench-dialog { display: none; }
+  /* 桌面视图下左侧/右侧面板常驻侧栏，对应 dialog 隐藏；通知中心无常驻面板，保留显示 */
+  .left-dialog, .right-dialog { display: none; }
 }

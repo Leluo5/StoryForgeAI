@@ -12,12 +12,14 @@
     "verify:m1": "node scripts/verify-m1.mjs",
     "typecheck": "pnpm -r typecheck",
     "lint": "pnpm -r lint",
+    "quality": "pnpm --filter @storyforge/contracts build && pnpm lint && pnpm build",
     "ci": "pnpm --filter @storyforge/contracts build && pnpm lint && pnpm typecheck && pnpm test && pnpm build",
     "postinstall": "node scripts/repair-workspace-links.mjs"
   },
   "devDependencies": {
     "@axe-core/playwright": "^4.10.2",
     "@playwright/test": "^1.51.1",
+    "@storyforge/contracts": "workspace:*",
     "@storyforge/editor-schema": "workspace:*",
     "dotenv": "^16.5.0",
     "vitest": "^3.2.0"

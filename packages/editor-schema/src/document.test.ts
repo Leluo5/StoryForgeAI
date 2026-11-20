@@ -3,11 +3,13 @@ import { Fragment, Slice } from 'prosemirror-model';
 import { ReplaceStep } from 'prosemirror-transform';
 import {
   applyOperations,
+  canonicalizeContent,
   canonicalizeDocument,
   createEmptyDocument,
   parseDocument,
   replaceDocumentOperations,
-  schema
+  schema,
+  stripPidAttributes
 } from './index';
 
 const insert = new ReplaceStep(1, 1, new Slice(Fragment.from(schema.text('你')), 0, 0)).toJSON();
@@ -32,7 +34,48 @@ describe('editor schema', () => {
   it('creates a valid whole-document replacement', () => {
     const target = markdownLikeDocument('新正文');
     const operations = replaceDocumentOperations(createEmptyDocument(), target);
-    expect(applyOperations(createEmptyDocument(), operations).toJSON()).toEqual(target);
+    expect(stripPidAttributes(applyOperations(createEmptyDocument(), operations).toJSON())).toEqual(target);
+  });
+
+  it('ignores paragraph pids when canonicalizing content', () => {
+    const withoutPid = markdownLikeDocument('正文');
+    const withNullPid = {
+      type: 'doc',
+      content: [{ type: 'paragraph', attrs: { pid: null }, content: [{ type: 'text', text: '正文' }] }]
+    };
+    const withPid = {
+      type: 'doc',
+      content: [
+        {
+          type: 'paragraph',
+          attrs: { pid: '64b314d2-c61f-4782-8640-9f6c020a5c59' },
+          content: [{ type: 'text', text: '正文' }]
+        }
+      ]
+    };
+    expect(canonicalizeContent(withoutPid)).toBe(canonicalizeContent(withNullPid));
+    expect(canonicalizeContent(withoutPid)).toBe(canonicalizeContent(withPid));
+    expect(canonicalizeContent(markdownLikeDocument('正文改'))).not.toBe(canonicalizeContent(withoutPid));
+  });
+
+  it('rejects documents with malformed pids', () => {
+    const malformed = {
+      type: 'doc',
+      content: [{ type: 'paragraph', attrs: { pid: 'not-a-uuid' }, content: [{ type: 'text', text: '正文' }] }]
+    };
+    expect(() => parseDocument(malformed)).toThrow('Invalid document pid');
+  });
+
+  it('preserves pids for unchanged paragraphs during whole-document replacement', () => {
+    const pid = '64b314d2-c61f-4782-8640-9f6c020a5c59';
+    const base = {
+      type: 'doc',
+      content: [{ type: 'paragraph', attrs: { pid }, content: [{ type: 'text', text: '正文' }] }]
+    };
+    const target = markdownLikeDocument('正文');
+    const applied = applyOperations(base, replaceDocumentOperations(base, target));
+    expect(applied.firstChild?.attrs.pid).toBe(pid);
+    expect(canonicalizeContent(applied)).toBe(canonicalizeContent(target));
   });
 });
 

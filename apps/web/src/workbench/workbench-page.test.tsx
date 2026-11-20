@@ -1,5 +1,5 @@
 import 'fake-indexeddb/auto';
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { MemoryRouter, Route, Routes, useLocation } from 'react-router-dom';
 import { beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -24,12 +24,19 @@ const tree: TreeResponse = {
   chapters: [{ id: chapterId, work_id: workId, volume_id: volumeId, title: '第一章', position: 0, version: 0, content_hash: 'a'.repeat(64) }]
 };
 
+function plotClientFixture(): NonNullable<WorkbenchClient['plot']> {
+  return {
+    fetchTree: vi.fn(async () => ({ tree: null, nodes: [], links: [], groups: [] }))
+  } as unknown as NonNullable<WorkbenchClient['plot']>;
+}
+
 function client(): WorkbenchClient {
   return {
     getTree: vi.fn().mockResolvedValue(tree),
     createVolume: vi.fn(), renameVolume: vi.fn(), reorderVolumes: vi.fn(),
     createChapter: vi.fn(), renameChapter: vi.fn(), reorderChapters: vi.fn(),
-    getChapter: vi.fn().mockResolvedValue(chapter), saveChange: vi.fn()
+    getChapter: vi.fn().mockResolvedValue(chapter), saveChange: vi.fn(),
+    plot: plotClientFixture()
   };
 }
 
@@ -90,5 +97,29 @@ describe('WorkbenchRoute', () => {
     expect(screen.getByRole('dialog', { name: '章节导航' })).toBeVisible();
     await userEvent.click(screen.getByRole('button', { name: '关闭章节导航' }));
     expect(trigger).toHaveFocus();
+  });
+
+  it('keeps the manuscript editor mounted when switching to the plot tab', async () => {
+    const api = client();
+    const view = renderPage(api);
+    await screen.findByRole('heading', { name: '深链作品' });
+    await waitFor(() => expect(view.container.querySelector('.ProseMirror')).not.toBeNull());
+    const editor = view.container.querySelector('.ProseMirror')!;
+
+    const centerTabs = screen.getByRole('tablist', { name: '中央工作区页签' });
+    await userEvent.click(within(centerTabs).getByRole('tab', { name: '剧情' }));
+    await waitFor(() => expect(screen.getByTestId('location')).toHaveTextContent('?tab=plot&panel=plot'));
+    // 正文编辑器不能被卸载，只是收进 hidden 容器
+    expect(view.container.querySelector('.ProseMirror')).toBe(editor);
+    expect(editor.closest('[hidden]')).not.toBeNull();
+    expect(await screen.findByRole('button', { name: '新建空树' })).toBeVisible();
+  });
+
+  it('opens the plot tab and panel from a deep link', async () => {
+    const api = client();
+    renderPage(api, `/works/${workId}/write/${chapterId}?tab=plot&panel=plot`);
+    await waitFor(() => expect(screen.getByTestId('location')).toHaveTextContent('?tab=plot&panel=plot'));
+    expect(await screen.findByRole('button', { name: '新建空树' })).toBeVisible();
+    await waitFor(() => expect(api.plot?.fetchTree).toHaveBeenCalledWith(workId));
   });
 });

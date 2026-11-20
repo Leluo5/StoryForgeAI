@@ -31,6 +31,7 @@ export default defineConfig({
       env: {
         NODE_ENV: 'test',
         DATABASE_URL: e2e.databaseUrl,
+        REDIS_URL: process.env.REDIS_URL ?? 'redis://127.0.0.1:6380',
         PORT: '3001',
         WEB_ORIGIN: 'http://127.0.0.1:5173',
         SESSION_TTL_SECONDS: '604800'

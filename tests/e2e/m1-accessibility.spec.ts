@@ -39,7 +39,8 @@ test('375/768/1024/1440 layouts keep operations reachable and pass axe in both t
       await trigger.click();
       await expect(page.getByRole('dialog', { name: '章节信息' })).toBeVisible();
       await audit(page, testInfo, `${width}-context-dialog`);
-      await page.getByRole('button', { name: '关闭章节信息' }).click();
+      // 右侧栏 dialog 的关闭按钮 aria-label 为「关闭右侧面板」（与 left dialog 的「关闭章节导航」区分）
+      await page.getByRole('button', { name: '关闭右侧面板' }).click();
       await expect(trigger).toBeFocused();
     } else {
       await audit(page, testInfo, `${width}-light`);

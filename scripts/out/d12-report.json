@@ -1,0 +1,172 @@
+{
+  "steps": [
+    {
+      "step": "登录",
+      "ok": true,
+      "detail": "email=author@example.com"
+    },
+    {
+      "step": "创建作品",
+      "ok": true,
+      "detail": "workId=b26dbf24-5bea-40e9-8919-d0451c6e2777"
+    },
+    {
+      "step": "创建章节",
+      "ok": true,
+      "detail": "volumeId=ad87e549-1bec-44a5-9998-7b826d9bdc0d chapterId=c2cf91be-0948-4b05-a65b-28126f8779a3"
+    },
+    {
+      "step": "深链 AI 面板",
+      "ok": true,
+      "detail": "url=http://127.0.0.1:5173/works/b26dbf24-5bea-40e9-8919-d0451c6e2777/write/c2cf91be-0948-4b05-a65b-28126f8779a3?panel=ai"
+    },
+    {
+      "step": "视口截图 375",
+      "ok": true,
+      "detail": "file=G:\\workspace_trae\\StoryForgeAI\\scripts\\out\\d12-ai-375.png"
+    },
+    {
+      "step": "视口截图 768",
+      "ok": true,
+      "detail": "file=G:\\workspace_trae\\StoryForgeAI\\scripts\\out\\d12-ai-768.png"
+    },
+    {
+      "step": "视口截图 1024",
+      "ok": true,
+      "detail": "file=G:\\workspace_trae\\StoryForgeAI\\scripts\\out\\d12-ai-1024.png"
+    },
+    {
+      "step": "视口截图 1440",
+      "ok": true,
+      "detail": "file=G:\\workspace_trae\\StoryForgeAI\\scripts\\out\\d12-ai-1440.png"
+    },
+    {
+      "step": "键盘 Tab 焦点流",
+      "ok": true,
+      "detail": "[{\"role\":\"select\",\"label\":\"续写改写扩写润色\",\"tag\":\"select\",\"id\":\"ai-tool\"},{\"role\":\"textarea\",\"label\":\"TEXTAREA\",\"tag\":\"textarea\",\"id\":\"ai-input\"},{\"role\":\"button\",\"label\":\"发起创作\",\"tag\":\"button\",\"id\":null},{\"role\":\"body\",\"label\":\"Author退出登录返回作品库打开章节导航D12 人工复核 1794920463\",\"tag\":\"body\",\"id\":null},{\"role\":\"button\",\"label\":\"退出登录\",\"tag\":\"button\",\"id\":null},{\"role\":\"a\",\"label\":\"返回作品库\",\"tag\":\"a\",\"id\":null},{\"role\":\"button\",\"label\":\"导出恢复数据\",\"tag\":\"button\",\"id\":null},{\"role\":\"button\",\"label\":\"切换深色主题\",\"tag\":\"button\",\"id\":null},{\"role\":\"button\",\"label\":\"通知（0 条未读）\",\"tag\":\"button\",\"id\":null},{\"role\":\"button\",\"label\":\"折叠左侧栏\",\"tag\":\"button\",\"id\":null},{\"role\":\"input\",\"label\":\"左侧栏宽度\",\"tag\":\"input\",\"id\":\"left-width\"},{\"role\":\"button\",\"label\":\"新建卷\",\"tag\":\"button\",\"id\":null}]"
+    },
+    {
+      "step": "读屏语义",
+      "ok": true,
+      "detail": "{\"activeTab\":{\"name\":\"AI 创作\",\"selected\":\"true\"},\"panel\":{\"labelledby\":\"ai-tab-desktop\"},\"progressbar\":null,\"select\":{\"label\":\"创作工具\"},\"textarea\":{\"label\":\"补充说明（可选）\",\"placeholder\":\"例如：让主角在雨中第一次遇见对手……\"},\"submit\":{\"text\":\"发起创作\"}}"
+    }
+  ],
+  "viewports": {
+    "375": {
+      "file": "G:\\workspace_trae\\StoryForgeAI\\scripts\\out\\d12-ai-375.png",
+      "width": 375,
+      "height": 812
+    },
+    "768": {
+      "file": "G:\\workspace_trae\\StoryForgeAI\\scripts\\out\\d12-ai-768.png",
+      "width": 768,
+      "height": 1024
+    },
+    "1024": {
+      "file": "G:\\workspace_trae\\StoryForgeAI\\scripts\\out\\d12-ai-1024.png",
+      "width": 1024,
+      "height": 768
+    },
+    "1440": {
+      "file": "G:\\workspace_trae\\StoryForgeAI\\scripts\\out\\d12-ai-1440.png",
+      "width": 1440,
+      "height": 900
+    }
+  },
+  "keyboard": {
+    "focusSequence": [
+      {
+        "role": "select",
+        "label": "续写改写扩写润色",
+        "tag": "select",
+        "id": "ai-tool"
+      },
+      {
+        "role": "textarea",
+        "label": "TEXTAREA",
+        "tag": "textarea",
+        "id": "ai-input"
+      },
+      {
+        "role": "button",
+        "label": "发起创作",
+        "tag": "button",
+        "id": null
+      },
+      {
+        "role": "body",
+        "label": "Author退出登录返回作品库打开章节导航D12 人工复核 1794920463",
+        "tag": "body",
+        "id": null
+      },
+      {
+        "role": "button",
+        "label": "退出登录",
+        "tag": "button",
+        "id": null
+      },
+      {
+        "role": "a",
+        "label": "返回作品库",
+        "tag": "a",
+        "id": null
+      },
+      {
+        "role": "button",
+        "label": "导出恢复数据",
+        "tag": "button",
+        "id": null
+      },
+      {
+        "role": "button",
+        "label": "切换深色主题",
+        "tag": "button",
+        "id": null
+      },
+      {
+        "role": "button",
+        "label": "通知（0 条未读）",
+        "tag": "button",
+        "id": null
+      },
+      {
+        "role": "button",
+        "label": "折叠左侧栏",
+        "tag": "button",
+        "id": null
+      },
+      {
+        "role": "input",
+        "label": "左侧栏宽度",
+        "tag": "input",
+        "id": "left-width"
+      },
+      {
+        "role": "button",
+        "label": "新建卷",
+        "tag": "button",
+        "id": null
+      }
+    ]
+  },
+  "semantics": {
+    "activeTab": {
+      "name": "AI 创作",
+      "selected": "true"
+    },
+    "panel": {
+      "labelledby": "ai-tab-desktop"
+    },
+    "progressbar": null,
+    "select": {
+      "label": "创作工具"
+    },
+    "textarea": {
+      "label": "补充说明（可选）",
+      "placeholder": "例如：让主角在雨中第一次遇见对手……"
+    },
+    "submit": {
+      "text": "发起创作"
+    }
+  }
+}

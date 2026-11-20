@@ -180,11 +180,31 @@ def _replace_with_retry(tmp_path: str, path: str, attempts: int = 30, delay: flo
             time.sleep(delay)
 
 
+def _read_with_retry(path: str, attempts: int = 10, delay: float = 0.01) -> Any:
+    """打开并解析 JSON；遇到 Windows 竞态时短重试（读端对称缓解）。
+
+    背景（M1 验收偶发，Windows）：写端 atomic_write_json 的 os.replace 正在
+    替换目标文件时，读端 open(path) 会抛 PermissionError [WinError 5]。
+    写端 _replace_with_retry 已重试 30×50ms，但读端若直接吞掉该异常返回
+    default，会被调用方（如 PlotTreeStore.load_tree）误判为「文件不存在」
+    而抛 404。此处对 PermissionError 短重试（默认 10 次 × 10ms，总窗口
+    100ms），与写端对称，避免读端把短暂替换竞态误判为数据缺失。
+    其余异常（FileNotFoundError / JSONDecodeError）不重试，交给调用方语义。
+    """
+    for attempt in range(attempts):
+        try:
+            with open(path, "r", encoding="utf-8") as f:
+                return json.load(f)
+        except PermissionError:
+            if attempt == attempts - 1:
+                raise
+            time.sleep(delay)
+
+
 def read_json(path: str, default: Any = None) -> Any:
     """读取 JSON 文件；不存在或损坏时返回 default（不抛异常）。"""
     try:
-        with open(path, "r", encoding="utf-8") as f:
-            return json.load(f)
+        return _read_with_retry(path)
     except (FileNotFoundError, json.JSONDecodeError, OSError):
         return default
 

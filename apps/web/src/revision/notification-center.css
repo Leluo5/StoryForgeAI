@@ -1,0 +1,39 @@
+.notice-toolbar { display: flex; align-items: center; justify-content: space-between; gap: var(--sp-2); margin-bottom: var(--sp-3); }
+.notice-toolbar h2 { display: flex; align-items: center; gap: var(--sp-2); margin: 0; }
+.notice-badge {
+  display: inline-flex; align-items: center; justify-content: center;
+  min-width: 20px; height: 20px; padding: 0 6px;
+  background: var(--danger-600); color: var(--text-inverse); border-radius: var(--radius-full);
+  font-size: var(--fs-xs); font-weight: var(--fw-semibold);
+}
+.notice-toolbar button {
+  padding: var(--sp-1) var(--sp-2); color: var(--text-primary);
+  background: var(--bg-tertiary); border: 1px solid var(--border-color); border-radius: var(--radius-sm); cursor: pointer;
+}
+.notice-toolbar button:disabled { opacity: 0.5; cursor: not-allowed; }
+
+.notice-list { display: flex; flex-direction: column; gap: var(--sp-2); }
+.notice-item { cursor: pointer; }
+.notice-item:focus-visible { outline: 2px solid var(--brand-400); outline-offset: 2px; border-radius: var(--radius-md); }
+.notice-card {
+  padding: var(--sp-3); border: 1px solid var(--border-color); border-radius: var(--radius-md);
+  background: var(--bg-primary);
+}
+.notice-unread { border-left: 3px solid var(--brand-400); background: var(--brand-50); }
+[data-theme='dark'] .notice-unread { background: var(--brand-900); }
+.notice-read { opacity: 0.6; }
+.notice-head { display: flex; align-items: center; gap: var(--sp-2); margin-bottom: var(--sp-1); }
+.notice-type {
+  padding: 1px 8px; font-size: var(--fs-xs); border-radius: var(--radius-full);
+  background: var(--brand-100); color: var(--brand-700);
+}
+.notice-type[data-type='assign'] { background: var(--warning-100); color: var(--warning-700); }
+.notice-type[data-type='task_result'] { background: var(--success-100); color: var(--success-700); }
+.notice-type[data-type='system'] { background: var(--bg-tertiary); color: var(--text-tertiary); }
+.notice-linked {
+  padding: 1px 8px; font-size: var(--fs-xs); border-radius: var(--radius-full);
+  background: var(--bg-tertiary); color: var(--text-secondary); overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.notice-head time { margin-left: auto; color: var(--text-tertiary); font-size: var(--fs-xs); white-space: nowrap; }
+.notice-content { margin: 0; color: var(--text-secondary); white-space: pre-wrap; }
+.notice-empty { color: var(--text-tertiary); text-align: center; padding: var(--sp-4); }

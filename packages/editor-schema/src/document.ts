@@ -1,6 +1,7 @@
 import { proseMirrorDocumentSchema, type ProseMirrorNode } from '@storyforge/contracts';
 import { Fragment, Node, Slice } from 'prosemirror-model';
 import { ReplaceStep, Step } from 'prosemirror-transform';
+import { preservePids, stripPidAttributes, validateDocumentPids } from './pid';
 import { schema } from './schema';
 
 export function createEmptyDocument(): ProseMirrorNode {
@@ -24,6 +25,10 @@ export function parseDocument(value: unknown): Node {
   const doc = Node.fromJSON(schema, json);
   assertSafeDocument(doc);
   doc.check();
+  const pids = validateDocumentPids(doc);
+  if (pids.invalid.length > 0) {
+    throw new Error(`Invalid document pid: ${pids.invalid.map((item) => String(item.pid)).join(', ')}`);
+  }
   return doc;
 }
 
@@ -44,6 +49,12 @@ export function canonicalizeDocument(value: unknown): string {
   return JSON.stringify(stable(parseDocument(json).toJSON()));
 }
 
+// 正文内容规范化：忽略 pid，用于 content_hash 与「内容是否变化」判断。
+export function canonicalizeContent(value: unknown): string {
+  const json = value instanceof Node ? value.toJSON() : value;
+  return JSON.stringify(stable(stripPidAttributes(parseDocument(json).toJSON())));
+}
+
 export function applyOperations(document: unknown, operations: Array<Record<string, unknown>>): Node {
   let doc = parseDocument(document);
   for (const operation of operations) {
@@ -60,10 +71,11 @@ export function applyOperations(document: unknown, operations: Array<Record<stri
 
 export function replaceDocumentOperations(document: unknown, replacement: unknown): Array<Record<string, unknown>> {
   const current = parseDocument(document);
-  const next = parseDocument(replacement);
+  // 未改动段落复用基准 pid，AI 改写/新增段落分配新 pid
+  const next = preservePids(current, parseDocument(replacement));
   const operation = new ReplaceStep(0, current.content.size, new Slice(Fragment.from(next.content), 0, 0)).toJSON();
   const applied = applyOperations(current.toJSON(), [operation]);
-  if (canonicalizeDocument(applied) !== canonicalizeDocument(next)) {
+  if (canonicalizeContent(applied) !== canonicalizeContent(next)) {
     throw new Error('Whole-document replacement did not produce the requested document');
   }
   return [operation];

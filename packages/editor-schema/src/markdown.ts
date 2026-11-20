@@ -3,6 +3,7 @@ import MarkdownIt from 'markdown-it';
 import type Token from 'markdown-it/lib/token.mjs';
 import { defaultMarkdownParser, defaultMarkdownSerializer, MarkdownSerializer } from 'prosemirror-markdown';
 import { parseDocument } from './document';
+import { ensurePids } from './pid';
 
 export class MarkdownSyntaxError extends Error {
   constructor(message: string, public readonly line: number, public readonly column: number) {
@@ -35,7 +36,8 @@ export function markdownToDocument(source: string): ProseMirrorNode {
   scan(validator.parse(source, {}), source.split('\n'));
   const parsed = defaultMarkdownParser.parse(source);
   if (!parsed) throw new MarkdownSyntaxError('Markdown parser returned no document', 1, 1);
-  return parseDocument(parsed.toJSON()).toJSON() as ProseMirrorNode;
+  // Markdown 不承载 pid：导入后统一分配新 pid
+  return ensurePids(parseDocument(parsed.toJSON())).toJSON() as ProseMirrorNode;
 }
 
 // 统一输出 "- " 无序列表，保证双模式往返一致
