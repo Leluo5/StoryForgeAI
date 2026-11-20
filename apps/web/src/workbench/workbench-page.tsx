@@ -403,7 +403,7 @@ export function WorkbenchPage({ client = defaultClient }: Props) {
         <div hidden={currentTab !== 'plot'}>
           <PlotWorkspace />
         </div>
-        <div hidden={currentTab !== 'roles'}>
+        <div className="roles-tab-panel" hidden={currentTab !== 'roles'}>
           <CharacterWorkspace
             workId={workId}
             onOpenCharacter={openCharacter}

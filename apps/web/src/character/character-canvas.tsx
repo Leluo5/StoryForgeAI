@@ -64,7 +64,13 @@ const CharacterCard = memo(function CharacterCard({ character, position, selecte
     .map((key) => character.six_dim[key])
     .filter((value): value is string => value != null && value !== '');
   const meta = character.status === 'archived' ? '已归档' : character.six_dim.occupation ?? character.six_dim.age_band ?? '';
-  const accessibleName = `${character.name}${meta ? `，${meta}` : ''}${character.status === 'archived' ? '，已归档' : ''}`;
+  // 可访问名必须包含全部可见文字（WCAG 2.5.3），否则 label-content-name-mismatch
+  const accessibleName = [
+    character.name,
+    meta,
+    ...dims.slice(0, 3),
+    character.status === 'archived' ? '已归档' : ''
+  ].filter((value) => value !== '').join('，');
   return (
     <button
       type="button"

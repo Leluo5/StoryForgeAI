@@ -348,6 +348,20 @@
   min-width: 0;
 }
 
+/* 角色页签容器需要确定高度，否则 .character-viewport 作为 flex 子项会塌陷为 0（画布卡片被裁剪） */
+.workbench-center > div.roles-tab-panel {
+  display: flex;
+  min-width: 0;
+  min-height: 420px;
+  height: calc(100% - 44px);
+}
+
+.workbench-center > div.roles-tab-panel > section.character-workspace {
+  flex: 1;
+  height: 100%;
+  min-width: 0;
+}
+
 @media (max-width: 1023px) {
   .character-search {
     flex-basis: 100%;
