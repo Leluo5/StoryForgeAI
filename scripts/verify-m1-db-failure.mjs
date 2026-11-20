@@ -31,8 +31,6 @@ function execute(command, args) {
     cwd: root,
     env: process.env,
     stdio: 'inherit',
-    // Node 22 禁止直接 spawn Windows 的 .cmd 文件；交给 shell 解析 pnpm。
-    // 与 verify-m1.mjs 的 execute() 对齐，否则 Windows 下 status 为 null。
     shell: process.platform === 'win32'
   });
   if (result.status !== 0) throw new Error(`${command} ${args.join(' ')} exited with ${result.status ?? 'unknown'}`);
@@ -155,10 +153,9 @@ async function main() {
 
   blocker = new Client({ connectionString: databaseUrl });
   observer = new Client({ connectionString: databaseUrl });
-  // PostgreSQL 重启时这些连接会收到服务端 57P01（terminating connection），
-  // pg 默认把服务端错误作为 unhandled 'error' 事件抛出导致进程崩溃（本次验收
-  // 发现）。blocker 仅用于保持行锁、observer 仅用于观测等待，重启后都不再使用，
-  // 断连属预期行为，注册空监听降级为可忽略。
+
+  // 数据库重启会主动断开测试连接，避免预期的断连触发未处理 error 事件。
+
   blocker.on('error', () => undefined);
   observer.on('error', () => undefined);
   await blocker.connect();

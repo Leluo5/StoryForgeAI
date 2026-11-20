@@ -21,3 +21,16 @@ test('api migration script does not depend on the node_modules layout', () => {
   assert.ok(entry, 'migration:run must run a TypeScript entry point');
   assert.ok(existsSync(resolve('apps/api', entry)), `migration entry ${entry} must exist`);
 });
+
+test('M1 database failure verification supports pnpm.cmd on Windows', () => {
+  const script = readFileSync('scripts/verify-m1-db-failure.mjs', 'utf8');
+  const executeBody = /function execute\(command, args\) \{([\s\S]*?)\n\}/.exec(script)?.[1];
+  assert.ok(executeBody, 'execute helper must exist');
+  assert.match(executeBody, /shell:\s*process\.platform === 'win32'/);
+});
+
+test('M1 database failure verification handles expected PostgreSQL disconnects', () => {
+  const script = readFileSync('scripts/verify-m1-db-failure.mjs', 'utf8');
+  assert.match(script, /blocker\.on\('error'/);
+  assert.match(script, /observer\.on\('error'/);
+});
