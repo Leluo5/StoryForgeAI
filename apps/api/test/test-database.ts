@@ -28,6 +28,21 @@ function assertTestDataSource(dataSource: DataSource): void {
 
 export async function dropWritingAndAuthTables(dataSource: DataSource): Promise<void> {
   assertTestDataSource(dataSource);
+  // M3c-2 角色版图表（先删引用表，按 FK 依赖倒序）
+  await dataSource.query('DROP TABLE IF EXISTS character_text_anchors CASCADE');
+  await dataSource.query('DROP TABLE IF EXISTS character_archive_scans CASCADE');
+  await dataSource.query('DROP TABLE IF EXISTS plot_node_character_owners CASCADE');
+  await dataSource.query('DROP TABLE IF EXISTS character_portability_jobs CASCADE');
+  await dataSource.query('DROP TABLE IF EXISTS character_ai_candidate_items CASCADE');
+  await dataSource.query('DROP TABLE IF EXISTS character_ai_drafts CASCADE');
+  await dataSource.query('DROP TABLE IF EXISTS character_avatar_assets CASCADE');
+  await dataSource.query('DROP TABLE IF EXISTS character_growth_events CASCADE');
+  await dataSource.query('DROP TABLE IF EXISTS character_view_nodes CASCADE');
+  await dataSource.query('DROP TABLE IF EXISTS character_views CASCADE');
+  await dataSource.query('DROP TABLE IF EXISTS character_relations CASCADE');
+  await dataSource.query('DROP TABLE IF EXISTS character_relation_types CASCADE');
+  await dataSource.query('DROP TABLE IF EXISTS character_aliases CASCADE');
+  await dataSource.query('DROP TABLE IF EXISTS characters CASCADE');
   // M3c 剧情表（先删引用表，按 FK 依赖倒序）
   await dataSource.query('DROP TABLE IF EXISTS plot_generation_drafts CASCADE');
   await dataSource.query('DROP TABLE IF EXISTS derivation_candidates CASCADE');

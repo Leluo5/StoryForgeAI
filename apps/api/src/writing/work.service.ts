@@ -7,6 +7,7 @@ import { DataSource } from 'typeorm';
 import { WorkEntity } from '../database/work.entity';
 import { VolumeEntity } from '../database/volume.entity';
 import { ChapterEntity } from '../database/chapter.entity';
+import { seedCharacterRelationTypes } from '../database/character-relation-type.seed';
 
 export function toWork(work: WorkEntity): Work {
   return {
@@ -33,6 +34,8 @@ export class WorkService {
         description: input.description,
         status: 'active'
       }));
+      // M3c-2：作品创建时同事务写入 5 组 23 类默认关系类型（Q2 / A2）
+      await seedCharacterRelationTypes(manager, work.id);
       const volume = await manager.getRepository(VolumeEntity).save(manager.getRepository(VolumeEntity).create({
         id: randomUUID(), work_id: work.id, title: '第一卷', position: 0
       }));
