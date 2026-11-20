@@ -61,6 +61,33 @@ describe('VersionService', () => {
     expect(snapshot.content_hash).toHaveLength(64);
   });
 
+  it('hashes snapshots pid-neutrally and reports no diff when only pids differ', async () => {
+    const pid = '11111111-1111-4111-8111-111111111111';
+    const chapters = fixture.dataSource.getRepository(ChapterEntity);
+    await chapters.update({ id: fixture.chapterId }, {
+      document: { type: 'doc', content: [{ type: 'paragraph', content: [{ type: 'text', text: '同一段' }] }] },
+      version: 1
+    });
+    const first = await service.createVersion(fixture.authorId, fixture.workId, fixture.chapterId, {});
+    await chapters.update({ id: fixture.chapterId }, {
+      document: { type: 'doc', content: [{ type: 'paragraph', attrs: { pid }, content: [{ type: 'text', text: '同一段' }] }] },
+      version: 2
+    });
+    const second = await service.createVersion(fixture.authorId, fixture.workId, fixture.chapterId, {});
+
+    const snapshots = fixture.dataSource.getRepository(VersionSnapshotEntity);
+    const left = await snapshots.findOneByOrFail({ id: first.snapshot_id });
+    const right = await snapshots.findOneByOrFail({ id: second.snapshot_id });
+    expect(right.content_hash).toBe(left.content_hash);
+
+    const compared = await service.compareVersions(fixture.authorId, fixture.workId, fixture.chapterId, {
+      from_version_no: 1,
+      to_version_no: 2
+    });
+    expect(compared.node_changes).toEqual([]);
+    expect(compared.text_diff.every((part) => part.kind === 'equal')).toBe(true);
+  });
+
   it('throws 404 for a missing version snapshot', async () => {
     await expect(service.getVersion(fixture.authorId, fixture.workId, fixture.chapterId, 99))
       .rejects.toMatchObject({ status: 404 });

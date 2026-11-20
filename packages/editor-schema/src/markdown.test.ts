@@ -26,6 +26,23 @@ describe('markdown conversion', () => {
     );
   });
 
+  it('serializes identically with and without pids and re-imports unique pids', () => {
+    const plain: ProseMirrorNode = {
+      type: 'doc',
+      content: [
+        { type: 'paragraph', content: [{ type: 'text', text: '正文' }] },
+        { type: 'heading', attrs: { level: 2 }, content: [{ type: 'text', text: '小标题' }] }
+      ]
+    };
+    const withPids = markdownToDocument(documentToMarkdown(plain));
+    expect(documentToMarkdown(withPids)).toBe(documentToMarkdown(plain));
+
+    const reimported = markdownToDocument(documentToMarkdown(withPids));
+    const pids = (reimported.content ?? []).map((node) => node.attrs?.pid);
+    expect(pids.every(isValidPid)).toBe(true);
+    expect(new Set(pids).size).toBe(pids.length);
+  });
+
   it('assigns pids on import and never writes them back to Markdown', () => {
     const source = '# 标题\n\n第一段';
     const document = markdownToDocument(source);

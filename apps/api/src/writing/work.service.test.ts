@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto';
-import { canonicalizeDocument, createEmptyDocument } from '@storyforge/editor-schema';
+import { canonicalizeContent, createEmptyDocument } from '@storyforge/editor-schema';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { ChapterEntity } from '../database/chapter.entity';
 import { createWritingFixture, destroyWritingFixture, type WritingFixture } from '../../test/writing-fixture';
@@ -23,7 +23,7 @@ describe('WorkService', () => {
     });
     expect(chapter.version).toBe(0);
     expect(chapter.content_hash).toBe(
-      createHash('sha256').update(canonicalizeDocument(createEmptyDocument())).digest('hex')
+      createHash('sha256').update(canonicalizeContent(createEmptyDocument())).digest('hex')
     );
   });
 

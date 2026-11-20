@@ -100,6 +100,20 @@ describe('EditorPane role marks', () => {
     expect(onDocument).not.toHaveBeenCalled();
   });
 
+  it('does not reset the editor when an external document only changes pids', () => {
+    const { container, rerender } = renderPane({});
+    const paragraph = container.querySelector('.ProseMirror > p');
+    rerender(<EditorPane initialDocument={{
+      type: 'doc',
+      content: [
+        { type: 'paragraph', attrs: { pid: '33333333-3333-4333-8333-333333333333' }, content: [{ type: 'text', text: '林墨登场' }] },
+        { type: 'paragraph', attrs: { pid: PID_B }, content: [{ type: 'text', text: '旁白' }] }
+      ]
+    }} readOnly={false} onDocument={vi.fn()} onMarkdownDraft={vi.fn().mockResolvedValue(undefined)} />);
+
+    expect(container.querySelector('.ProseMirror > p')).toBe(paragraph);
+  });
+
   it('keeps decorations visible in read-only mode', () => {
     const { container } = renderPane({ readOnly: true, roleMarks: [{ pid: PID_A, label: '林墨（已归档）' }] });
     expect(container.querySelector('.ProseMirror')).toHaveAttribute('contenteditable', 'false');

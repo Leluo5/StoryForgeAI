@@ -1,7 +1,7 @@
 import type { ProseMirrorNode } from '@storyforge/contracts';
 import {
   applyOperations,
-  canonicalizeDocument,
+  canonicalizeContent,
   parseDocument,
   replaceDocumentOperations
 } from '@storyforge/editor-schema';
@@ -29,7 +29,8 @@ function sortPending(entries: WalEntry[]): WalEntry[] {
     || left.client_id.localeCompare(right.client_id) || left.sequence - right.sequence);
 }
 async function sha256(document: unknown): Promise<string> {
-  const bytes = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(canonicalizeDocument(document)));
+  // 与服务端 content_hash 口径一致：忽略 pid
+  const bytes = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(canonicalizeContent(document)));
   return Array.from(new Uint8Array(bytes), (byte) => byte.toString(16).padStart(2, '0')).join('');
 }
 async function run<T>(operation: () => Promise<T>): Promise<T> {
@@ -143,7 +144,7 @@ export class WalStore {
         throw new Error('Snapshot version does not match acknowledged change');
       }
       const currentDocument = applyOperations(snapshot.document, current.operations).toJSON();
-      if (canonicalizeDocument(currentDocument) !== canonicalizeDocument(document)) {
+      if (canonicalizeContent(currentDocument) !== canonicalizeContent(document)) {
         throw new Error('WAL changed while the acknowledgement hash was computed');
       }
       const nextSnapshot: Snapshot = {
@@ -189,7 +190,7 @@ export class WalStore {
         content_hash: input.serverContentHash
       });
       let entry: WalEntry | undefined;
-      if (canonicalizeDocument(input.selectedDocument) !== canonicalizeDocument(input.serverDocument)) {
+      if (canonicalizeContent(input.selectedDocument) !== canonicalizeContent(input.serverDocument)) {
         const previous = await tx.objectStore('sequences').get([input.chapterId, input.clientId]);
         entry = {
           change_id: crypto.randomUUID(), work_id: input.workId, chapter_id: input.chapterId,

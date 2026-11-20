@@ -1,5 +1,5 @@
 import type { ProseMirrorNode } from '@storyforge/contracts';
-import { canonicalizeDocument, parseDocument } from '@storyforge/editor-schema';
+import { canonicalizeContent, parseDocument } from '@storyforge/editor-schema';
 import { baseKeymap } from 'prosemirror-commands';
 import { history, redo, undo } from 'prosemirror-history';
 import { keymap } from 'prosemirror-keymap';
@@ -74,7 +74,8 @@ export function ProseMirrorEditor({ initialDocument, readOnly, onDocument, roleM
     const editor = view.current;
     if (!editor) return;
     const next = parseDocument(initialDocument);
-    if (canonicalizeDocument(editor.state.doc.toJSON()) === canonicalizeDocument(next.toJSON())) return;
+    // 仅 pid 变化不重置 EditorState，避免丢光标；正文变化仍正常同步
+    if (canonicalizeContent(editor.state.doc.toJSON()) === canonicalizeContent(next.toJSON())) return;
     editor.updateState(EditorState.create({ doc: next, plugins: editor.state.plugins }));
   }, [initialDocument]);
 

@@ -2,7 +2,7 @@ import type { Chapter, ChapterSummary, TreeResponse, Volume } from '@storyforge/
 import { Inject, Injectable, NotFoundException, UnprocessableEntityException } from '@nestjs/common';
 import { createHash, randomUUID } from 'node:crypto';
 import { DataSource, EntityManager } from 'typeorm';
-import { canonicalizeDocument, createEmptyDocument } from '@storyforge/editor-schema';
+import { canonicalizeContent, createEmptyDocument } from '@storyforge/editor-schema';
 import { WorkEntity } from '../database/work.entity';
 import { VolumeEntity } from '../database/volume.entity';
 import { ChapterEntity } from '../database/chapter.entity';
@@ -104,7 +104,7 @@ export class StructureService {
       const siblings = await manager.getRepository(ChapterEntity).findBy({ volume_id: volumeId });
       const position = siblings.reduce((maximum, item) => Math.max(maximum, item.position + 1), 0);
       const document = createEmptyDocument();
-      const contentHash = createHash('sha256').update(canonicalizeDocument(document)).digest('hex');
+      const contentHash = createHash('sha256').update(canonicalizeContent(document)).digest('hex');
       const chapter = await manager.getRepository(ChapterEntity).save(manager.getRepository(ChapterEntity).create({
         id: randomUUID(),
         work_id: workId,

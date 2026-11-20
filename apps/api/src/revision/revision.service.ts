@@ -2,7 +2,7 @@ import { createHash } from 'node:crypto';
 import { Inject, Injectable, NotFoundException, ConflictException } from '@nestjs/common';
 import { DataSource, EntityManager } from 'typeorm';
 import { randomUUID } from 'node:crypto';
-import { applyOperations, canonicalizeDocument } from '@storyforge/editor-schema';
+import { applyOperations, canonicalizeContent } from '@storyforge/editor-schema';
 import type {
   CreateRevisionSetRequest,
   ListRevisionSetsQuery,
@@ -187,7 +187,7 @@ export class RevisionService {
             const nextDoc = applyOperations(chapter.document, [toSteps([target.step])[0]!]);
             chapter.document = nextDoc.toJSON();
             chapter.version = chapter.version + 1;
-            chapter.content_hash = createHash('sha256').update(canonicalizeDocument(nextDoc.toJSON())).digest('hex');
+            chapter.content_hash = createHash('sha256').update(canonicalizeContent(nextDoc.toJSON())).digest('hex');
             await manager.save(chapter);
           } catch {
             // 占位/非法 step（前端「创建 AI 修订集」占位操作、或测试构造的假 step）无法应用为真实正文变更：
@@ -270,7 +270,7 @@ export class RevisionService {
     snapshot.chapter_id = chapterId;
     snapshot.version_no = chapter.version;
     snapshot.document = chapter.document as unknown as Record<string, unknown>;
-    snapshot.content_hash = createHash('sha256').update(canonicalizeDocument(chapter.document)).digest('hex');
+    snapshot.content_hash = createHash('sha256').update(canonicalizeContent(chapter.document)).digest('hex');
     snapshot.created_by = actorId;
     snapshot.note = '自动快照（首次接受 AI 修订前）';
     snapshot.change_type = 'auto';

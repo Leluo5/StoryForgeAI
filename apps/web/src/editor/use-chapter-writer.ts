@@ -6,7 +6,7 @@ import {
   type SaveChangeResponse,
   type VersionConflictDetails
 } from '@storyforge/contracts';
-import { canonicalizeDocument, createEmptyDocument } from '@storyforge/editor-schema';
+import { canonicalizeContent, createEmptyDocument } from '@storyforge/editor-schema';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { ApiError } from '../api/client';
 import { WalStore } from '../persistence/wal';
@@ -190,7 +190,7 @@ export function useChapterWriter(options: Options) {
       try {
         await store.current.append({ workId, chapterId, clientId, operations });
         const recovered = await store.current.recover(workId, chapterId);
-        if (canonicalizeDocument(recovered.document) !== canonicalizeDocument(nextDocument)) throw new Error('Recovered document differs from editor');
+        if (canonicalizeContent(recovered.document) !== canonicalizeContent(nextDocument)) throw new Error('Recovered document differs from editor');
         setDocument(recovered.document); setStatus('local_saved');
         // 300ms 空闲后才触发云端同步
         if (autoSave.current) clearTimeout(autoSave.current);

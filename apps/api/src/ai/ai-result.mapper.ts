@@ -2,7 +2,7 @@ import { Inject, Injectable } from '@nestjs/common';
 import { DataSource, EntityManager } from 'typeorm';
 import { randomUUID } from 'node:crypto';
 import type { ProseMirrorNode } from '@storyforge/contracts';
-import { canonicalizeDocument, replaceDocumentOperations } from '@storyforge/editor-schema';
+import { canonicalizeContent, replaceDocumentOperations } from '@storyforge/editor-schema';
 import { ChapterEntity } from '../database/chapter.entity';
 import { RevisionSetEntity } from '../database/revision-set.entity';
 import { AuditService } from '../revision/audit.service';
@@ -19,8 +19,9 @@ import type { AiResultMapperPort, AiRevisionSetResult } from './ai-task.processo
  * 对 AI 续写/重写/扩写/润色（整章候选输出）精度足够。M3b 接 Coze 若需文本级细粒度 diff 再增强。
  */
 export function toRevisionOperations(baseDocument: ProseMirrorNode, candidateDocument: ProseMirrorNode): Array<Record<string, unknown>> {
-  const baseJson = canonicalizeDocument(baseDocument);
-  const candidateJson = canonicalizeDocument(candidateDocument);
+  // 内容比较忽略 pid：候选与基准仅在 pid 上不同不算差异，避免无意义的整篇替换
+  const baseJson = canonicalizeContent(baseDocument);
+  const candidateJson = canonicalizeContent(candidateDocument);
   if (baseJson === candidateJson) return [];
   // replaceDocumentOperations 内部校验：应用后 canonicalize 与候选一致，否则抛错（防错位）
   return replaceDocumentOperations(baseDocument, candidateDocument);

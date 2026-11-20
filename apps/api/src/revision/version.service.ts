@@ -1,7 +1,7 @@
 import { createHash, randomUUID } from 'node:crypto';
 import { ConflictException, Inject, Injectable, NotFoundException } from '@nestjs/common';
 import { DataSource, EntityManager } from 'typeorm';
-import { applyOperations, canonicalizeDocument, replaceDocumentOperations } from '@storyforge/editor-schema';
+import { applyOperations, canonicalizeContent, replaceDocumentOperations } from '@storyforge/editor-schema';
 import type {
   CompareVersionsRequest,
   CompareVersionsResponse,
@@ -202,7 +202,7 @@ export class VersionService {
     snapshot.chapter_id = chapterId;
     snapshot.version_no = chapter.version;
     snapshot.document = chapter.document as unknown as Record<string, unknown>;
-    snapshot.content_hash = createHash('sha256').update(canonicalizeDocument(chapter.document)).digest('hex');
+    snapshot.content_hash = createHash('sha256').update(canonicalizeContent(chapter.document)).digest('hex');
     snapshot.created_by = actorId;
     snapshot.note = note;
     snapshot.change_type = 'auto';
@@ -225,7 +225,7 @@ export class VersionService {
       snapshot.chapter_id = chapterId;
       snapshot.version_no = chapter.version;
       snapshot.document = chapter.document as unknown as Record<string, unknown>;
-      snapshot.content_hash = createHash('sha256').update(canonicalizeDocument(chapter.document)).digest('hex');
+      snapshot.content_hash = createHash('sha256').update(canonicalizeContent(chapter.document)).digest('hex');
       snapshot.created_by = authorId;
       snapshot.note = input.note ?? null;
       snapshot.change_type = 'manual';
@@ -369,7 +369,7 @@ export class VersionService {
       } catch {
         throw new ConflictException({ message: 'Invalid rollback operations' });
       }
-      const contentHash = createHash('sha256').update(canonicalizeDocument(document.toJSON())).digest('hex');
+      const contentHash = createHash('sha256').update(canonicalizeContent(document.toJSON())).digest('hex');
       const serverVersion = chapter.version + 1;
       const updated = await manager.update(ChapterEntity, { id: chapter.id, version: chapter.version }, {
         document: document.toJSON(),

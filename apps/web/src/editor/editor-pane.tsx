@@ -1,6 +1,6 @@
 import type { ProseMirrorNode } from '@storyforge/contracts';
 import {
-  canonicalizeDocument,
+  canonicalizeContent,
   documentToMarkdown,
   markdownToDocument,
   replaceDocumentOperations
@@ -30,7 +30,8 @@ export function EditorPane({
   useEffect(() => setDocument(initialDocument), [initialDocument]);
 
   const commit = useCallback((next: ProseMirrorNode) => {
-    if (canonicalizeDocument(next) === canonicalizeDocument(document)) { setError(''); return; }
+    // Markdown 往返会重建 pid，内容比较忽略 pid，避免无文字变化也产生替换操作
+    if (canonicalizeContent(next) === canonicalizeContent(document)) { setError(''); return; }
     const operations = replaceDocumentOperations(document, next);
     setDocument(next); setError(''); onDocument(operations, next);
   }, [document, onDocument]);

@@ -385,11 +385,13 @@ export class CharacterAnchorService {
     }
 
     // 同角色在本章存在 invalid 锚点 → 聚合为章节级提示
+    // 角色已恢复（非 archived）时整章提示必须消失（D26），不再聚合
     const invalidByCharacter = new Map<string, AnchorInvalidReason>();
     const invalidCount = new Map<string, number>();
     for (const anchor of anchors) {
       const state = latestStatus.get(anchor.id)!;
       if (state.status !== 'invalid') continue;
+      if (characterMap.get(anchor.character_id)?.status !== 'archived') continue;
       const reason: AnchorInvalidReason = state.reason ?? 'text_changed';
       const current = invalidByCharacter.get(anchor.character_id);
       const count = (invalidCount.get(anchor.character_id) ?? 0) + 1;

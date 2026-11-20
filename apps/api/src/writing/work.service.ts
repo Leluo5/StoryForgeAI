@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import { createHash } from 'node:crypto';
-import { canonicalizeDocument, createEmptyDocument } from '@storyforge/editor-schema';
+import { canonicalizeContent, createEmptyDocument } from '@storyforge/editor-schema';
 import type { CreateWorkRequest, CreateWorkResponse, UpdateWorkRequest, Work } from '@storyforge/contracts';
 import { Injectable, Inject, NotFoundException } from '@nestjs/common';
 import { DataSource } from 'typeorm';
@@ -40,7 +40,7 @@ export class WorkService {
         id: randomUUID(), work_id: work.id, title: '第一卷', position: 0
       }));
       const document = createEmptyDocument();
-      const contentHash = createHash('sha256').update(canonicalizeDocument(document)).digest('hex');
+      const contentHash = createHash('sha256').update(canonicalizeContent(document)).digest('hex');
       const chapter = await manager.getRepository(ChapterEntity).save(manager.getRepository(ChapterEntity).create({
         id: randomUUID(),
         work_id: work.id,

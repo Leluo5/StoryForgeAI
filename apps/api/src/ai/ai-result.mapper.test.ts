@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { randomUUID } from 'node:crypto';
 import { EntityManager } from 'typeorm';
 import type { ProseMirrorNode } from '@storyforge/contracts';
+import { applyOperations } from '@storyforge/editor-schema';
 import { createWritingFixture, destroyWritingFixture, type WritingFixture } from '../../test/writing-fixture';
 import { AiResultMapper, toRevisionOperations } from './ai-result.mapper';
 import { RevisionSetEntity } from '../database/revision-set.entity';
@@ -36,6 +37,41 @@ describe('toRevisionOperations', () => {
     expect(ops).toHaveLength(1);
     expect(ops[0]!.stepType).toBe('replace');
     expect(ops[0]!.from).toBe(0);
+  });
+
+  it('ignores pid-only differences between base and candidate', () => {
+    const pid = '11111111-1111-4111-8111-111111111111';
+    const base: ProseMirrorNode = {
+      type: 'doc',
+      content: [{ type: 'paragraph', attrs: { pid }, content: [{ type: 'text', text: '同一段' }] }]
+    };
+    expect(toRevisionOperations(base, makeDoc('同一段'))).toEqual([]);
+    expect(toRevisionOperations(makeDoc('同一段'), base)).toEqual([]);
+  });
+
+  it('reuses pids for unchanged paragraphs and allocates new pids for rewritten ones', () => {
+    const firstPid = '11111111-1111-4111-8111-111111111111';
+    const secondPid = '22222222-2222-4222-8222-222222222222';
+    const base: ProseMirrorNode = {
+      type: 'doc',
+      content: [
+        { type: 'paragraph', attrs: { pid: firstPid }, content: [{ type: 'text', text: '第一段' }] },
+        { type: 'paragraph', attrs: { pid: secondPid }, content: [{ type: 'text', text: '第二段' }] }
+      ]
+    };
+    const candidate: ProseMirrorNode = {
+      type: 'doc',
+      content: [
+        { type: 'paragraph', content: [{ type: 'text', text: '第一段' }] },
+        { type: 'paragraph', content: [{ type: 'text', text: '第二段改写' }] }
+      ]
+    };
+    const applied = applyOperations(base, toRevisionOperations(base, candidate)).toJSON() as {
+      content: Array<{ attrs?: { pid?: string } }>;
+    };
+    expect(applied.content[0]?.attrs?.pid).toBe(firstPid);
+    expect(applied.content[1]?.attrs?.pid).not.toBe(secondPid);
+    expect(applied.content[1]?.attrs?.pid).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/);
   });
 
   it('rejects an invalid candidate document', () => {

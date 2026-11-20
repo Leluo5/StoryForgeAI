@@ -1,7 +1,7 @@
-import { randomUUID } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import { Fragment, Slice } from 'prosemirror-model';
 import { ReplaceStep } from 'prosemirror-transform';
-import { schema } from '@storyforge/editor-schema';
+import { canonicalizeContent, schema } from '@storyforge/editor-schema';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { ChapterEntity } from '../database/chapter.entity';
 import { ChapterChangeEntity } from '../database/chapter-change.entity';
@@ -60,6 +60,72 @@ describe('ChapterSaveService', () => {
     const chapter = await fixture.dataSource.getRepository(ChapterEntity).findOneByOrFail({ id: fixture.chapterId });
     expect(chapter.version).toBe(0);
     expect(chapter.document).toEqual({ type: 'doc', content: [{ type: 'paragraph' }] });
+    expect(await fixture.dataSource.getRepository(ChapterChangeEntity).countBy({ chapter_id: fixture.chapterId })).toBe(0);
+  });
+
+  it('keeps version, hash and document when a save only fills pids', async () => {
+    const chapters = fixture.dataSource.getRepository(ChapterEntity);
+    // 先产生一次真实内容变化（版本 1），再验证纯 pid 补齐不影响版本与哈希
+    await service.save(fixture.authorId, fixture.workId, fixture.chapterId, input('甲'));
+    const before = await chapters.findOneByOrFail({ id: fixture.chapterId });
+    const request = {
+      change_id: randomUUID(),
+      client_id: fixture.clientId,
+      sequence: 2,
+      base_version: before.version,
+      operations: [] as Array<Record<string, unknown>>
+    };
+
+    const response = await service.save(fixture.authorId, fixture.workId, fixture.chapterId, request);
+
+    const after = await chapters.findOneByOrFail({ id: fixture.chapterId });
+    expect(response.server_version).toBe(before.version);
+    expect(response.content_hash).toBe(before.content_hash);
+    expect(after.version).toBe(before.version);
+    expect(after.content_hash).toBe(before.content_hash);
+    // 仅 pid 补齐不得落库
+    expect(after.document).toEqual(before.document);
+    const change = await fixture.dataSource.getRepository(ChapterChangeEntity).findOneByOrFail({ change_id: request.change_id });
+    expect(change.server_version).toBe(before.version);
+    expect(change.content_hash).toBe(before.content_hash);
+  });
+
+  it('fills pids on real content changes and hashes pid-neutral content', async () => {
+    const response = await service.save(fixture.authorId, fixture.workId, fixture.chapterId, input('甲'));
+    expect(response.server_version).toBe(1);
+
+    const chapter = await fixture.dataSource.getRepository(ChapterEntity).findOneByOrFail({ id: fixture.chapterId });
+    const paragraph = (chapter.document.content as Array<{ attrs?: { pid?: string } }>)[0]!;
+    expect(chapter.version).toBe(1);
+    expect(paragraph.attrs?.pid).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/);
+    // 哈希口径忽略 pid，与服务端 content_hash 一致
+    expect(response.content_hash)
+      .toBe(createHash('sha256').update(canonicalizeContent(chapter.document)).digest('hex'));
+  });
+
+  it('rejects duplicated pids with duplicated_pids details and keeps the stored document', async () => {
+    const pid = '11111111-1111-4111-8111-111111111111';
+    const document = {
+      type: 'doc',
+      content: [
+        { type: 'paragraph', attrs: { pid }, content: [{ type: 'text', text: '一' }] },
+        { type: 'paragraph', attrs: { pid }, content: [{ type: 'text', text: '二' }] }
+      ]
+    };
+    await fixture.dataSource.getRepository(ChapterEntity).update({ id: fixture.chapterId }, { document });
+
+    await expect(service.save(fixture.authorId, fixture.workId, fixture.chapterId, {
+      change_id: randomUUID(),
+      client_id: fixture.clientId,
+      sequence: 1,
+      base_version: 0,
+      operations: []
+    }))
+      .rejects.toMatchObject({ status: 422, response: { details: { duplicated_pids: [pid] } } });
+
+    const chapter = await fixture.dataSource.getRepository(ChapterEntity).findOneByOrFail({ id: fixture.chapterId });
+    expect(chapter.version).toBe(0);
+    expect(chapter.document).toEqual(document);
     expect(await fixture.dataSource.getRepository(ChapterChangeEntity).countBy({ chapter_id: fixture.chapterId })).toBe(0);
   });
 

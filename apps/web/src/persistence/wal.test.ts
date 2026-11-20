@@ -1,7 +1,7 @@
 import 'fake-indexeddb/auto';
 import { Fragment, Slice } from 'prosemirror-model';
 import { ReplaceStep } from 'prosemirror-transform';
-import { canonicalizeDocument, createEmptyDocument, schema } from '@storyforge/editor-schema';
+import { canonicalizeContent, createEmptyDocument, schema } from '@storyforge/editor-schema';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { openWritingDB } from './database';
 import { WalError, WalStore } from './wal';
@@ -21,7 +21,7 @@ function insert(text: string, from: number) {
   return new ReplaceStep(from, from, new Slice(Fragment.from(schema.text(text)), 0, 0)).toJSON();
 }
 async function hash(document: unknown): Promise<string> {
-  const bytes = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(canonicalizeDocument(document)));
+  const bytes = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(canonicalizeContent(document)));
   return Array.from(new Uint8Array(bytes), (byte) => byte.toString(16).padStart(2, '0')).join('');
 }
 

@@ -3,7 +3,7 @@ import { createHash } from 'node:crypto';
 import { act, renderHook, waitFor } from '@testing-library/react';
 import { Fragment, Slice } from 'prosemirror-model';
 import { ReplaceStep } from 'prosemirror-transform';
-import { applyOperations, canonicalizeDocument, createEmptyDocument, schema } from '@storyforge/editor-schema';
+import { applyOperations, canonicalizeContent, createEmptyDocument, schema } from '@storyforge/editor-schema';
 import type { Chapter, SaveChangeRequest } from '@storyforge/contracts';
 import { describe, expect, it, vi } from 'vitest';
 import { ApiError } from '../api/client';
@@ -19,7 +19,7 @@ const createLease = (): WriterLease => ({
 });
 const insert = new ReplaceStep(1, 1, new Slice(Fragment.from(schema.text('你')), 0, 0)).toJSON();
 const document = applyOperations(createEmptyDocument(), [insert]).toJSON();
-const digest = (value: unknown) => createHash('sha256').update(canonicalizeDocument(value)).digest('hex');
+const digest = (value: unknown) => createHash('sha256').update(canonicalizeContent(value)).digest('hex');
 
 function options(save: (input: SaveChangeRequest) => Promise<{ change_id: string; server_version: number; content_hash: string }>) {
   const workId = crypto.randomUUID();

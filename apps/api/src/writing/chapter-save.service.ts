@@ -1,6 +1,6 @@
 import { createHash, randomUUID } from 'node:crypto';
 import { isDeepStrictEqual } from 'node:util';
-import { applyOperations, canonicalizeDocument } from '@storyforge/editor-schema';
+import { applyOperations, canonicalizeContent, ensurePids, validateDocumentPids } from '@storyforge/editor-schema';
 import type { SaveChangeRequest, SaveChangeResponse } from '@storyforge/contracts';
 import { ConflictException, Inject, Injectable, NotFoundException, UnprocessableEntityException } from '@nestjs/common';
 import { DataSource } from 'typeorm';
@@ -52,14 +52,42 @@ export class ChapterSaveService {
 
       let document;
       try {
-        document = applyOperations(chapter.document, input.operations);
+        document = ensurePids(applyOperations(chapter.document, input.operations));
       } catch (error) {
         throw new UnprocessableEntityException({
           message: 'Invalid document change',
           details: { reason: error instanceof Error ? error.message : 'Invalid step' }
         });
       }
-      const contentHash = createHash('sha256').update(canonicalizeDocument(document.toJSON())).digest('hex');
+      const pids = validateDocumentPids(document);
+      if (pids.duplicates.length > 0) {
+        throw new UnprocessableEntityException({
+          message: 'Duplicate paragraph pid',
+          details: { duplicated_pids: pids.duplicates.map((item) => item.pid) }
+        });
+      }
+      // 内容哈希忽略 pid：仅补齐 pid 的保存不得递增版本或触发快照
+      const canonicalContent = canonicalizeContent(document.toJSON());
+      const contentHash = createHash('sha256').update(canonicalContent).digest('hex');
+      // 以内容规范化字符串比对，兼容历史哈希口径（历史行含 attrs.pid=null）
+      if (canonicalContent === canonicalizeContent(chapter.document)) {
+        // 版本 0 无可用 server_version（DB CHECK server_version > 0），仅在已有版本时记录变更
+        if (chapter.version > 0) {
+          const unchanged = changes.create();
+          unchanged.id = randomUUID();
+          unchanged.chapter_id = chapterId;
+          unchanged.author_id = authorId;
+          unchanged.change_id = input.change_id;
+          unchanged.client_id = input.client_id;
+          unchanged.sequence = input.sequence;
+          unchanged.base_version = input.base_version;
+          unchanged.server_version = chapter.version;
+          unchanged.operations = input.operations;
+          unchanged.content_hash = chapter.content_hash;
+          await changes.save(unchanged);
+        }
+        return { change_id: input.change_id, server_version: chapter.version, content_hash: chapter.content_hash };
+      }
       const serverVersion = chapter.version + 1;
       const updated = await manager.update(ChapterEntity, { id: chapter.id, version: chapter.version }, {
         document: document.toJSON(), version: serverVersion, content_hash: contentHash
