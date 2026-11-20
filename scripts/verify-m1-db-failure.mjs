@@ -27,7 +27,12 @@ function safeError(error) {
 }
 
 function execute(command, args) {
-  const result = spawnSync(command, args, { cwd: root, env: process.env, stdio: 'inherit' });
+  const result = spawnSync(command, args, {
+    cwd: root,
+    env: process.env,
+    stdio: 'inherit',
+    shell: process.platform === 'win32'
+  });
   if (result.status !== 0) throw new Error(`${command} ${args.join(' ')} exited with ${result.status ?? 'unknown'}`);
 }
 
@@ -148,6 +153,9 @@ async function main() {
 
   blocker = new Client({ connectionString: databaseUrl });
   observer = new Client({ connectionString: databaseUrl });
+  // 数据库重启会主动断开测试连接，避免预期的断连触发未处理 error 事件。
+  blocker.on('error', () => undefined);
+  observer.on('error', () => undefined);
   await blocker.connect();
   await observer.connect();
   await blocker.query('BEGIN');
