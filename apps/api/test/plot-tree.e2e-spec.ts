@@ -613,4 +613,129 @@ describe('plot tree endpoints (real PostgreSQL)', () => {
     const detail = await get(`${treeUrl()}/generations/${draftId}`).expect(200);
     expect(detail.body.data.draft.status).toBe('succeeded');
   });
+
+  // ── T46 归属与归档隐藏回归 ──
+
+  it('keeps the default tree response unchanged when no node has owners', async () => {
+    await createTree();
+    const root = await createNode('根');
+    const child = await createNode('子', root.id);
+    await post(`${treeUrl()}/links`, { source_id: root.id, target_id: child.id, type: 'non_linear' }).expect(201);
+
+    const response = await get(treeUrl()).expect(200);
+    expect(response.body.data.nodes).toHaveLength(2);
+    expect(response.body.data.links).toHaveLength(1);
+    expect(response.body.data.owners).toEqual([]);
+    expect(response.body.data.archived_owner_nodes).toEqual([]);
+  });
+
+  it('hides exclusively owned nodes of archived characters and restores them unchanged', async () => {
+    await createTree();
+    const exclusive = await createNode('专属节点');
+    const child = await createNode('子节点', exclusive.id);
+    const shared = await createNode('共享节点');
+    await post(`${treeUrl()}/links`, {
+      source_id: exclusive.id, target_id: shared.id, type: 'non_linear'
+    }).expect(201);
+    const characterId = await createCharacter('甲角色');
+    await put(`${treeUrl()}/nodes/${exclusive.id}/owners`, {
+      owners: [{ character_id: characterId, is_exclusive: true }]
+    }).expect(200);
+
+    const before = await get(treeUrl()).expect(200);
+    const beforeNode = (before.body.data.nodes as Array<{ id: string; parent_id: string | null; sibling_order: number }>)
+      .find((node) => node.id === exclusive.id)!;
+
+    await setCharacterStatus(characterId, 'archived');
+
+    const hidden = await get(treeUrl()).expect(200);
+    const hiddenIds = (hidden.body.data.nodes as Array<{ id: string }>).map((node) => node.id);
+    expect(hiddenIds).not.toContain(exclusive.id);
+    // 隐藏只作用于节点本身，子节点与共享节点仍在
+    expect(hiddenIds).toContain(child.id);
+    expect(hiddenIds).toContain(shared.id);
+    expect(hidden.body.data.links).toHaveLength(0);
+    expect(hidden.body.data.archived_owner_nodes).toEqual([
+      expect.objectContaining({ node_id: exclusive.id, character_ids: [characterId] })
+    ]);
+
+    const all = await get(`${treeUrl()}?includeArchivedOwner=1`).expect(200);
+    const restored = (all.body.data.nodes as Array<{ id: string; parent_id: string | null; sibling_order: number }>)
+      .find((node) => node.id === exclusive.id)!;
+    expect(restored).toEqual(beforeNode);
+    expect(all.body.data.links).toHaveLength(1);
+
+    // 恢复角色后默认查询原样复现，节点未重建
+    await setCharacterStatus(characterId, 'active');
+    const after = await get(treeUrl()).expect(200);
+    const afterNode = (after.body.data.nodes as Array<{ id: string }>).find((node) => node.id === exclusive.id);
+    expect(afterNode).toBeDefined();
+    expect(after.body.data.nodes).toHaveLength(before.body.data.nodes.length);
+  });
+
+  it('cascades owner rows when a node is deleted and leaves imported nodes without owners', async () => {
+    await createTree();
+    const node = await createNode('待删节点');
+    const characterId = await createCharacter('乙角色');
+    await put(`${treeUrl()}/nodes/${node.id}/owners`, {
+      owners: [{ character_id: characterId, is_exclusive: true }]
+    }).expect(200);
+    const { PlotNodeCharacterOwnerEntity } = await import('../src/database/plot-node-character-owner.entity');
+    const ownersRepo = dataSource.getRepository(PlotNodeCharacterOwnerEntity);
+    expect(await ownersRepo.countBy({ node_id: node.id })).toBe(1);
+
+    await del(`${treeUrl()}/nodes/${node.id}`).expect(200);
+    expect(await ownersRepo.countBy({ node_id: node.id })).toBe(0);
+
+    const keep = await createNode('保留节点');
+    await put(`${treeUrl()}/nodes/${keep.id}/owners`, {
+      owners: [{ character_id: characterId, is_exclusive: true }]
+    }).expect(200);
+    const exported = await get(`${treeUrl()}/export`).expect(200);
+    await post(`${treeUrl()}/import`, exported.body.data).expect(200);
+
+    const imported = await get(treeUrl()).expect(200);
+    expect(imported.body.data.owners).toEqual([]);
+    expect(await ownersRepo.countBy({ work_id: workId })).toBe(0);
+  });
+
+  async function createCharacter(name: string): Promise<string> {
+    const { CharacterEntity } = await import('../src/database/character.entity');
+    const repo = dataSource.getRepository(CharacterEntity);
+    const saved = await repo.save(repo.create({
+      id: randomUUID(),
+      work_id: workId,
+      name,
+      name_key: name.toLowerCase(),
+      identity: null,
+      age: 20,
+      gender: '男',
+      personality: '',
+      experience: '',
+      country_region: null,
+      faith: null,
+      faction: null,
+      race: null,
+      occupation: null,
+      age_band: 'young',
+      attributes: [],
+      avatar_asset_id: null,
+      status: 'active',
+      merged_into_id: null,
+      archived_at: null,
+      archived_by: null,
+      origin: 'manual',
+      version: 1
+    }));
+    return saved.id;
+  }
+
+  async function setCharacterStatus(characterId: string, status: 'active' | 'archived'): Promise<void> {
+    const { CharacterEntity } = await import('../src/database/character.entity');
+    await dataSource.getRepository(CharacterEntity).update({ id: characterId }, {
+      status,
+      archived_at: status === 'archived' ? new Date() : null,
+      archived_by: status === 'archived' ? authorId : null
+    });
+  }
 });

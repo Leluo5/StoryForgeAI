@@ -268,6 +268,69 @@ describe('character anchors (real PostgreSQL)', () => {
     }).expect(404);
   });
 
+  it('degrades rewritten paragraphs to text_changed without marking new paragraphs', async () => {
+    const pid = randomUUID();
+    const text = '林昭推门而入。';
+    const hash = await setChapterParagraph(pid, text);
+    const character = await createCharacter('林昭', 'archived');
+    await createAnchor({ characterId: character, paragraphPid: pid, excerpt: text, excerptHash: hash });
+
+    const before = await get(`/api/v1/works/${workId}/chapters/${chapterId}/role-marks`).expect(200);
+    expect(before.body.data.paragraph_marks).toHaveLength(1);
+
+    // 同一 pid 改写文字，并新增一个包含角色名的新段落
+    const { ChapterEntity } = await import('../src/database/chapter.entity');
+    await dataSource.getRepository(ChapterEntity).update({ id: chapterId }, {
+      document: {
+        type: 'doc',
+        content: [
+          { type: 'paragraph', attrs: { pid }, content: [{ type: 'text', text: '林昭推门而入，雨声骤停。' }] },
+          { type: 'paragraph', attrs: { pid: randomUUID() }, content: [{ type: 'text', text: '林昭没有回头。' }] }
+        ]
+      } as never
+    });
+
+    const after = await get(`/api/v1/works/${workId}/chapters/${chapterId}/role-marks`).expect(200);
+    expect(after.body.data.paragraph_marks).toEqual([]);
+    expect(after.body.data.chapter_marks).toHaveLength(1);
+    expect(after.body.data.chapter_marks[0]).toMatchObject({ character_id: character, reason: 'text_changed' });
+
+    const { CharacterTextAnchorEntity } = await import('../src/database/character-text-anchor.entity');
+    const anchor = await dataSource.getRepository(CharacterTextAnchorEntity).findOneByOrFail({ chapter_id: chapterId });
+    expect(anchor.status).toBe('invalid');
+    expect(anchor.invalid_reason).toBe('text_changed');
+  });
+
+  it('clears paragraph and chapter marks after the character is restored', async () => {
+    const pid = randomUUID();
+    const text = '雨停了。';
+    const hash = await setChapterParagraph(pid, text);
+    const character = await createCharacter('林昭', 'archived');
+    await createAnchor({ characterId: character, paragraphPid: pid, excerpt: text, excerptHash: hash });
+    await createAnchor({
+      characterId: character,
+      paragraphPid: randomUUID(),
+      excerpt: '已删除段落',
+      excerptHash: 'z'.repeat(64)
+    });
+
+    const archived = await get(`/api/v1/works/${workId}/chapters/${chapterId}/role-marks`).expect(200);
+    expect(archived.body.data.paragraph_marks).toHaveLength(1);
+    expect(archived.body.data.chapter_marks).toHaveLength(1);
+
+    const { CharacterEntity } = await import('../src/database/character.entity');
+    await dataSource.getRepository(CharacterEntity).update({ id: character }, { status: 'active', archived_at: null, archived_by: null });
+
+    const restored = await get(`/api/v1/works/${workId}/chapters/${chapterId}/role-marks`).expect(200);
+    expect(restored.body.data.paragraph_marks).toEqual([]);
+    expect(restored.body.data.chapter_marks).toEqual([]);
+
+    const { CharacterTextAnchorEntity } = await import('../src/database/character-text-anchor.entity');
+    const anchors = await dataSource.getRepository(CharacterTextAnchorEntity).findBy({ chapter_id: chapterId });
+    expect(anchors.every((item) => item.status === 'invalid')).toBe(true);
+    expect(anchors.some((item) => item.invalid_reason === 'character_restored')).toBe(true);
+  });
+
   it('rescans only archived characters (409 otherwise, 202 when archived)', async () => {
     const active = await createCharacter('活跃角色');
     await post(`/api/v1/works/${workId}/characters/${active}/archive-scans`).expect(409);
