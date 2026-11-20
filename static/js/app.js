@@ -1196,10 +1196,10 @@
     function showAdmin() {
         state.currentView = 'admin';
         showPage('page-admin');
-        // 直接显示管理面板，无需登录
-        document.getElementById('admin-login').style.display = 'none';
-        document.getElementById('admin-panel').style.display = 'block';
-        loadAdminData();
+        const isAuthenticated = Boolean(state.adminToken);
+        document.getElementById('admin-login').style.display = isAuthenticated ? 'none' : 'block';
+        document.getElementById('admin-panel').style.display = isAuthenticated ? 'block' : 'none';
+        if (isAuthenticated) loadAdminData();
     }
 
     async function adminLogin() {

@@ -1,10 +1,14 @@
-import { render, screen } from '@testing-library/react';
+import { render, screen, waitFor } from '@testing-library/react';
 import type { SessionResponse } from '@storyforge/contracts';
 import { App } from './app';
 import { getSession } from './auth/auth-client';
 
 vi.mock('./auth/auth-client', () => ({ getSession: vi.fn(), login: vi.fn() }));
 vi.mock('./works/works-page', () => ({ WorksPage: () => <p>作品库页面</p> }));
+
+beforeEach(() => {
+  window.history.replaceState({}, '', '/');
+});
 
 const session: SessionResponse = {
   author: {
@@ -23,10 +27,12 @@ it('restores an authenticated session and lands on the works library', async () 
   expect(getSession).toHaveBeenCalledTimes(1);
 });
 
-it('shows the login form when session recovery fails', async () => {
+it('redirects an unauthenticated deep link to the login route', async () => {
+  window.history.replaceState({}, '', '/works/work-1/write/chapter-1');
   vi.mocked(getSession).mockRejectedValue(new Error('Authentication required'));
   render(<App />);
 
   expect(await screen.findByRole('button', { name: '登录' })).toBeInTheDocument();
+  await waitFor(() => expect(window.location.pathname).toBe('/login'));
   expect(screen.queryByText('作品库页面')).not.toBeInTheDocument();
 });

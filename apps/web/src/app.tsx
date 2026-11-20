@@ -16,17 +16,22 @@ export function App() {
     getSession().then(setSession).catch(() => setSession(undefined)).finally(() => setLoading(false));
   }, []);
   if (loading) return <p role="status">正在恢复会话</p>;
-  if (!session) return <AuthPage login={login} onSuccess={setSession} />;
   return <BrowserRouter>
-    <header className="app-session">
-      <span>{session.author.display_name}</span>
-      <button type="button" onClick={() => { void logout().then(() => setSession(undefined)); }}>退出登录</button>
-    </header>
-    <Routes>
-      <Route path="/" element={<Navigate to="/works" replace />} />
-      <Route path="/works" element={<Suspense fallback={<p role="status">正在加载作品库</p>}><WorksPage /></Suspense>} />
-      <Route path="/works/:workId/write/:chapterId" element={<Suspense fallback={<p role="status">正在加载工作台</p>}><WorkbenchRoute /></Suspense>} />
-      <Route path="*" element={<Navigate to="/works" replace />} />
-    </Routes>
+    {session ? <>
+      <header className="app-session">
+        <span>{session.author.display_name}</span>
+        <button type="button" onClick={() => { void logout().then(() => setSession(undefined)); }}>退出登录</button>
+      </header>
+      <Routes>
+        <Route path="/" element={<Navigate to="/works" replace />} />
+        <Route path="/login" element={<Navigate to="/works" replace />} />
+        <Route path="/works" element={<Suspense fallback={<p role="status">正在加载作品库</p>}><WorksPage /></Suspense>} />
+        <Route path="/works/:workId/write/:chapterId" element={<Suspense fallback={<p role="status">正在加载工作台</p>}><WorkbenchRoute /></Suspense>} />
+        <Route path="*" element={<Navigate to="/works" replace />} />
+      </Routes>
+    </> : <Routes>
+      <Route path="/login" element={<AuthPage login={login} onSuccess={setSession} />} />
+      <Route path="*" element={<Navigate to="/login" replace />} />
+    </Routes>}
   </BrowserRouter>;
 }
