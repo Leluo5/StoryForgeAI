@@ -33,7 +33,16 @@ export class HttpEnvelopeFilter implements ExceptionFilter {
         : exception instanceof HttpException ? exception.message : 'Internal server error';
     const details = record.details && typeof record.details === 'object'
       ? record.details as Record<string, unknown>
-      : undefined;
+      : (() => {
+          // 仅透出业务自定义字段（如 code / existing_id），
+          // 跳过 NestJS 标准响应键 message/statusCode/error，避免污染 envelope。
+          const STANDARD_KEYS = new Set(['message', 'statusCode', 'error']);
+          const extra: Record<string, unknown> = {};
+          for (const [key, value] of Object.entries(record)) {
+            if (!STANDARD_KEYS.has(key)) extra[key] = value;
+          }
+          return Object.keys(extra).length > 0 ? extra : undefined;
+        })();
 
     response.status(status).json({
       error: {

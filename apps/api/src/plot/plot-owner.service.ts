@@ -285,6 +285,21 @@ export class PlotOwnerService {
     return this.dataSource.transaction(async (manager) => {
       await this.assertOwnedWork(manager, authorId, workId);
       await this.assertNodeInWork(manager, workId, nodeId);
+      // A6/Q4：归档角色的归属行保留，只有在恢复角色后才能主动移除
+      const owner = await manager
+        .getRepository(PlotNodeCharacterOwnerEntity)
+        .findOneBy({ node_id: nodeId, character_id: characterId });
+      if (owner) {
+        const character = await manager
+          .getRepository(CharacterEntity)
+          .findOneBy({ id: characterId, work_id: workId });
+        if (character && character.status !== 'active') {
+          throw new ConflictException({
+            code: 'PLOT_OWNER_CHARACTER_ARCHIVED',
+            message: '归档角色的归属需先恢复角色后再移除'
+          });
+        }
+      }
       const result = await manager
         .getRepository(PlotNodeCharacterOwnerEntity)
         .delete({ node_id: nodeId, character_id: characterId });

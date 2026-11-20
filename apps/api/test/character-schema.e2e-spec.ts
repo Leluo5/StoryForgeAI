@@ -227,8 +227,9 @@ describe('character schema migrations', () => {
     expect(first(nodeCount).total).toBe('1');
   });
 
-  it('rolls back and re-applies the five character migrations', async () => {
-    for (let index = 0; index < 5; index += 1) {
+  // 角色域迁移共 6 个：1760500000000(base) ~ 1760500005000(ai-tools 种子)，为注册顺序的最后 6 个
+  it('rolls back and re-applies the six character migrations', async () => {
+    for (let index = 0; index < 6; index += 1) {
       await dataSource.undoLastMigration();
     }
     const afterDown: Array<{ table_name: string }> = await dataSource.query(
