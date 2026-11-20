@@ -25,6 +25,9 @@ import { PlotInspector } from '../plot/plot-inspector';
 import { PlotDerivationPanel } from '../plot/plot-derivation-panel';
 import { plotClient, type PlotClient } from '../plot/plot-client';
 import { CharacterWorkspace } from '../character/character-workspace';
+import { CharacterRolePanel } from '../character/character-role-panel';
+import { characterClient } from '../character/character-client';
+import type { ChapterRoleMarkNotice, RoleMark } from '../editor/role-marks';
 import '../plot/plot.css';
 import '../character/character.css';
 import './workbench.css';
@@ -106,6 +109,30 @@ export function WorkbenchPage({ client = defaultClient }: Props) {
   }, [client, workId]);
   useEffect(() => { void loadTree(); }, [loadTree]);
 
+  // 角色归档段落标记（T39）：按章节读取命中段落，作为编辑器装饰层数据源；失败静默降级为无标记
+  const [roleMarks, setRoleMarks] = useState<RoleMark[]>([]);
+  const [chapterMarks, setChapterMarks] = useState<ChapterRoleMarkNotice[]>([]);
+  const loadRoleMarks = useCallback(async () => {
+    if (!workId || !chapterId) {
+      setRoleMarks([]);
+      setChapterMarks([]);
+      return;
+    }
+    try {
+      const marks = await characterClient.getChapterRoleMarks(workId, chapterId);
+      setRoleMarks(
+        marks.paragraph_marks
+          .filter((mark) => mark.status === 'active')
+          .map((mark) => ({ pid: mark.paragraph_pid, label: `${mark.character_name}（${mark.matched_name}）`, anchorId: mark.id }))
+      );
+      setChapterMarks(marks.chapter_marks.map((mark) => ({ label: mark.label })));
+    } catch {
+      setRoleMarks([]);
+      setChapterMarks([]);
+    }
+  }, [workId, chapterId]);
+  useEffect(() => { void loadRoleMarks(); }, [loadRoleMarks]);
+
   // 通知未读数（header 铃铛角标）；通知中心打开时由 NotificationCenter 自身刷新，这里仅作入口角标
   useEffect(() => {
     let active = true;
@@ -118,6 +145,9 @@ export function WorkbenchPage({ client = defaultClient }: Props) {
   const currentPanel = PANELS.includes(searchParams.get('panel') ?? '') ? (searchParams.get('panel') as string) : 'chapter';
   // 中央页签：正文 / 剧情 / 角色版图；非法深链参数就地归一化
   const currentTab = searchParams.get('tab') === 'plot' ? 'plot' : searchParams.get('tab') === 'roles' ? 'roles' : 'manuscript';
+  // 角色深链：?tab=roles&panel=role&characterId=...；画布/列表打开详情与成长线跳转都写这里
+  const currentCharacterId = searchParams.get('characterId');
+  const characterChapters = tree?.chapters.map((chapter) => ({ id: chapter.id, title: chapter.title }));
   useEffect(() => {
     const next = new URLSearchParams(searchParams);
     if (next.get('tab') !== 'manuscript' && next.get('tab') !== 'plot' && next.get('tab') !== 'roles') next.set('tab', 'manuscript');
@@ -219,6 +249,19 @@ export function WorkbenchPage({ client = defaultClient }: Props) {
     else if (next.get('panel') === 'plot' || next.get('panel') === 'role') next.set('panel', 'chapter');
     setSearchParams(next);
   }
+  // 打开角色详情：切到角色页签与角色面板，并把 characterId 写入深链，返回/刷新不丢
+  function openCharacter(characterId: string): void {
+    const next = new URLSearchParams(searchParams);
+    next.set('tab', 'roles');
+    next.set('panel', 'role');
+    next.set('characterId', characterId);
+    setSearchParams(next);
+  }
+  function closeCharacter(): void {
+    const next = new URLSearchParams(searchParams);
+    next.delete('characterId');
+    setSearchParams(next);
+  }
   function context(idSuffix: string) {
     const widthId = `right-width-${idSuffix}`;
     const tabs = <div className="context-tabs" role="tablist" aria-label="右侧面板">
@@ -264,11 +307,21 @@ export function WorkbenchPage({ client = defaultClient }: Props) {
         <PlotDerivationPanel workId={workId} client={client.plot ?? plotClient} />
       </section>;
     } else if (currentPanel === 'role') {
-      body = <section id={`role-panel-${idSuffix}`} role="tabpanel" aria-labelledby={`role-tab-${idSuffix}`} className="character-side-panel">
-        <h3>角色版图面板</h3>
-        <p>当前仅为壳子占位（T32），待 T35 起联调角色详情、关系、成长线后替换。</p>
-        <p>深链：<code>?tab=roles&amp;panel=role</code> 直达此处。</p>
-      </section>;
+      body = (
+        <section id={`role-panel-${idSuffix}`} role="tabpanel" aria-labelledby={`role-tab-${idSuffix}`} className="character-side-panel">
+          <CharacterRolePanel
+            workId={workId}
+            characterId={currentCharacterId}
+            chapters={characterChapters}
+            onOpenChapter={(chapterId, characterId) => {
+              navigate(`/works/${workId}/write/${chapterId}?tab=roles&panel=role&characterId=${characterId}`);
+            }}
+          />
+          {currentCharacterId ? (
+            <button type="button" className="character-role-close" onClick={closeCharacter}>关闭角色详情</button>
+          ) : null}
+        </section>
+      );
     } else {
       body = <section aria-label="章节信息">
         <h2>章节信息</h2>
@@ -337,6 +390,13 @@ export function WorkbenchPage({ client = defaultClient }: Props) {
         {/* 用 hidden 而不是卸载：切页签不能丢掉正文编辑器的未保存状态；角色版图未来也保持挂载以保留筛选状态 */}
         <div hidden={currentTab !== 'manuscript'}>
           <EditorPane initialDocument={writer.document} readOnly={writer.readOnly}
+            roleMarks={roleMarks} chapterMarks={chapterMarks}
+            onDismissMark={(mark) => {
+              if (!mark.anchorId) return;
+              void characterClient.dismissAnchor(workId, chapterId, mark.anchorId)
+                .then(() => loadRoleMarks())
+                .catch(() => {});
+            }}
             onDocument={(operations, next) => { void writer.append(operations, next); }}
             onMarkdownDraft={writer.saveMarkdownDraft} />
         </div>
@@ -344,7 +404,12 @@ export function WorkbenchPage({ client = defaultClient }: Props) {
           <PlotWorkspace />
         </div>
         <div hidden={currentTab !== 'roles'}>
-          <CharacterWorkspace workId={workId} />
+          <CharacterWorkspace
+            workId={workId}
+            onOpenCharacter={openCharacter}
+            onArchiveRequest={openCharacter}
+            chapters={characterChapters}
+          />
         </div>
       </main>
       <aside className="workbench-right" aria-label="章节上下文栏">

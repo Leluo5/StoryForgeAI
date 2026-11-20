@@ -327,3 +327,140 @@
   text-align: center;
   pointer-events: none;
 }
+
+/* ── T34 视图切换（列表自身样式见 character-list.css） ── */
+.character-toolbar-group button[aria-pressed='true'] {
+  color: var(--brand-600, #4338ca);
+  border-color: var(--brand-500, #4f46e5);
+  background: var(--brand-100, #eef2ff);
+}
+
+[data-theme='dark'] .character-toolbar-group button[aria-pressed='true'] {
+  color: var(--brand-400, #818cf8);
+  background: var(--bg-tertiary, #1f2937);
+}
+
+/* 角色页签独占中央整宽：列表与画布都需要完整视口才能做到四档不溢出 */
+.workbench-center > div > section.character-workspace {
+  width: 100%;
+  max-width: none;
+  margin: 0;
+  min-width: 0;
+}
+
+@media (max-width: 1023px) {
+  .character-search {
+    flex-basis: 100%;
+  }
+}
+
+@media (max-width: 767px) {
+  .character-toolbar {
+    padding: 8px 12px;
+  }
+
+  .character-toolbar-group {
+    flex: 1 1 100%;
+  }
+
+  .character-toolbar-group button {
+    flex: 1 1 auto;
+  }
+
+  .character-search {
+    flex-basis: 100%;
+  }
+}
+
+/* ── T35~T38 右侧角色面板 ── */
+.character-role-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  min-width: 0;
+}
+
+.character-role-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  border-bottom: 1px solid var(--border-secondary, #e5e7eb);
+  padding-bottom: 6px;
+}
+
+.character-role-tabs button {
+  border: 1px solid transparent;
+  background: transparent;
+  color: inherit;
+  padding: 4px 8px;
+  border-radius: 6px;
+  cursor: pointer;
+}
+
+.character-role-tabs button.is-active {
+  border-color: var(--brand-500, #4f46e5);
+  background: var(--brand-100, #eef2ff);
+  color: var(--brand-600, #4338ca);
+}
+
+.character-role-tabs button:focus-visible,
+.character-role-close:focus-visible {
+  outline: 2px solid var(--brand-500, #4f46e5);
+  outline-offset: 2px;
+}
+
+.character-role-body {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.character-role-hint {
+  color: var(--text-secondary, #6b7280);
+  margin: 0;
+}
+
+.character-role-close {
+  margin-top: 12px;
+}
+
+/* ── T38 归档确认弹层 ── */
+.character-archive-dialog {
+  position: absolute;
+  inset: 16px;
+  z-index: 20;
+  overflow: auto;
+  padding: 16px;
+  border-radius: 10px;
+  border: 1px solid var(--border-secondary, #e5e7eb);
+  background: var(--bg-primary, #ffffff);
+  box-shadow: 0 12px 32px rgb(15 23 42 / 24%);
+}
+
+.character-archive-dialog__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.character-archive-impact {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+  gap: 8px;
+  margin: 12px 0;
+}
+
+.character-archive-impact dt {
+  font-size: 12px;
+  color: var(--text-secondary, #6b7280);
+}
+
+.character-archive-impact dd {
+  margin: 0;
+  font-weight: 600;
+}
+
+/* 让归档弹层相对工作区定位 */
+.character-workspace {
+  position: relative;
+}

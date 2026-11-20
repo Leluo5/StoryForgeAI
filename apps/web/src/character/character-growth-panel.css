@@ -1,0 +1,289 @@
+/* M3c-2 T36 角色成长线面板 */
+
+.character-growth-panel {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 12px 16px 24px;
+  min-width: 0;
+  background: var(--surface, #fff);
+  color: var(--text-primary, #111);
+}
+
+.character-growth-panel__header {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  border-bottom: 1px solid var(--border, #e5e7eb);
+  padding-bottom: 8px;
+}
+
+.character-growth-panel__title {
+  margin: 0;
+  font-size: 15px;
+  font-weight: 600;
+}
+
+.character-growth-panel__hint {
+  margin: 0;
+  font-size: 12px;
+  color: var(--text-secondary, #666);
+}
+
+.character-growth-panel__status,
+.character-growth-panel__notice,
+.character-growth-panel__empty {
+  margin: 0;
+  font-size: 12px;
+  color: var(--text-secondary, #666);
+}
+
+.character-growth-panel__error {
+  margin: 0;
+  padding: 6px 10px;
+  font-size: 12px;
+  color: var(--danger-600, #dc2626);
+  background: var(--danger-50, #fef2f2);
+  border-radius: 6px;
+}
+
+.character-growth-panel__warnings {
+  margin: 0;
+  padding: 8px 10px;
+  font-size: 12px;
+  color: var(--warning-700, #b45309);
+  background: var(--warning-50, #fffbeb);
+  border: 1px solid var(--warning-200, #fde68a);
+  border-radius: 6px;
+}
+
+.character-growth-panel__warnings p {
+  margin: 0 0 4px;
+  font-weight: 600;
+}
+
+.character-growth-panel__warnings ul {
+  margin: 0;
+  padding-left: 18px;
+  line-height: 1.6;
+}
+
+/* 时间线 */
+.character-growth-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.character-growth-item {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 10px 12px;
+  border: 1px solid var(--border, #e5e7eb);
+  border-left: 3px solid var(--brand-500, #4f46e5);
+  border-radius: 8px;
+  background: var(--surface, #fff);
+  overflow-wrap: anywhere;
+}
+
+.character-growth-item__head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.character-growth-item__head h3 {
+  margin: 0;
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.character-growth-item__time {
+  font-size: 12px;
+  color: var(--text-secondary, #666);
+  white-space: nowrap;
+}
+
+.character-growth-item__content {
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.6;
+  color: var(--text-primary, #111);
+}
+
+.character-growth-item__meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  font-size: 12px;
+  color: var(--text-secondary, #666);
+}
+
+.character-growth-item__node {
+  padding: 1px 6px;
+  border-radius: 4px;
+  background: var(--tag-bg, #f3f4f6);
+  color: var(--tag-text, #4b5563);
+}
+
+.character-growth-item__chapter {
+  color: var(--text-secondary, #666);
+}
+
+.character-growth-item__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+/* 表单 */
+.character-growth-form {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 12px;
+  border: 1px solid var(--border, #e5e7eb);
+  border-radius: 8px;
+  background: var(--surface-subtle, #fafafa);
+}
+
+.character-growth-form h3 {
+  margin: 0;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.character-growth-form__row {
+  display: grid;
+  grid-template-columns: 110px minmax(0, 1fr);
+  align-items: start;
+  gap: 8px;
+}
+
+.character-growth-form__row label {
+  font-size: 12px;
+  color: var(--text-secondary, #666);
+  padding-top: 6px;
+}
+
+.character-growth-form__row input,
+.character-growth-form__row textarea {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 5px 8px;
+  font-size: 13px;
+  font-family: inherit;
+  color: var(--text-primary, #111);
+  background: var(--surface, #fff);
+  border: 1px solid var(--border, #e5e7eb);
+  border-radius: 6px;
+}
+
+.character-growth-form__row input:focus-visible,
+.character-growth-form__row textarea:focus-visible {
+  outline: 2px solid var(--brand-500, #4f46e5);
+  outline-offset: 1px;
+}
+
+.character-growth-form__note {
+  margin: 0;
+  font-size: 12px;
+  color: var(--text-secondary, #666);
+}
+
+.character-growth-form__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+/* 按钮统一外观 */
+.character-growth-item__actions button,
+.character-growth-form__actions button,
+.character-growth-confirm__actions button {
+  min-height: 30px;
+  padding: 4px 10px;
+  font-size: 12px;
+  color: var(--text-primary, #111);
+  background: var(--surface, #fff);
+  border: 1px solid var(--border, #e5e7eb);
+  border-radius: 6px;
+  cursor: pointer;
+}
+
+.character-growth-item__actions button:hover:not(:disabled),
+.character-growth-form__actions button:hover:not(:disabled),
+.character-growth-confirm__actions button:hover:not(:disabled) {
+  border-color: var(--brand-500, #4f46e5);
+}
+
+.character-growth-item__actions button:focus-visible,
+.character-growth-form__actions button:focus-visible,
+.character-growth-confirm__actions button:focus-visible {
+  outline: 2px solid var(--brand-500, #4f46e5);
+  outline-offset: 1px;
+}
+
+.character-growth-item__actions button:disabled,
+.character-growth-form__actions button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* 删除二次确认 */
+.character-growth-confirm {
+  position: absolute;
+  inset: 0;
+  z-index: 10;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 16px;
+  background: rgba(15, 23, 42, 0.35);
+}
+
+.character-growth-confirm__card {
+  width: min(100%, 360px);
+  padding: 16px;
+  background: var(--surface, #fff);
+  border: 1px solid var(--border, #e5e7eb);
+  border-radius: 10px;
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.18);
+  overflow-wrap: anywhere;
+}
+
+.character-growth-confirm__card p {
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.6;
+}
+
+.character-growth-confirm__actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+@media (max-width: 767px) {
+  .character-growth-panel {
+    padding: 8px 12px 16px;
+  }
+
+  .character-growth-form__row {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 4px;
+  }
+
+  .character-growth-form__row label {
+    padding-top: 0;
+  }
+}

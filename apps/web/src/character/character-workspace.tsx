@@ -16,9 +16,13 @@ import {
   CharacterToolbar,
   CHARACTER_FILTER_DIMENSIONS,
   type CharacterDimensionOption,
-  type CharacterFilterDimension
+  type CharacterFilterDimension,
+  type CharacterViewMode
 } from './character-toolbar';
 import { CharacterCanvas } from './character-canvas';
+import { CharacterList } from './character-list';
+import { CharacterArchiveView } from './character-archive-view';
+import { CharacterAnchorPanel } from './character-anchor-panel';
 
 const ZOOM_MIN = 0.25;
 const ZOOM_MAX = 2;
@@ -148,6 +152,7 @@ export function CharacterStoreProvider({ workId, enabled = true, client = charac
 
   const store = {
     workId,
+    client,
     viewId,
     board,
     views,
@@ -203,11 +208,29 @@ function deriveDimensionOptions(
   return result;
 }
 
-/** 角色版图主视图：工具栏 + 画布，持有缩放与平移本地状态（T33） */
-function CharacterBoard(): JSX.Element {
+interface CharacterBoardProps {
+  /** 列表/画布共用的「打开角色详情」回调，T35 起接入右侧角色面板 */
+  onOpenCharacter?: ((characterId: string) => void) | undefined;
+  /** 归档完成后同步深链（右侧面板跟随到该角色） */
+  onArchiveRequest?: ((characterId: string) => void) | undefined;
+  /** 章节列表：归档影响说明的命中段落按章节读取（T38） */
+  chapters?: { id: string; title: string }[] | undefined;
+}
+
+interface ArchiveFlow {
+  characterId: string;
+  name: string;
+  impact: { relations: number; growth_events: number; chapters: number; exclusive_plot_nodes: number };
+  scan: { status: 'pending' | 'running' | 'succeeded' | 'failed'; total_chapters: number };
+}
+
+/** 角色版图主视图：工具栏 + 画布/列表/归档，持有缩放与平移本地状态（T33 / T34 / T38） */
+function CharacterBoard(props: CharacterBoardProps): JSX.Element {
   const store = useCharacterStore();
   const [zoom, setZoom] = useState(1);
   const [pan, setPan] = useState(DEFAULT_PAN);
+  const [viewMode, setViewMode] = useState<CharacterViewMode>('canvas');
+  const [archiveFlow, setArchiveFlow] = useState<ArchiveFlow | null>(null);
   const viewportRef = useRef<HTMLDivElement>(null);
 
   const filtered = useMemo<CharacterBoardResponse['characters']>(
@@ -265,9 +288,34 @@ function CharacterBoard(): JSX.Element {
     void store.saveLayout(updates);
   }, [store]);
 
+  const handleOpenCharacter = useCallback((characterId: string) => {
+    // T34 仅占位：选中由 store 承担，详情面板留给 T35
+    store.selectCharacter(characterId);
+    props.onOpenCharacter?.(characterId);
+  }, [store, props.onOpenCharacter]);
+
+  // 归档确认（T38）：先归档拿影响摘要与扫描作业，再在弹层展示关系 / 成长事件影响、扫描进度与命中段落
+  const handleArchiveRequest = useCallback(async (characterId: string) => {
+    const name = store.board?.characters.find((character) => character.id === characterId)?.name ?? '该角色';
+    store.setError('');
+    try {
+      const result = await store.client.archiveCharacter(store.workId, characterId);
+      setArchiveFlow({ characterId, name, impact: result.impact, scan: result.scan });
+      props.onArchiveRequest?.(characterId);
+      await store.reload();
+    } catch (cause) {
+      store.setError(characterErrorMessage(cause));
+    }
+  }, [props, store]);
+
   return (
     <section className="character-workspace" aria-label="角色版图">
       <CharacterToolbar
+        view={viewMode}
+        onView={setViewMode}
+        workId={store.workId}
+        client={store.client}
+        onImported={() => void store.reload()}
         zoom={zoom}
         onZoomIn={() => handleZoom(1)}
         onZoomOut={() => handleZoom(-1)}
@@ -285,25 +333,65 @@ function CharacterBoard(): JSX.Element {
       {store.error ? <p className="character-error" role="alert">{store.error}</p> : null}
       {store.notice ? <p className="character-notice" role="status">{store.notice}</p> : null}
       <div className="character-viewport" ref={viewportRef}>
-        {store.board ? (
-          <CharacterCanvas
-            characters={filtered}
-            relations={store.board.relations}
-            positions={positions}
-            zoom={zoom}
-            pan={pan}
-            selectedCharacterId={store.selectedCharacterId}
-            selectedRelationId={store.selectedRelationId}
-            onSelectCharacter={store.selectCharacter}
-            onSelectRelation={store.selectRelation}
-            onMove={handleMove}
-            onZoom={handleZoom}
-            onPan={setPan}
+        {viewMode === 'archive' ? (
+          <CharacterArchiveView
+            workId={store.workId}
+            client={store.client}
+            onSelect={handleOpenCharacter}
+            onRestored={() => void store.reload()}
           />
+        ) : store.board ? (
+          viewMode === 'list' ? (
+            <CharacterList
+              onOpen={handleOpenCharacter}
+              onRequestArchive={(characterId) => void handleArchiveRequest(characterId)}
+            />
+          ) : (
+            <CharacterCanvas
+              characters={filtered}
+              relations={store.board.relations}
+              positions={positions}
+              zoom={zoom}
+              pan={pan}
+              selectedCharacterId={store.selectedCharacterId}
+              selectedRelationId={store.selectedRelationId}
+              onSelectCharacter={store.selectCharacter}
+              onSelectRelation={store.selectRelation}
+              onMove={handleMove}
+              onZoom={handleZoom}
+              onPan={setPan}
+            />
+          )
         ) : !store.loading ? (
           <p className="character-empty" role="status">还没有角色，新建角色后将出现在版图中。</p>
         ) : null}
       </div>
+      {archiveFlow ? (
+        <div className="character-archive-dialog" role="dialog" aria-modal="true" aria-label={`归档确认：${archiveFlow.name}`}>
+          <div className="character-archive-dialog__head">
+            <h3>归档确认：{archiveFlow.name}</h3>
+            <button type="button" onClick={() => setArchiveFlow(null)}>关闭归档确认</button>
+          </div>
+          <dl className="character-archive-impact">
+            <div><dt>关系</dt><dd>{archiveFlow.impact.relations} 条</dd></div>
+            <div><dt>成长事件</dt><dd>{archiveFlow.impact.growth_events} 条</dd></div>
+            <div><dt>涉及章节</dt><dd>{archiveFlow.impact.chapters} 章</dd></div>
+            <div><dt>专属剧情节点</dt><dd>{archiveFlow.impact.exclusive_plot_nodes} 个</dd></div>
+          </dl>
+          <p className="character-archive-scan" role="status">
+            扫描{archiveFlow.scan.status === 'succeeded' ? '已完成' : archiveFlow.scan.status === 'failed' ? '失败，可在下方重试' : '进行中'}
+            （共 {archiveFlow.scan.total_chapters} 章）
+          </p>
+          <CharacterAnchorPanel
+            workId={store.workId}
+            characterId={archiveFlow.characterId}
+            client={store.client}
+            impact={archiveFlow.impact}
+            onDismissed={() => void store.reload()}
+            {...(props.chapters ? { chapters: props.chapters, chapterIds: props.chapters.map((chapter) => chapter.id) } : {})}
+          />
+        </div>
+      ) : null}
     </section>
   );
 }
@@ -312,13 +400,19 @@ interface WorkspaceProps {
   workId: string;
   client?: CharacterClient;
   enabled?: boolean;
+  /** 列表 Enter / 画布打开详情：接入右侧角色面板 */
+  onOpenCharacter?: ((characterId: string) => void) | undefined;
+  /** 归档完成后同步深链到该角色 */
+  onArchiveRequest?: ((characterId: string) => void) | undefined;
+  /** 章节列表：归档影响说明的命中段落按章节读取（T38） */
+  chapters?: { id: string; title: string }[] | undefined;
 }
 
-/** 工作台中央「角色版图」页签内容（T32 壳子 → T33 真实实现） */
-export function CharacterWorkspace({ workId, client, enabled }: WorkspaceProps): JSX.Element {
+/** 工作台中央「角色版图」页签内容（T32 壳子 → T33 画布 → T34 列表 → T38 归档视图） */
+export function CharacterWorkspace({ workId, client, enabled, onOpenCharacter, onArchiveRequest, chapters }: WorkspaceProps): JSX.Element {
   return (
     <CharacterStoreProvider workId={workId} client={client ?? characterClient} enabled={enabled ?? true}>
-      <CharacterBoard />
+      <CharacterBoard onOpenCharacter={onOpenCharacter} onArchiveRequest={onArchiveRequest} chapters={chapters} />
     </CharacterStoreProvider>
   );
 }

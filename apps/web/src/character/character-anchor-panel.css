@@ -1,0 +1,176 @@
+/* T38 归档命中面板 */
+
+.character-anchor-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 16px;
+  background: var(--surface, #fff);
+  border: 1px solid var(--border, #e5e7eb);
+  border-radius: 12px;
+}
+
+.character-anchor-panel__title {
+  margin: 0;
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--text-primary, #111);
+}
+
+.character-anchor-panel__impact {
+  margin: 0;
+  font-size: 13px;
+  color: var(--text-secondary, #666);
+}
+
+.character-anchor-panel__scan,
+.character-anchor-panel__marks-section {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding-top: 12px;
+  border-top: 1px solid var(--border, #e5e7eb);
+}
+
+.character-anchor-panel__scan h3,
+.character-anchor-panel__marks-section h3 {
+  margin: 0;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text-primary, #111);
+}
+
+.character-anchor-panel__scan-status {
+  margin: 0;
+  font-size: 13px;
+  color: var(--text-primary, #111);
+}
+
+.character-anchor-panel__status {
+  margin: 0;
+  font-size: 13px;
+  color: var(--text-secondary, #666);
+}
+
+.character-anchor-panel__alert {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 8px 12px;
+  font-size: 13px;
+  color: var(--text-primary, #111);
+  background: var(--surface-subtle, #fafafa);
+  border: 1px solid var(--border-strong, #d1d5db);
+  border-radius: 8px;
+}
+
+.character-anchor-panel__bulk {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+}
+
+.character-anchor-panel__check-all {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  cursor: pointer;
+}
+
+.character-anchor-panel__bulk button,
+.character-anchor-panel__rescan,
+.character-anchor-panel__scan button {
+  padding: 4px 10px;
+  font: inherit;
+  font-size: 13px;
+  color: var(--text-primary, #111);
+  background: var(--surface, #fff);
+  border: 1px solid var(--border-strong, #d1d5db);
+  border-radius: 8px;
+  cursor: pointer;
+}
+
+.character-anchor-panel__bulk button:disabled,
+.character-anchor-panel__rescan:disabled,
+.character-anchor-panel__scan button:disabled,
+.character-anchor-panel__mark button:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.character-anchor-panel :is(button, input, label):focus-visible {
+  outline: 2px solid var(--focus-ring, #2563eb);
+  outline-offset: 2px;
+}
+
+.character-anchor-panel__marks {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  max-height: 360px;
+  overflow: auto;
+}
+
+.character-anchor-panel__mark {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 8px 12px;
+  background: var(--surface-subtle, #fafafa);
+  border: 1px solid var(--border, #e5e7eb);
+  border-radius: 8px;
+}
+
+.character-anchor-panel__mark-check {
+  margin-top: 3px;
+}
+
+.character-anchor-panel__mark-body {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.character-anchor-panel__chapter {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-primary, #111);
+}
+
+.character-anchor-panel__excerpt {
+  font-size: 13px;
+  color: var(--text-primary, #111);
+  overflow-wrap: anywhere;
+}
+
+.character-anchor-panel__matched,
+.character-anchor-panel__character {
+  font-size: 12px;
+  color: var(--text-secondary, #666);
+}
+
+.character-anchor-panel__mark button {
+  padding: 4px 10px;
+  font: inherit;
+  font-size: 12px;
+  color: var(--text-primary, #111);
+  background: var(--surface, #fff);
+  border: 1px solid var(--border-strong, #d1d5db);
+  border-radius: 8px;
+  cursor: pointer;
+}
+
+.character-anchor-panel__notice {
+  margin: 0;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--text-primary, #111);
+}

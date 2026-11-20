@@ -7,6 +7,7 @@ import type {
   CharacterViewFilters
 } from '@storyforge/contracts';
 import { ApiError } from '../api/client';
+import type { CharacterClient } from './character-client';
 
 export interface CharacterLayoutPosition {
   character_id: string;
@@ -66,6 +67,8 @@ export function characterErrorMessage(cause: unknown): string {
 
 export interface CharacterStore {
   workId: string;
+  /** 版图客户端：工具栏导入导出与归档复用同一份注入实现（T41） */
+  client: CharacterClient;
   viewId: string | null;
   board: CharacterBoardData | null;
   views: CharacterView[];
