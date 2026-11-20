@@ -1,0 +1,329 @@
+/* M3c-2 角色版图基础样式（T32 骨架） */
+
+.character-workspace {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+  background: var(--surface, #fff);
+}
+
+.character-workspace__header {
+  padding: 12px 16px;
+  border-bottom: 1px solid var(--border, #e5e7eb);
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+}
+
+.character-workspace__header h2 {
+  font-size: 16px;
+  margin: 0;
+  font-weight: 600;
+  color: var(--text-primary, #111);
+}
+
+.character-workspace__hint {
+  margin: 0;
+  font-size: 12px;
+  color: var(--text-secondary, #666);
+  max-width: 480px;
+}
+
+.character-workspace__placeholder {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  align-items: center;
+  text-align: center;
+  padding: 32px;
+  color: var(--text-secondary, #666);
+  gap: 12px;
+}
+
+.character-workspace__placeholder-icon {
+  font-size: 48px;
+  line-height: 1;
+  opacity: 0.5;
+}
+
+.character-workspace__placeholder ul {
+  text-align: left;
+  margin: 0;
+  padding-left: 20px;
+  font-size: 13px;
+  line-height: 1.6;
+}
+
+/* 画布占位（T34 以后替换成真实画布） */
+.character-canvas-placeholder {
+  flex: 1;
+  position: relative;
+  overflow: hidden;
+  background:
+    linear-gradient(var(--grid-line, rgba(0,0,0,0.06)) 1px, transparent 1px) 0 0 / 40px 40px,
+    linear-gradient(90deg, var(--grid-line, rgba(0,0,0,0.06)) 1px, transparent 1px) 0 0 / 40px 40px,
+    var(--surface-subtle, #fafafa);
+}
+
+/* 角色卡片骨架（T34 以后生效） */
+.character-card {
+  position: absolute;
+  width: 180px;
+  height: 110px;
+  border-radius: 10px;
+  background: var(--surface, #fff);
+  border: 1px solid var(--border, #e5e7eb);
+  box-shadow: 0 2px 6px rgba(0,0,0,0.08);
+  padding: 10px 12px;
+  cursor: grab;
+  user-select: none;
+  transition: box-shadow 0.15s ease, transform 0.15s ease;
+}
+
+.character-card:hover {
+  box-shadow: 0 4px 12px rgba(0,0,0,0.12);
+}
+
+.character-card.is-selected {
+  border-color: var(--accent, #4f46e5);
+  box-shadow: 0 0 0 2px var(--accent-glow, rgba(79,70,229,0.2));
+}
+
+.character-card__name {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text-primary, #111);
+  margin: 0 0 4px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.character-card__tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.character-card__tag {
+  font-size: 11px;
+  padding: 1px 6px;
+  border-radius: 4px;
+  background: var(--tag-bg, #f3f4f6);
+  color: var(--tag-text, #4b5563);
+}
+
+/* 角色侧面板（T35 以后生效） */
+.character-side-panel {
+  padding: 12px 16px;
+  border-bottom: 1px solid var(--border, #e5e7eb);
+}
+
+.character-side-panel h3 {
+  font-size: 13px;
+  margin: 0 0 8px;
+  color: var(--text-primary, #111);
+  font-weight: 600;
+}
+
+.character-side-panel p {
+  font-size: 12px;
+  color: var(--text-secondary, #666);
+  margin: 2px 0;
+}
+
+/* ── T33 工具栏 ── */
+.character-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 16px;
+  border-bottom: 1px solid var(--border, #e5e7eb);
+  background: var(--surface, #fff);
+}
+
+.character-toolbar-group {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.character-toolbar-group label {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 12px;
+  color: var(--text-secondary, #666);
+}
+
+.character-toolbar-group button {
+  padding: 4px 10px;
+  font-size: 12px;
+  border: 1px solid var(--border, #e5e7eb);
+  border-radius: 6px;
+  background: var(--surface, #fff);
+  color: var(--text-primary, #111);
+  cursor: pointer;
+}
+
+.character-toolbar-group button:hover:not(:disabled) {
+  border-color: var(--brand-500, #4f46e5);
+}
+
+.character-toolbar-group button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.character-toolbar-group select,
+.character-toolbar-group input[type='search'] {
+  padding: 4px 8px;
+  font-size: 12px;
+  border: 1px solid var(--border, #e5e7eb);
+  border-radius: 6px;
+  background: var(--surface, #fff);
+  color: var(--text-primary, #111);
+}
+
+.character-zoom {
+  min-width: 48px;
+  text-align: center;
+  font-size: 12px;
+  color: var(--text-secondary, #666);
+}
+
+.character-search {
+  flex: 1;
+  flex-wrap: wrap;
+}
+
+.character-search-count {
+  font-size: 12px;
+  color: var(--text-secondary, #666);
+}
+
+.character-status,
+.character-error,
+.character-notice {
+  margin: 0;
+  padding: 6px 16px;
+  font-size: 12px;
+}
+
+.character-error {
+  color: var(--danger-600, #dc2626);
+  background: var(--danger-50, #fef2f2);
+}
+
+.character-notice {
+  color: var(--brand-600, #4338ca);
+}
+
+/* ── T33 画布视口 ── */
+.character-viewport {
+  flex: 1;
+  min-height: 0;
+  position: relative;
+  overflow: hidden;
+  background:
+    linear-gradient(var(--grid-line, rgba(0, 0, 0, 0.06)) 1px, transparent 1px) 0 0 / 40px 40px,
+    linear-gradient(90deg, var(--grid-line, rgba(0, 0, 0, 0.06)) 1px, transparent 1px) 0 0 / 40px 40px,
+    var(--surface-subtle, #fafafa);
+}
+
+.character-canvas {
+  position: absolute;
+  inset: 0;
+  cursor: grab;
+  outline: none;
+}
+
+.character-canvas:focus-visible {
+  outline: 2px solid var(--brand-500, #4f46e5);
+  outline-offset: -2px;
+}
+
+.character-canvas:active {
+  cursor: grabbing;
+}
+
+.character-canvas-plane {
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 1px;
+  height: 1px;
+  transform-origin: 0 0;
+}
+
+.character-links {
+  position: absolute;
+  left: 0;
+  top: 0;
+  overflow: visible;
+}
+
+.character-edge {
+  fill: none;
+  stroke-width: 2;
+  pointer-events: stroke;
+  cursor: pointer;
+}
+
+.character-edge.is-selected {
+  stroke-width: 3.5;
+}
+
+.character-edge-label {
+  cursor: pointer;
+}
+
+.character-edge-label rect {
+  fill: var(--surface, #fff);
+  stroke: var(--border, #e5e7eb);
+  stroke-width: 1;
+}
+
+.character-edge-label text {
+  font-size: 10px;
+  fill: var(--text-secondary, #666);
+}
+
+.character-card.is-dragging {
+  cursor: grabbing;
+  box-shadow: 0 6px 16px rgba(0, 0, 0, 0.18);
+  transition: none;
+}
+
+.character-card.is-archived {
+  opacity: 0.6;
+}
+
+.character-card__meta {
+  display: block;
+  font-size: 11px;
+  color: var(--text-secondary, #666);
+  margin-bottom: 4px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.character-canvas-empty,
+.character-empty {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin: 0;
+  font-size: 13px;
+  color: var(--text-secondary, #666);
+  text-align: center;
+  pointer-events: none;
+}
