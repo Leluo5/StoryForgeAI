@@ -26,6 +26,9 @@ interface Props {
   onExport: () => void;
   onImport: () => void;
   onGenerate: () => void;
+  /** 归档角色剧情开关（本地偏好，按作品持久化） */
+  includeArchivedOwner: boolean;
+  onIncludeArchivedOwner: (next: boolean) => void;
   busy: boolean;
 }
 
@@ -43,6 +46,24 @@ export function PlotToolbar(props: Props): JSX.Element {
         <button type="button" onClick={props.onExport} disabled={props.busy}>导出 JSON</button>
         <button type="button" onClick={props.onImport} disabled={props.busy}>导入 JSON</button>
         <button type="button" onClick={props.onGenerate} disabled={props.busy}>自动建树</button>
+      </div>
+      <div className="plot-toolbar-group" role="group" aria-label="归档角色剧情">
+        <label className="plot-switch">
+          <input
+            type="checkbox"
+            role="switch"
+            checked={props.includeArchivedOwner}
+            onChange={(event) => props.onIncludeArchivedOwner(event.target.checked)}
+            onKeyDown={(event) => {
+              // 原生复选框已支持 Space；Enter 额外等价切换，满足键盘双路径
+              if (event.key === 'Enter') {
+                event.preventDefault();
+                props.onIncludeArchivedOwner(!props.includeArchivedOwner);
+              }
+            }}
+          />
+          <span>{props.includeArchivedOwner ? '隐藏归档角色剧情' : '显示归档角色剧情'}</span>
+        </label>
       </div>
       <div className="plot-toolbar-group" role="group" aria-label="视图切换">
         <button type="button" aria-pressed={props.view === 'canvas'} onClick={() => props.onView('canvas')}>画布</button>

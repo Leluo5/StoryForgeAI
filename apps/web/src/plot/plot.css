@@ -35,6 +35,17 @@
 .plot-search select { min-height: 32px; }
 .plot-search-count { color: var(--text-secondary); font-size: var(--fs-caption); }
 
+/* 归档角色剧情开关：原生 checkbox + role="switch"，状态不只靠颜色 */
+.plot-switch {
+  display: inline-flex; align-items: center; gap: var(--sp-1);
+  color: var(--text-primary); font-size: var(--fs-caption); cursor: pointer;
+}
+.plot-switch input[type='checkbox'] {
+  width: 16px; height: 16px; min-height: 16px; margin: 0; padding: 0;
+  accent-color: var(--brand-500); cursor: pointer;
+}
+.plot-switch span { white-space: nowrap; }
+
 .plot-workspace input,
 .plot-workspace select,
 .plot-workspace textarea,
@@ -107,6 +118,14 @@
 .plot-edge-linear { stroke: var(--brand-500); stroke-width: 2.5; }
 .plot-edge-nonlinear { stroke: var(--brand-500); stroke-width: 2; stroke-dasharray: 8 6; opacity: 0.75; }
 .plot-edge.is-selected { stroke: var(--danger-600, #dc2626); stroke-width: 3.5; }
+/* 单端隐藏：虚线 stub + 文字标签，避免结构突然消失 */
+.plot-edge-archived {
+  stroke: var(--text-secondary); stroke-width: 2; stroke-dasharray: 6 5; opacity: 0.9;
+}
+.plot-edge-archive-label {
+  fill: var(--text-secondary); font-size: 11px; pointer-events: none;
+  paint-order: stroke; stroke: var(--bg-primary); stroke-width: 3px;
+}
 .plot-arrow-head { fill: var(--brand-500); }
 
 .plot-canvas .plot-node {
@@ -123,6 +142,10 @@
 .plot-node-title { font-weight: var(--fw-semibold); font-size: var(--fs-body); }
 .plot-node-summary { color: var(--text-secondary); font-size: var(--fs-caption); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .plot-node-meta { margin-top: auto; color: var(--text-secondary); font-size: 11px; }
+/* 父节点属于归档角色剧情：文字提示（不只靠颜色/线型） */
+.plot-node.has-archived-parent { border-style: dashed; }
+.plot-node-archived-hint { color: var(--text-secondary); font-size: 11px; font-style: italic; }
+.plot-node-archived-hint::before { content: '⤴ '; }
 
 .plot-group-box {
   position: absolute; border: 1px dashed var(--border-color); border-radius: var(--radius-md);
@@ -180,6 +203,16 @@ legend { padding: 0 4px; color: var(--text-secondary); font-size: var(--fs-capti
 .plot-link-list li.is-selected { outline: 2px solid var(--danger-600, #dc2626); }
 .plot-group-list li input { flex: 1 1 80px; }
 .plot-link-type { color: var(--text-secondary); font-size: 11px; }
+/* 归属角色多选：每行「角色 + 专属」两个复选 */
+.plot-owner-list {
+  margin: 0; padding: 0; list-style: none; display: flex; flex-direction: column; gap: var(--sp-1);
+  max-height: 220px; overflow: auto;
+}
+.plot-owner-row {
+  display: flex; flex-wrap: wrap; align-items: center; gap: var(--sp-2);
+  padding: var(--sp-1); background: var(--bg-tertiary); border-radius: var(--radius-sm);
+}
+.plot-owner-row .plot-check { flex: 0 1 auto; }
 .plot-step { padding: var(--sp-2); background: var(--bg-tertiary); border-radius: var(--radius-sm); }
 .plot-step h4 { margin: 0 0 var(--sp-1); }
 .plot-step-event { margin: 0 0 var(--sp-1); color: var(--brand-600); font-size: var(--fs-caption); }

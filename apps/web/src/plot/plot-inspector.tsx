@@ -1,14 +1,57 @@
-import { useState, type FormEvent, type JSX } from 'react';
+import { useEffect, useState, type FormEvent, type JSX } from 'react';
 import type { PlotGroup, PlotLink, PlotNode } from '@storyforge/contracts';
-import { LINK_TYPE_LABEL, nextSiblingOrder, subtreeIds, usePlotStore } from './plot-state';
+import { characterClient } from '../character/character-client';
+import { LINK_TYPE_LABEL, nextSiblingOrder, plotErrorMessage, subtreeIds, usePlotStore } from './plot-state';
+import {
+  MAX_NODE_OWNERS,
+  ownersFromServer,
+  ownerDraftKey,
+  setOwnerExclusive,
+  toggleOwnerDraft,
+  type PlotOwnerDraft
+} from './plot-archived';
 
-/** 右栏节点检查器：节点内容 / 属性 / 层级 / 分组 / 关联 / 分组管理 */
-export function PlotInspector(): JSX.Element {
+export type OwnerCharacterSource = (workId: string) => Promise<Array<{ id: string; name: string }>>;
+export type OwnerSave = (
+  workId: string,
+  nodeId: string,
+  owners: PlotOwnerDraft[]
+) => Promise<unknown>;
+
+interface PlotInspectorProps {
+  /** 归属角色候选来源，默认复用角色域客户端；测试可注入 */
+  characterSource?: OwnerCharacterSource;
+  /** 归属保存，默认复用 characterClient.setPlotNodeOwners；测试可注入 */
+  saveOwners?: OwnerSave;
+}
+
+const defaultCharacterSource: OwnerCharacterSource = async (workId) => {
+  const result = await characterClient.listCharacters(workId, { status: 'active' });
+  return result.items.map((item) => ({ id: item.id, name: item.name }));
+};
+
+const defaultSaveOwners: OwnerSave = (workId, nodeId, owners) =>
+  characterClient.setPlotNodeOwners(workId, nodeId, owners);
+
+/** 右栏节点检查器：节点内容 / 属性 / 层级 / 分组 / 归属 / 关联 / 分组管理 */
+export function PlotInspector(props: PlotInspectorProps = {}): JSX.Element {
   const store = usePlotStore();
   const node = store.data.nodes.find((item) => item.id === store.selectedNodeId) ?? null;
+  const characterSource = props.characterSource ?? defaultCharacterSource;
+  const saveOwners = props.saveOwners ?? defaultSaveOwners;
   return (
     <section className="plot-inspector" aria-label="节点检查器">
-      {node ? <NodeForm key={`${node.id}-${node.updated_at}`} node={node} /> : (
+      {node ? (
+        <>
+          <NodeForm key={`${node.id}-${node.updated_at}`} node={node} />
+          <OwnerSection
+            key={`owners-${node.id}-${node.updated_at}`}
+            node={node}
+            characterSource={characterSource}
+            saveOwners={saveOwners}
+          />
+        </>
+      ) : (
         <p className="plot-hint">在画布或列表中选择节点后可编辑内容、层级与关联。</p>
       )}
       <LinkSection node={node} />
@@ -116,6 +159,121 @@ function NodeForm({ node }: { node: PlotNode }): JSX.Element {
         {confirming ? <button type="button" onClick={() => setConfirming(false)}>取消</button> : null}
       </div>
     </form>
+  );
+}
+
+/** 归属角色多选（≤10）+ 专属；保存失败回滚本地选择（02-技术方案 §6.5.1） */
+function OwnerSection(props: {
+  node: PlotNode;
+  characterSource: OwnerCharacterSource;
+  saveOwners: OwnerSave;
+}): JSX.Element {
+  const { node, characterSource, saveOwners } = props;
+  const store = usePlotStore();
+  const serverOwners = store.owners.filter((owner) => owner.node_id === node.id);
+  const serverKey = ownerDraftKey(ownersFromServer(serverOwners));
+  const [draft, setDraft] = useState<PlotOwnerDraft[]>(() => ownersFromServer(serverOwners));
+  const [saved, setSaved] = useState<PlotOwnerDraft[]>(() => ownersFromServer(serverOwners));
+  const [characters, setCharacters] = useState<Array<{ id: string; name: string }>>([]);
+  const [listError, setListError] = useState('');
+  const [saveError, setSaveError] = useState('');
+  const [saving, setSaving] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    setListError('');
+    characterSource(store.workId)
+      .then((items) => {
+        if (!cancelled) setCharacters(items);
+      })
+      .catch((cause: unknown) => {
+        if (!cancelled) setListError(plotErrorMessage(cause));
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [characterSource, store.workId]);
+
+  // 整树重新拉取后同步服务端归属（不影响正在编辑的本地草稿，除非归属确实变化）
+  useEffect(() => {
+    const next = ownersFromServer(serverOwners);
+    setDraft(next);
+    setSaved(next);
+    setSaveError('');
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [serverKey]);
+
+  const atLimit = draft.length >= MAX_NODE_OWNERS;
+  const options = (() => {
+    const map = new Map(characters.map((item) => [item.id, item.name]));
+    for (const owner of serverOwners) {
+      if (owner.character && !map.has(owner.character_id)) map.set(owner.character_id, owner.character.name);
+    }
+    return [...map.entries()].map(([id, name]) => ({ id, name }));
+  })();
+
+  async function save(): Promise<void> {
+    setSaving(true);
+    setSaveError('');
+    try {
+      await saveOwners(store.workId, node.id, draft);
+      setSaved(draft);
+      store.setNotice('归属角色已保存');
+    } catch (cause) {
+      // 保存失败：回滚到上一次成功（或服务端）选择，并给出可读错误
+      setDraft(saved);
+      setSaveError(plotErrorMessage(cause));
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <section className="plot-subsection" aria-label="归属角色">
+      <h3>归属角色</h3>
+      <p className="plot-hint">
+        最多 {MAX_NODE_OWNERS} 个角色；勾选「专属」后，若这些专属角色全部归档，该节点默认隐藏。仅本机开关控制显示。
+      </p>
+      {listError ? <p className="plot-error" role="alert">{listError}</p> : null}
+      {options.length === 0 && !listError ? (
+        <p className="plot-hint">暂无可用角色，请先在角色页签创建角色。</p>
+      ) : null}
+      <ul className="plot-owner-list">
+        {options.map((option) => {
+          const owner = draft.find((item) => item.character_id === option.id);
+          const selected = Boolean(owner);
+          return (
+            <li key={option.id} className="plot-owner-row">
+              <label className="plot-check">
+                <input
+                  type="checkbox"
+                  checked={selected}
+                  disabled={!selected && atLimit}
+                  onChange={() => setDraft((prev) => toggleOwnerDraft(prev, option.id))}
+                />
+                <span>{option.name}</span>
+              </label>
+              <label className="plot-check">
+                <input
+                  type="checkbox"
+                  checked={owner?.is_exclusive ?? false}
+                  disabled={!selected}
+                  onChange={(event) => setDraft((prev) => setOwnerExclusive(prev, option.id, event.target.checked))}
+                />
+                <span>专属</span>
+              </label>
+            </li>
+          );
+        })}
+      </ul>
+      {atLimit ? (
+        <p className="plot-hint" role="status">已达 {MAX_NODE_OWNERS} 个归属上限，取消后再选择其他角色。</p>
+      ) : null}
+      <div className="plot-form-actions">
+        <button type="button" disabled={saving} onClick={() => void save()}>保存归属</button>
+      </div>
+      {saveError ? <p className="plot-error" role="alert">{saveError}</p> : null}
+    </section>
   );
 }
 

@@ -1,10 +1,12 @@
 import { createContext, useContext } from 'react';
 import type {
+  ArchivedOwnerNode,
   PlotGroup,
   PlotLink,
   PlotNode,
   PlotNodeAttributes,
   PlotNodeOrigin,
+  PlotNodeOwner,
   PlotTree,
   PlotTreeResponse
 } from '@storyforge/contracts';
@@ -56,12 +58,20 @@ export interface PlotStore {
   selectedNodeId: string | null;
   selectedLinkId: string | null;
   view: 'canvas' | 'list';
+  /** 「显示归档角色剧情」：URL > localStorage > 默认 false（按作品） */
+  includeArchivedOwner: boolean;
+  /** M3c-2：节点归属（随树读取返回，不额外请求） */
+  owners: PlotNodeOwner[];
+  /** M3c-2：因专属归属者全部归档而隐藏的节点，仅用于单端连线 stub */
+  archivedOwnerNodes: ArchivedOwnerNode[];
   lastLayoutSnapshot: PositionUpdate[] | null;
   setError(message: string): void;
   setNotice(message: string): void;
   selectNode(nodeId: string | null): void;
   selectLink(linkId: string | null): void;
   setView(view: 'canvas' | 'list'): void;
+  /** 切换归档剧情开关：写本地偏好并按新参数重新拉取整树 */
+  setIncludeArchivedOwner(next: boolean): Promise<void>;
   reload(): Promise<void>;
   createTree(title?: string): Promise<boolean>;
   addNode(input: PlotNodeDraft): Promise<PlotNode | undefined>;

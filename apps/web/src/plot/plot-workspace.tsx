@@ -1,8 +1,9 @@
 import { useCallback, useEffect, useRef, useState, type ChangeEvent, type JSX, type ReactNode } from 'react';
-import type { PlotLink, PlotNodeOrigin, PlotTreeResponse } from '@storyforge/contracts';
+import type { ArchivedOwnerNode, PlotLink, PlotNodeOrigin, PlotNodeOwner, PlotTreeResponse } from '@storyforge/contracts';
 import { plotClient, type PlotClient } from './plot-client';
 import { autoLayout, diffPositions, positionSnapshot, NODE_HEIGHT, NODE_WIDTH, ROW_GAP, type PositionUpdate } from './plot-layout';
 import { PlotCanvas } from './plot-canvas';
+import { readIncludeArchivedOwner, writeIncludeArchivedOwner } from './plot-archived';
 import { PlotNodeList } from './plot-node-list';
 import { PlotToolbar } from './plot-toolbar';
 import { PlotGenerationPreview } from './plot-generation-preview';
@@ -38,22 +39,49 @@ export function PlotStoreProvider({ workId, enabled = true, client = plotClient,
   const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
   const [selectedLinkId, setSelectedLinkId] = useState<string | null>(null);
   const [view, setView] = useState<'canvas' | 'list'>('canvas');
+  const [includeArchivedOwner, setIncludeArchivedOwnerState] = useState(() => readIncludeArchivedOwner(workId));
+  const [owners, setOwners] = useState<PlotNodeOwner[]>([]);
+  const [archivedOwnerNodes, setArchivedOwnerNodes] = useState<ArchivedOwnerNode[]>([]);
   const [lastLayoutSnapshot, setLastLayoutSnapshot] = useState<PositionUpdate[] | null>(null);
   const dataRef = useRef(data);
   dataRef.current = data;
+  const includeArchivedOwnerRef = useRef(includeArchivedOwner);
+  includeArchivedOwnerRef.current = includeArchivedOwner;
   const loadedRef = useRef(false);
 
   const reload = useCallback(async () => {
     setLoading(true);
     setError('');
     try {
-      setData(toPlotData(await client.fetchTree(workId)));
+      // 关闭态按原签名调用，保持 M3c-1 调用形态与既有断言不变
+      const response = includeArchivedOwnerRef.current
+        ? await client.fetchTree(workId, true)
+        : await client.fetchTree(workId);
+      setData(toPlotData(response));
+      setOwners(response.owners ?? []);
+      setArchivedOwnerNodes(response.archived_owner_nodes ?? []);
     } catch (cause) {
       setError(plotErrorMessage(cause));
     } finally {
       setLoading(false);
     }
   }, [client, workId]);
+
+  // 作品切换时重新解析本地偏好（URL 深链 > localStorage > 默认 false）
+  useEffect(() => {
+    const next = readIncludeArchivedOwner(workId);
+    includeArchivedOwnerRef.current = next;
+    setIncludeArchivedOwnerState(next);
+    loadedRef.current = false;
+  }, [workId]);
+
+  const toggleIncludeArchivedOwner = useCallback(async (next: boolean) => {
+    includeArchivedOwnerRef.current = next;
+    setIncludeArchivedOwnerState(next);
+    writeIncludeArchivedOwner(workId, next);
+    if (!loadedRef.current) return;
+    await reload();
+  }, [reload, workId]);
 
   useEffect(() => {
     if (!enabled || loadedRef.current) return;
@@ -84,6 +112,8 @@ export function PlotStoreProvider({ workId, enabled = true, client = plotClient,
     const result = await run(() => client.createTree(workId, title));
     if (!result) return false;
     setData(toPlotData(result));
+    setOwners(result.owners ?? []);
+    setArchivedOwnerNodes(result.archived_owner_nodes ?? []);
     setNotice('剧情树已创建');
     return true;
   }, [client, run, workId]);
@@ -122,6 +152,7 @@ export function PlotStoreProvider({ workId, enabled = true, client = plotClient,
       version: result.version
     }));
     setSelectedNodeId((current) => (current && removed.has(current) ? null : current));
+    setOwners((prev) => prev.filter((owner) => !removed.has(owner.node_id)));
     setNotice(`已删除 ${result.deleted} 个节点`);
     return true;
   }, [client, run, workId]);
@@ -242,6 +273,8 @@ export function PlotStoreProvider({ workId, enabled = true, client = plotClient,
     const result = await run(() => client.importTree(workId, parsed as Parameters<PlotClient['importTree']>[1]));
     if (!result) return false;
     setData(toPlotData(result as PlotTreeResponse));
+    setOwners(result.owners ?? []);
+    setArchivedOwnerNodes(result.archived_owner_nodes ?? []);
     setSelectedNodeId(null);
     setNotice('剧情树已导入');
     return true;
@@ -257,6 +290,9 @@ export function PlotStoreProvider({ workId, enabled = true, client = plotClient,
     selectedNodeId,
     selectedLinkId,
     view,
+    includeArchivedOwner,
+    owners,
+    archivedOwnerNodes,
     lastLayoutSnapshot,
     setError,
     setNotice,
@@ -269,6 +305,7 @@ export function PlotStoreProvider({ workId, enabled = true, client = plotClient,
       setSelectedNodeId(null);
     },
     setView,
+    setIncludeArchivedOwner: toggleIncludeArchivedOwner,
     reload,
     createTree,
     addNode,
@@ -451,6 +488,8 @@ export function PlotWorkspace(): JSX.Element {
         onExport={handleExport}
         onImport={() => fileRef.current?.click()}
         onGenerate={() => setGenerating(true)}
+        includeArchivedOwner={store.includeArchivedOwner}
+        onIncludeArchivedOwner={(next) => void store.setIncludeArchivedOwner(next)}
         busy={store.busy}
       />
       <input ref={fileRef} type="file" accept="application/json,.json" hidden onChange={handleImportFile} />
@@ -507,6 +546,7 @@ export function PlotWorkspace(): JSX.Element {
             nodes={store.data.nodes}
             links={store.data.links}
             groups={store.data.groups}
+            archivedNodes={store.archivedOwnerNodes}
             selectedNodeId={store.selectedNodeId}
             selectedLinkId={store.selectedLinkId}
             highlightIds={highlightIds}
@@ -524,6 +564,7 @@ export function PlotWorkspace(): JSX.Element {
             selectedNodeId={store.selectedNodeId}
             onSelect={focusNode}
             onDelete={setPendingDeleteId}
+            archivedNodeIds={store.archivedOwnerNodes.map((node) => node.node_id)}
           />
         )}
       </div>

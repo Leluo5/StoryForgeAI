@@ -1,7 +1,14 @@
 import { useEffect, useId, useRef, useState, type JSX, type PointerEvent as ReactPointerEvent } from 'react';
-import type { PlotGroup, PlotLink, PlotNode } from '@storyforge/contracts';
+import type { ArchivedOwnerNode, PlotGroup, PlotLink, PlotNode } from '@storyforge/contracts';
 import { NODE_HEIGHT, NODE_WIDTH, clampPosition, type PositionUpdate } from './plot-layout';
 import { ORIGIN_LABEL } from './plot-state';
+import {
+  ARCHIVED_EDGE_LABEL,
+  ARCHIVED_PARENT_HINT,
+  archivedNodeIds,
+  archivedNodeMap,
+  archivedStubPosition
+} from './plot-archived';
 
 interface DragState {
   id: string;
@@ -18,6 +25,8 @@ interface Props {
   nodes: PlotNode[];
   links: PlotLink[];
   groups: PlotGroup[];
+  /** 被归档过滤隐藏的节点（含 stub 坐标），用于单端连线虚线 */
+  archivedNodes?: ArchivedOwnerNode[];
   selectedNodeId: string | null;
   selectedLinkId: string | null;
   highlightIds: Set<string>;
@@ -40,6 +49,8 @@ export function PlotCanvas(props: Props): JSX.Element {
   const containerRef = useRef<HTMLDivElement>(null);
   const [drag, setDrag] = useState<DragState | null>(null);
   const nodeMap = new Map(props.nodes.map((node) => [node.id, node]));
+  const archivedMap = archivedNodeMap(props.archivedNodes ?? []);
+  const archivedIds = archivedNodeIds(props.archivedNodes ?? []);
 
   useEffect(() => {
     const element = containerRef.current;
@@ -115,25 +126,58 @@ export function PlotCanvas(props: Props): JSX.Element {
           </defs>
           {props.nodes.map((node) => {
             const parent = node.parent_id ? nodeMap.get(node.parent_id) : undefined;
-            if (!parent) return null;
-            const from = positioned(parent);
+            const archivedParent = node.parent_id ? archivedMap.get(node.parent_id) : undefined;
+            if (!parent && !archivedParent) return null;
             const to = positioned(node);
+            const from = parent ? positioned(parent) : archivedStubPosition(archivedParent, to);
             const path = `M ${from.x + NODE_WIDTH / 2} ${from.y + NODE_HEIGHT} C ${from.x + NODE_WIDTH / 2} ${from.y + NODE_HEIGHT + 40}, ${to.x + NODE_WIDTH / 2} ${to.y - 40}, ${to.x + NODE_WIDTH / 2} ${to.y}`;
-            return <path key={`p-${node.id}`} data-plot-edge="parent" className="plot-edge plot-edge-parent" d={path} />;
+            const archived = !parent;
+            return (
+              <path
+                key={`p-${node.id}`}
+                data-plot-edge={archived ? 'parent-archived' : 'parent'}
+                className={`plot-edge ${archived ? 'plot-edge-archived' : 'plot-edge-parent'}`}
+                d={path}
+              />
+            );
           })}
           {props.links.map((link) => {
             const source = nodeMap.get(link.source_id);
             const target = nodeMap.get(link.target_id);
-            if (!source || !target) return null;
-            const from = center({ ...source, position: positioned(source) });
-            const to = center({ ...target, position: positioned(target) });
+            const sourceArchived = archivedMap.get(link.source_id);
+            const targetArchived = archivedMap.get(link.target_id);
+            // 两端都隐藏（或引用缺失）不渲染；仅一端隐藏保留虚线 stub
+            if (!source && !target) return null;
+            const dashed = !source || !target;
+            const fromSource = source
+              ? center({ ...source, position: positioned(source) })
+              : archivedStubPosition(sourceArchived ?? targetArchived, positioned(target!));
+            const toTarget = target
+              ? center({ ...target, position: positioned(target) })
+              : archivedStubPosition(targetArchived ?? sourceArchived, positioned(source!));
+            const midX = (fromSource.x + toTarget.x) / 2;
+            const midY = (fromSource.y + toTarget.y) / 2;
+            if (dashed) {
+              const archivedNodeId = source ? link.target_id : link.source_id;
+              return (
+                <g key={link.id} data-plot-edge="archived" data-link-id={link.id} data-archived-node-id={archivedNodeId}>
+                  <path
+                    className="plot-edge plot-edge-archived"
+                    d={`M ${fromSource.x} ${fromSource.y} L ${toTarget.x} ${toTarget.y}`}
+                  />
+                  <text className="plot-edge-archive-label" x={midX} y={midY - 6} textAnchor="middle">
+                    {ARCHIVED_EDGE_LABEL}
+                  </text>
+                </g>
+              );
+            }
             return (
               <path
                 key={link.id}
                 data-plot-edge={link.type}
                 data-link-id={link.id}
                 className={`plot-edge plot-edge-${link.type === 'linear' ? 'linear' : 'nonlinear'}${props.selectedLinkId === link.id ? ' is-selected' : ''}`}
-                d={`M ${from.x} ${from.y} L ${to.x} ${to.y}`}
+                d={`M ${fromSource.x} ${fromSource.y} L ${toTarget.x} ${toTarget.y}`}
                 markerEnd={link.type === 'linear' ? `url(#${markerId})` : undefined}
                 onClick={() => props.onSelectLink(link.id)}
               />
@@ -166,13 +210,15 @@ export function PlotCanvas(props: Props): JSX.Element {
           const position = positioned(node);
           const isSelected = props.selectedNodeId === node.id;
           const isHighlight = props.highlightIds.has(node.id);
+          const archivedParent = node.parent_id !== null && archivedIds.has(node.parent_id);
           return (
             <button
               key={node.id}
               type="button"
               data-node-id={node.id}
               data-origin={node.origin}
-              className={`plot-node${isSelected ? ' is-selected' : ''}${isHighlight ? ' is-highlight' : ''}`}
+              data-archived-parent={archivedParent ? 'true' : undefined}
+              className={`plot-node${isSelected ? ' is-selected' : ''}${isHighlight ? ' is-highlight' : ''}${archivedParent ? ' has-archived-parent' : ''}`}
               style={{ left: position.x, top: position.y, width: NODE_WIDTH, height: NODE_HEIGHT }}
               aria-pressed={isSelected}
               onPointerDown={(event) => handlePointerDown(event, node)}
@@ -188,6 +234,7 @@ export function PlotCanvas(props: Props): JSX.Element {
               }}
             >
               <span className="plot-node-title">{node.title}</span>
+              {archivedParent ? <span className="plot-node-archived-hint">{ARCHIVED_PARENT_HINT}</span> : null}
               {node.summary ? <span className="plot-node-summary">{node.summary}</span> : null}
               <span className="plot-node-meta">来源 {ORIGIN_LABEL[node.origin]}</span>
             </button>

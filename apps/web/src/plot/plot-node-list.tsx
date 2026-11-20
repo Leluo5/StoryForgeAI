@@ -7,6 +7,8 @@ interface Props {
   selectedNodeId: string | null;
   onSelect: (nodeId: string) => void;
   onDelete: (nodeId: string) => void;
+  /** 因专属归属者归档而隐藏的节点 id：其子节点退化为顶层并带文字提示（M3c-2 T40） */
+  archivedNodeIds?: string[];
 }
 
 /** 列表视图：画布的等价键盘操作路径（02-技术方案 §6.4） */
@@ -59,6 +61,7 @@ export function PlotNodeList(props: Props): JSX.Element {
     <div className="plot-node-list" role="tree" aria-label="剧情节点列表">
       {rows.map(({ node, depth }, index) => {
         const selected = node.id === props.selectedNodeId;
+        const archivedParent = node.parent_id !== null && (props.archivedNodeIds ?? []).includes(node.parent_id);
         return (
           <div
             key={node.id}
@@ -67,6 +70,7 @@ export function PlotNodeList(props: Props): JSX.Element {
             aria-selected={selected}
             tabIndex={selected ? 0 : -1}
             data-node-id={node.id}
+            data-archived-parent={archivedParent ? 'true' : undefined}
             ref={(element) => {
               if (element) itemRefs.current.set(node.id, element);
               else itemRefs.current.delete(node.id);
@@ -78,6 +82,7 @@ export function PlotNodeList(props: Props): JSX.Element {
           >
             <span className="plot-list-title">{node.title}</span>
             <span className="plot-list-meta">
+              {archivedParent ? '父节点属于归档角色剧情 · ' : ''}
               {ORIGIN_LABEL[node.origin]}
               {node.attributes.place ? ` · ${node.attributes.place}` : ''}
             </span>

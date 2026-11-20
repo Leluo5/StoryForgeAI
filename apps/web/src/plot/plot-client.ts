@@ -79,7 +79,7 @@ export type PlotSessionDetail = {
 };
 
 export interface PlotClient {
-  fetchTree(workId: string): Promise<PlotTreeResponse>;
+  fetchTree(workId: string, includeArchivedOwner?: boolean): Promise<PlotTreeResponse>;
   createTree(workId: string, title?: string): Promise<PlotTreeResponse>;
   updateTree(workId: string, title: string, expectedVersion?: number): Promise<PlotTree>;
   createNode(workId: string, input: z.input<typeof createPlotNodeRequestSchema>): Promise<PlotNodeResult>;
@@ -179,8 +179,10 @@ export interface PlotClient {
 }
 
 export const plotClient: PlotClient = {
-  fetchTree(workId) {
-    return apiRequest(root(workId), plotTreeResponseSchema);
+  fetchTree(workId, includeArchivedOwner) {
+    // 默认不带查询参数，保持 M3c-1 响应与既有调用完全一致
+    const query = includeArchivedOwner === undefined ? '' : `?includeArchivedOwner=${includeArchivedOwner ? 'true' : 'false'}`;
+    return apiRequest(`${root(workId)}${query}`, plotTreeResponseSchema);
   },
   createTree(workId, title) {
     return apiRequest(root(workId), plotTreeResponseSchema, json('POST', createPlotTreeRequestSchema.parse({ title })));

@@ -1,6 +1,6 @@
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { describe, expect, it, vi } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { PlotGroup, PlotLink, PlotNode, PlotTree } from '@storyforge/contracts';
 import { ApiError } from '../api/client';
 import type { PlotClient } from './plot-client';
@@ -198,4 +198,135 @@ describe('PlotWorkspace', () => {
     expect(client.importTree).not.toHaveBeenCalled();
     expect(screen.getByRole('button', { name: '开场 来源 手动' })).toBeVisible();
   });
+});
+
+describe('PlotWorkspace 归档角色剧情（T40）', () => {
+  const storageKey = `sf:plot:includeArchivedOwner:${workId}`;
+
+  beforeEach(() => {
+    window.localStorage.clear();
+    window.history.replaceState({}, '', '/');
+  });
+
+  function renderWithInspector(
+    client: PlotClient,
+    characterSource: (id: string) => Promise<Array<{ id: string; name: string }>>,
+    saveOwners: (workId: string, nodeId: string, owners: Array<{ character_id: string; is_exclusive: boolean }>) => Promise<unknown>
+  ) {
+    return render(
+      <PlotStoreProvider workId={workId} client={client}>
+        <PlotWorkspace />
+        <PlotInspector characterSource={characterSource} saveOwners={saveOwners} />
+      </PlotStoreProvider>
+    );
+  }
+
+  it('开关按作品持久化并按新参数重新拉取', async () => {
+    window.localStorage.setItem(storageKey, '1');
+    const client = makeClient({
+      fetchTree: vi.fn(async () => ({ tree, nodes: [], links: [], groups: [] }))
+    });
+    renderWorkspace(client, false);
+
+    const toggle = await screen.findByRole('switch', { name: '隐藏归档角色剧情' });
+    expect(toggle).toBeChecked();
+    await waitFor(() => expect(client.fetchTree).toHaveBeenCalledWith(workId, true));
+
+    await userEvent.click(toggle);
+    expect(await screen.findByRole('switch', { name: '显示归档角色剧情' })).not.toBeChecked();
+    // 关闭态回到默认调用形态（不带查询参数），后端默认即「不显示归档角色剧情」
+    await waitFor(() => expect(client.fetchTree).toHaveBeenLastCalledWith(workId));
+    expect(window.localStorage.getItem(storageKey)).toBe('0');
+  });
+
+  it('深链 includeArchivedOwner=1 覆盖本地偏好并回写', async () => {
+    window.localStorage.setItem(storageKey, '0');
+    window.history.replaceState({}, '', '/?includeArchivedOwner=1');
+    const client = makeClient({
+      fetchTree: vi.fn(async () => ({ tree, nodes: [], links: [], groups: [] }))
+    });
+    renderWorkspace(client, false);
+
+    expect(await screen.findByRole('switch', { name: '隐藏归档角色剧情' })).toBeChecked();
+    await waitFor(() => expect(client.fetchTree).toHaveBeenCalledWith(workId, true));
+    expect(window.localStorage.getItem(storageKey)).toBe('1');
+  });
+
+  it('隐藏父节点下的子节点退化为顶层并带文字提示', async () => {
+    const child = node({ id: 'child', title: '子节点', parent_id: 'hidden-parent' });
+    const client = makeClient({
+      fetchTree: vi.fn(async () => ({
+        tree,
+        nodes: [child],
+        links: [],
+        groups: [],
+        archived_owner_nodes: [
+          { node_id: 'hidden-parent', character_ids: ['char-1'], position: { x: 0, y: 0 } }
+        ]
+      }))
+    });
+    const view = renderWorkspace(client, false);
+    await screen.findByRole('application', { name: /剧情画布/ });
+
+    const button = view.container.querySelector<HTMLElement>('[data-node-id="child"]')!;
+    expect(button).toHaveAttribute('data-archived-parent', 'true');
+    expect(within(button).getByText('父节点属于归档角色剧情')).toBeVisible();
+  });
+
+  it('仅一端隐藏的连线保留虚线 stub 与标签', async () => {
+    const visible = node({ id: 'visible', title: '可见节点', position: { x: 100, y: 100 } });
+    const client = makeClient({
+      fetchTree: vi.fn(async () => ({
+        tree,
+        nodes: [visible],
+        links: [link('edge-1', 'hidden-parent', 'visible', 'linear')],
+        groups: [],
+        archived_owner_nodes: [
+          { node_id: 'hidden-parent', character_ids: ['char-1'], position: { x: 400, y: 100 } }
+        ]
+      }))
+    });
+    const view = renderWorkspace(client, false);
+    await screen.findByRole('application', { name: /剧情画布/ });
+
+    expect(view.container.querySelector('[data-plot-edge="archived"]')).not.toBeNull();
+    expect(screen.getByText('归档角色剧情')).toBeVisible();
+    // 两端都可见时仍使用实线
+    expect(view.container.querySelectorAll('[data-plot-edge="linear"]')).toHaveLength(0);
+  });
+
+  it('归属多选 ≤ 10、专属可勾选，保存失败回滚本地选择', async () => {
+    const target = node({ id: 'node-1', title: '目标节点' });
+    const client = makeClient({
+      fetchTree: vi.fn(async () => ({ tree, nodes: [target], links: [], groups: [] }))
+    });
+    const characters = Array.from({ length: 11 }, (_, index) => ({
+      id: `char-${index}`,
+      name: `角色${index}`
+    }));
+    const characterSource = async () => characters;
+    const saveOwners = vi.fn(async () => {
+      throw new Error('归属保存失败，请稍后重试');
+    });
+    renderWithInspector(client, characterSource, saveOwners);
+    await screen.findByRole('application', { name: /剧情画布/ });
+    fireEvent.click(await screen.findByRole('button', { name: /目标节点/ }));
+
+    for (let index = 0; index < 10; index += 1) {
+      await userEvent.click(await screen.findByRole('checkbox', { name: `角色${index}` }));
+    }
+    expect(screen.getByRole('checkbox', { name: '角色10' })).toBeDisabled();
+    expect(screen.getByText(/已达 10 个归属上限/)).toBeVisible();
+
+    const firstRow = screen.getByRole('checkbox', { name: '角色0' }).closest('li')!;
+    await userEvent.click(within(firstRow).getByRole('checkbox', { name: '专属' }));
+    expect(within(firstRow).getByRole('checkbox', { name: '专属' })).toBeChecked();
+
+    await userEvent.click(screen.getByRole('button', { name: '保存归属' }));
+    const alert = await screen.findByRole('alert');
+    expect(alert).toHaveTextContent('归属保存失败');
+    // 失败后回滚到保存前的空选择
+    await waitFor(() => expect(screen.getByRole('checkbox', { name: '角色0' })).not.toBeChecked());
+    expect(screen.getByRole('checkbox', { name: '角色10' })).not.toBeDisabled();
+  }, 20_000);
 });
