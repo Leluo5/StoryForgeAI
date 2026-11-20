@@ -4,9 +4,14 @@ import { createRequire } from 'node:module';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-// 本地全量/分阶段执行需要 .env；报告聚合模式只读证据文件，不依赖 node_modules
+// 本地全量/分阶段执行需要 .env；报告聚合模式只读证据文件，不依赖 node_modules。
+// CI 的 legacy 作业不安装 Node 依赖，因此 .env 加载失败时降级为使用进程环境变量。
 if (process.env.M1_REPORT_ONLY !== '1') {
-  await import('dotenv/config');
+  try {
+    await import('dotenv/config');
+  } catch {
+    // 未安装 dotenv 时忽略：CI 环境变量已由作业级 env 提供
+  }
 }
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');

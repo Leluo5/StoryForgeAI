@@ -275,14 +275,21 @@ jobs:
         run: pnpm install --frozen-lockfile
       # Playwright 版本随 pnpm-lock.yaml 锁定，锁文件变化时缓存自动失效
       - name: Cache Playwright browsers
+        id: playwright-cache
         uses: actions/cache@v4
         with:
           path: ~/.cache/ms-playwright
           key: ${{ runner.os }}-playwright-${{ hashFiles('pnpm-lock.yaml') }}
           restore-keys: |
             ${{ runner.os }}-playwright-
-      - name: Install Chromium
+      # ubuntu-22.04 runner 镜像已预装 Playwright 系统依赖（日志可见全部 "already the newest version"），
+      # 命中浏览器缓存时无需再次 apt-get，直接复用缓存中的 Chromium
+      - name: Install Chromium (cache miss)
+        if: steps.playwright-cache.outputs.cache-hit != 'true'
         run: pnpm exec playwright install --with-deps chromium
+      - name: Reuse cached Chromium
+        if: steps.playwright-cache.outputs.cache-hit == 'true'
+        run: pnpm exec playwright install chromium
       - name: Check required author secrets without printing them
         run: node -e "for (const key of ['AUTHOR_EMAIL','AUTHOR_PASSWORD']) { if (!process.env[key]) throw new Error(key + ' repository secret is required'); }"
       - name: Run browser acceptance
