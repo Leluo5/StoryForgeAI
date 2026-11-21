@@ -2,7 +2,7 @@ import { lazy, Suspense, useEffect, useState } from 'react';
 import { BrowserRouter, Navigate, Route, Routes } from 'react-router-dom';
 import type { SessionResponse } from '@storyforge/contracts';
 import { AuthPage } from './auth/auth-page';
-import { getSession, login, logout } from './auth/auth-client';
+import { getSession, loginOrRegister, logout } from './auth/auth-client';
 
 // 路由级懒加载：作品库与工作台（含 ProseMirror 编辑器、剧情画布）按需加载，
 // 未登录时只需下载登录页所需代码。
@@ -17,6 +17,7 @@ export function App() {
     getSession().then(setSession).catch(() => setSession(undefined)).finally(() => setLoading(false));
   }, []);
   if (loading) return <p role="status">正在恢复会话</p>;
+  if (!session) return <AuthPage login={loginOrRegister} onSuccess={setSession} />;
   return <BrowserRouter>
     {session ? <>
       <header className="app-session">

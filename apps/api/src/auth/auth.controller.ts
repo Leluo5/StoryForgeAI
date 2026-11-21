@@ -43,6 +43,28 @@ export class AuthController {
     return ok(request, { author: result.author, csrf_token: result.csrfToken });
   }
 
+  @Post('login-or-register')
+  @HttpCode(HttpStatus.OK)
+  async loginOrRegister(
+    @Body() body: unknown,
+    @Req() request: RequestWithId,
+    @Res({ passthrough: true }) response: Response
+  ): Promise<SuccessEnvelope<SessionResponse & { created: boolean }>> {
+    const parsed = loginRequestSchema.safeParse(body);
+    if (!parsed.success) {
+      throw new UnprocessableEntityException({
+        message: 'Invalid login input',
+        details: { fields: parsed.error.flatten().fieldErrors }
+      });
+    }
+
+    const result = await this.auth.loginOrRegister(parsed.data.email, parsed.data.password);
+    const maxAge = env.SESSION_TTL_SECONDS * 1000;
+    response.cookie(SESSION_COOKIE, result.sessionToken, { ...cookieOptions(true), maxAge });
+    response.cookie(CSRF_COOKIE, result.csrfToken, { ...cookieOptions(false), maxAge });
+    return ok(request, { author: result.author, csrf_token: result.csrfToken, created: result.created });
+  }
+
   @Get('session')
   @UseGuards(SessionGuard)
   session(

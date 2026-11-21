@@ -5,7 +5,7 @@ import { ApiError } from './auth-client';
 import './auth-page.css';
 
 export interface AuthPageProps {
-  login: (input: LoginRequest) => Promise<SessionResponse>;
+  login: (input: LoginRequest) => Promise<SessionResponse & { created?: boolean }>;
   onSuccess: (session: SessionResponse) => void;
 }
 
@@ -32,14 +32,20 @@ export function AuthPage({ login, onSuccess }: AuthPageProps) {
   const [password, setPassword] = useState('');
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<DisplayError | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
 
   async function submit(event: FormEvent<HTMLFormElement>): Promise<void> {
     event.preventDefault();
     if (pending) return;
     setPending(true);
     setError(null);
+    setNotice(null);
     try {
-      onSuccess(await login({ email, password }));
+      const session = await login({ email, password });
+      if (session.created) {
+        setNotice('该账号此前未注册，已自动创建账号并成功登录。');
+      }
+      onSuccess(session);
     } catch (cause: unknown) {
       setError(toDisplayError(cause));
     } finally {
@@ -111,6 +117,12 @@ export function AuthPage({ login, onSuccess }: AuthPageProps) {
                 {error.requestId ? (
                   <span className="auth-form__error-request">（请求 ID：{error.requestId}）</span>
                 ) : null}
+              </p>
+            ) : null}
+
+            {notice ? (
+              <p className="auth-form__notice" role="status">
+                {notice}
               </p>
             ) : null}
 

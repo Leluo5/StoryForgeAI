@@ -140,6 +140,16 @@
   font-size: 11px;
 }
 
+.auth-form__notice {
+  font: var(--fw-regular, 400) var(--fs-small, 12px) / 1.5 var(--font-sans, sans-serif);
+  color: var(--success-700, #15803d);
+  background: var(--success-100, #f0fdf4);
+  border: 1px solid var(--success-600, #16a34a);
+  border-radius: var(--radius-md, 8px);
+  padding: var(--sp-2, 8px) var(--sp-3, 12px);
+  margin: 0;
+}
+
 .auth-form__submit {
   margin-top: var(--sp-2, 8px);
 }

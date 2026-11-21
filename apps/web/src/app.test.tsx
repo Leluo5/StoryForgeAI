@@ -3,7 +3,7 @@ import type { SessionResponse } from '@storyforge/contracts';
 import { App } from './app';
 import { getSession } from './auth/auth-client';
 
-vi.mock('./auth/auth-client', () => ({ getSession: vi.fn(), login: vi.fn(), logout: vi.fn() }));
+vi.mock('./auth/auth-client', () => ({ getSession: vi.fn(), login: vi.fn(), loginOrRegister: vi.fn(), logout: vi.fn() }));
 vi.mock('./works/works-page', () => ({ WorksPage: () => <p>作品库页面</p> }));
 vi.mock('./arkclaw/arkclaw-page', () => ({ ArkClawPage: () => <p>ArkClaw 验证页面</p> }));
 
