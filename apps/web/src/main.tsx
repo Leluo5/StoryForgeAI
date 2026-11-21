@@ -2,6 +2,7 @@ import React from 'react';
 import ReactDOM from 'react-dom/client';
 import { applyTheme, initialTheme } from '@storyforge/design-tokens';
 import '@storyforge/design-tokens/tokens.css';
+import '@storyforge/ui/styles.css';
 import './app.css';
 import { App } from './app';
 

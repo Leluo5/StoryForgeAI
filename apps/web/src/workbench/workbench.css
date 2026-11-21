@@ -4,12 +4,6 @@
   flex-wrap: wrap; gap: var(--sp-2); background: var(--bg-secondary); border-bottom: 1px solid var(--border-color);
 }
 .workbench-header h1 { margin: 0; font-size: var(--fs-h2); font-weight: var(--fw-semibold); }
-.workbench-header button, .tree-actions button, .volume-row button, [role='treeitem'] button {
-  min-height: 32px; padding: var(--sp-1) var(--sp-2); color: var(--text-primary);
-  background: var(--bg-tertiary); border: 1px solid var(--border-color); border-radius: var(--radius-md);
-}
-.workbench-header button:hover, [role='treeitem'] button:hover { background: var(--bg-hover); }
-.workbench-header button:disabled, [role='treeitem'] button:disabled { opacity: 0.5; cursor: not-allowed; }
 .workbench-grid {
   display: grid; grid-template-columns: var(--left-width) minmax(0, 1fr) var(--right-width);
   height: calc(100vh - 64px); min-height: 480px; overflow: hidden;
@@ -44,18 +38,9 @@
 .volume-row { display: flex; flex-wrap: wrap; align-items: center; gap: var(--sp-1); margin-top: var(--sp-3); }
 .tree-actions { margin: var(--sp-3) 0; }
 .context-body { display: flex; flex-direction: column; gap: var(--sp-3); }
-.context-tabs {
-  display: flex; flex-wrap: wrap; gap: var(--sp-1); padding: var(--sp-1);
-  background: var(--bg-tertiary); border: 1px solid var(--border-color); border-radius: var(--radius-md);
-}
-.context-tabs button {
-  flex: 1 1 auto; min-height: 28px; padding: var(--sp-1) var(--sp-2);
-  color: var(--text-primary); background: transparent; border: 0; border-radius: var(--radius-sm);
-  cursor: pointer;
-}
-.context-tabs button:hover { background: var(--bg-hover); }
-.context-tabs button.context-tab-active { color: var(--brand-600); background: var(--brand-100); font-weight: var(--fw-semibold); }
-[data-theme='dark'] .context-tabs button.context-tab-active { color: var(--brand-400); }
+/* 中央页签容器：正文/剧情/角色 三页签，顶部对齐 */
+.center-tabs { margin-bottom: var(--sp-4); }
+.workbench-dialog > .sf-btn { margin-bottom: var(--sp-3); }
 .panel-trigger { display: none; }
 .workbench-dialog {
   width: min(88vw, 360px); height: 100dvh; max-height: none; padding: var(--sp-4);

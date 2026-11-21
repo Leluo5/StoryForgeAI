@@ -1,5 +1,6 @@
 import { useState, type KeyboardEvent } from 'react';
 import type { TreeResponse } from '@storyforge/contracts';
+import { Button } from '@storyforge/ui';
 import { chapterUrl } from './chapter-url';
 
 export type TreeAction =
@@ -52,10 +53,10 @@ export function ChapterTree({ tree, currentChapterId, onOpen, onAction }: Props)
 
   return <nav aria-label="作品结构">
     <div className="tree-actions">
-      <button type="button" disabled={busy} onClick={() => {
+      <Button size="sm" block disabled={busy} onClick={() => {
         const title = titlePrompt('卷名称');
         if (title) void run({ type: 'create_volume', title });
-      }}>新建卷</button>
+      }}>新建卷</Button>
     </div>
     {error && <p role="alert">{error}</p>}
     <ul role="tree" aria-label="卷章节">
@@ -65,18 +66,18 @@ export function ChapterTree({ tree, currentChapterId, onOpen, onAction }: Props)
         return <li role="treeitem" aria-expanded="true" key={volume.id}>
           <div className="volume-row">
             <strong>{volume.title}</strong>
-            <button type="button" aria-label={`重命名${volume.title}`} disabled={busy} onClick={() => {
+            <Button size="sm" variant="ghost" aria-label={`重命名${volume.title}`} disabled={busy} onClick={() => {
               const title = titlePrompt('卷名称', volume.title);
               if (title) void run({ type: 'rename_volume', volumeId: volume.id, title });
-            }}>重命名</button>
-            <button type="button" aria-label={`上移${volume.title}`} disabled={busy || volumeIndex === 0}
-              onClick={() => void run({ type: 'move_volume', volumeId: volume.id, direction: -1 })}>上移</button>
-            <button type="button" aria-label={`下移${volume.title}`} disabled={busy || volumeIndex === tree.volumes.length - 1}
-              onClick={() => void run({ type: 'move_volume', volumeId: volume.id, direction: 1 })}>下移</button>
-            <button type="button" aria-label={`在${volume.title}新建章节`} disabled={busy} onClick={() => {
+            }}>重命名</Button>
+            <Button size="sm" variant="ghost" aria-label={`上移${volume.title}`} disabled={busy || volumeIndex === 0}
+              onClick={() => void run({ type: 'move_volume', volumeId: volume.id, direction: -1 })}>上移</Button>
+            <Button size="sm" variant="ghost" aria-label={`下移${volume.title}`} disabled={busy || volumeIndex === tree.volumes.length - 1}
+              onClick={() => void run({ type: 'move_volume', volumeId: volume.id, direction: 1 })}>下移</Button>
+            <Button size="sm" variant="ghost" aria-label={`在${volume.title}新建章节`} disabled={busy} onClick={() => {
               const title = titlePrompt('章节名称');
               if (title) void run({ type: 'create_chapter', volumeId: volume.id, title }, true);
-            }}>新建章节</button>
+            }}>新建章节</Button>
           </div>
           <ul role="group">
             {chapters.map((chapter, chapterIndex) => <li role="treeitem"
@@ -89,14 +90,14 @@ export function ChapterTree({ tree, currentChapterId, onOpen, onAction }: Props)
                   if (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
                   event.preventDefault(); onOpen(chapter.id);
                 }}>{chapter.title}</a>
-              <button type="button" aria-label={`重命名${chapter.title}`} disabled={busy} onClick={() => {
+              <Button size="sm" variant="ghost" aria-label={`重命名${chapter.title}`} disabled={busy} onClick={() => {
                 const title = titlePrompt('章节名称', chapter.title);
                 if (title) void run({ type: 'rename_chapter', chapterId: chapter.id, title });
-              }}>重命名</button>
-              <button type="button" aria-label={`上移${chapter.title}`} disabled={busy || chapterIndex === 0}
-                onClick={() => void run({ type: 'move_chapter', volumeId: volume.id, chapterId: chapter.id, direction: -1 })}>上移</button>
-              <button type="button" aria-label={`下移${chapter.title}`} disabled={busy || chapterIndex === chapters.length - 1}
-                onClick={() => void run({ type: 'move_chapter', volumeId: volume.id, chapterId: chapter.id, direction: 1 })}>下移</button>
+              }}>重命名</Button>
+              <Button size="sm" variant="ghost" aria-label={`上移${chapter.title}`} disabled={busy || chapterIndex === 0}
+                onClick={() => void run({ type: 'move_chapter', volumeId: volume.id, chapterId: chapter.id, direction: -1 })}>上移</Button>
+              <Button size="sm" variant="ghost" aria-label={`下移${chapter.title}`} disabled={busy || chapterIndex === chapters.length - 1}
+                onClick={() => void run({ type: 'move_chapter', volumeId: volume.id, chapterId: chapter.id, direction: 1 })}>下移</Button>
             </li>)}
           </ul>
         </li>;

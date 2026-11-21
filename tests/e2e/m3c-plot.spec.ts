@@ -86,13 +86,16 @@ test('builds, edits, links, lays out and audits the plot canvas', async ({ page 
   await expect(page.getByRole('button', { name: '撤销布局', exact: true })).toBeDisabled();
 
   // 搜索过滤 → 列表视图键盘操作
-  await page.getByLabel('搜索', { exact: true }).fill('开端');
-  await expect(page.getByText('1 个结果')).toBeVisible();
-  await page.getByLabel('搜索', { exact: true }).fill('不存在');
-  await expect(page.getByText('0 个结果')).toBeVisible();
+  // 用剧情搜索框 id 精确定位：角色版图页签（hidden 但挂载）的同名「搜索」label 会造成歧义
+  const plotSearch = page.locator('#plot-search-input');
+  const plotToolbar = page.getByRole('toolbar', { name: '剧情工具栏' });
+  await plotSearch.fill('开端');
+  await expect(plotToolbar.getByText('1 个结果')).toBeVisible();
+  await plotSearch.fill('不存在');
+  await expect(plotToolbar.getByText('0 个结果')).toBeVisible();
   await page.getByRole('button', { name: '列表', exact: true }).click();
   await expect(page.getByRole('status').filter({ hasText: '没有匹配的节点' })).toBeVisible();
-  await page.getByLabel('搜索', { exact: true }).fill('');
+  await plotSearch.fill('');
   const rows = page.getByRole('main').getByRole('treeitem');
   await expect(rows).toHaveCount(2);
   await rows.nth(0).click();
@@ -102,7 +105,7 @@ test('builds, edits, links, lays out and audits the plot canvas', async ({ page 
   // 回到画布：缩放 + 拖拽持久化
   await page.getByRole('button', { name: '画布', exact: true }).click();
   await page.getByRole('button', { name: '放大画布', exact: true }).click();
-  await expect(page.getByLabel('当前缩放')).not.toHaveText('100%');
+  await expect(plotToolbar.getByLabel('当前缩放')).not.toHaveText('100%');
 
   const before = await readTree(page, workId);
   const start = before.nodes.find((node) => node.title === '开端')!;

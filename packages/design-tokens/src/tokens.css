@@ -17,6 +17,25 @@
   --sp-5: 24px; --sp-6: 32px; --sp-7: 48px; --sp-8: 64px;
   --radius-sm: 4px; --radius-md: 8px; --radius-lg: 12px;
   --shadow-sm: 0 1px 2px rgb(15 23 42 / 8%); --shadow-md: 0 8px 24px rgb(15 23 42 / 12%);
+  /* 辅助色（创作域识别）：紫罗兰为辅助强调，对应设计规范 2.2 */
+  --accent-500: #7C3AED; --accent-600: #6D28D9; --accent-100: #F3E8FF; --accent-50: #FAF5FF;
+  /* 组件级语义令牌：按钮 / 输入 / 卡片 / 页签 */
+  --btn-primary-bg: var(--brand-500); --btn-primary-bg-hover: var(--brand-600); --btn-primary-bg-active: var(--brand-700); --btn-primary-text: #FFFFFF;
+  --btn-secondary-bg: var(--bg-secondary); --btn-secondary-bg-hover: var(--bg-hover); --btn-secondary-text: var(--text-primary); --btn-secondary-border: var(--border-color);
+  --btn-danger-bg: var(--danger-500); --btn-danger-bg-hover: #DC2626; --btn-danger-text: #FFFFFF;
+  --btn-ghost-text: var(--text-secondary); --btn-ghost-text-hover: var(--text-primary); --btn-ghost-bg-hover: var(--bg-hover);
+  --btn-disabled-bg: var(--bg-hover); --btn-disabled-text: var(--text-tertiary);
+  --input-bg: var(--bg-secondary); --input-bg-focus: var(--bg-secondary); --input-border: var(--border-color); --input-border-focus: var(--brand-500); --input-placeholder: var(--text-tertiary);
+  --card-bg: var(--bg-secondary); --card-border: var(--border-color); --card-radius: var(--radius-lg); --card-shadow: var(--shadow-sm);
+  --panel-bg: var(--bg-secondary); --panel-header-bg: var(--bg-tertiary);
+  --tab-active-text: var(--brand-600); --tab-active-border: var(--brand-500); --tab-inactive-text: var(--text-secondary);
+  --focus-ring: 0 0 0 3px rgb(79 70 229 / 20%);
+  /* 角色版图 / 剧情画布等独立模块的兼容变量（映射到统一令牌） */
+  --surface: var(--bg-secondary); --surface-subtle: var(--bg-tertiary); --border: var(--border-color);
+  --grid-line: rgb(15 23 42 / 6%); --accent: var(--brand-500); --accent-glow: rgb(79 70 229 / 20%);
+  --tag-bg: var(--bg-hover); --tag-text: var(--text-secondary);
+  --danger-50: #FEF2F2; --danger-600: #DC2626; --warning-600: #B45309; --warning-700: #92400E;
+  --success-600: #047857; --success-700: #047857;
 }
 [data-theme="dark"] {
   color-scheme: dark;
@@ -28,6 +47,23 @@
   --bg-primary: #0F172A; --bg-secondary: #1E293B; --bg-tertiary: #263449; --bg-hover: #334155;
   --border-color: #334155; --border-light: #1E293B;
   --shadow-sm: 0 1px 2px rgb(0 0 0 / 24%); --shadow-md: 0 8px 24px rgb(0 0 0 / 32%);
+  --accent-500: #A78BFA; --accent-600: #8B5CF6; --accent-100: #2E1065; --accent-50: #1E1B4B;
+  --btn-primary-bg: var(--brand-500); --btn-primary-bg-hover: var(--brand-600); --btn-primary-bg-active: var(--brand-700); --btn-primary-text: #FFFFFF;
+  --btn-secondary-bg: var(--bg-secondary); --btn-secondary-bg-hover: var(--bg-hover); --btn-secondary-text: var(--text-primary); --btn-secondary-border: var(--border-color);
+  --btn-danger-bg: var(--danger-500); --btn-danger-bg-hover: #B91C1C; --btn-danger-text: #FFFFFF;
+  --btn-ghost-text: var(--text-secondary); --btn-ghost-text-hover: var(--text-primary); --btn-ghost-bg-hover: var(--bg-hover);
+  --btn-disabled-bg: var(--bg-hover); --btn-disabled-text: var(--text-tertiary);
+  --input-bg: var(--bg-tertiary); --input-bg-focus: var(--bg-tertiary); --input-border: var(--border-color); --input-border-focus: var(--brand-500); --input-placeholder: var(--text-tertiary);
+  --card-bg: var(--bg-secondary); --card-border: var(--border-color); --card-radius: var(--radius-lg); --card-shadow: var(--shadow-sm);
+  --panel-bg: var(--bg-secondary); --panel-header-bg: var(--bg-tertiary);
+  --tab-active-text: var(--brand-400); --tab-active-border: var(--brand-500); --tab-inactive-text: var(--text-secondary);
+  --focus-ring: 0 0 0 3px rgb(99 102 241 / 30%);
+  /* 深色下独立模块兼容变量 */
+  --surface: var(--bg-secondary); --surface-subtle: var(--bg-tertiary); --border: var(--border-color);
+  --grid-line: rgb(255 255 255 / 8%); --accent: var(--brand-500); --accent-glow: rgb(99 102 241 / 30%);
+  --tag-bg: var(--bg-hover); --tag-text: var(--text-secondary);
+  --danger-50: #450A0A; --danger-600: #F87171; --warning-600: #FBBF24; --warning-700: #FBBF24;
+  --success-600: #4ADE80; --success-700: #4ADE80;
 }
 * { box-sizing: border-box; }
 body { margin: 0; font-family: var(--font-sans); background: var(--bg-primary); color: var(--text-primary); }

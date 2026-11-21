@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState, type CSSProperties, type JSX } from 'react';
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { applyTheme, initialTheme, type Theme } from '@storyforge/design-tokens';
+import { Button, Tabs } from '@storyforge/ui';
 import type { SaveChangeRequest, TreeResponse } from '@storyforge/contracts';
 import { ConflictDialog } from '../editor/conflict-dialog';
 import { EditorPane } from '../editor/editor-pane';
@@ -264,26 +265,22 @@ export function WorkbenchPage({ client = defaultClient }: Props) {
   }
   function context(idSuffix: string) {
     const widthId = `right-width-${idSuffix}`;
-    const tabs = <div className="context-tabs" role="tablist" aria-label="右侧面板">
-      <button type="button" role="tab" aria-selected={currentPanel === 'chapter'} className={currentPanel === 'chapter' ? 'context-tab-active' : ''}
-        onClick={() => switchPanel('chapter')}>章节信息</button>
-      <button type="button" role="tab" aria-selected={currentPanel === 'revision'} className={currentPanel === 'revision' ? 'context-tab-active' : ''}
-        onClick={() => switchPanel('revision')}>修订</button>
-      <button type="button" role="tab" aria-selected={currentPanel === 'version'} className={currentPanel === 'version' ? 'context-tab-active' : ''}
-        onClick={() => switchPanel('version')}>版本</button>
-      <button type="button" role="tab" aria-selected={currentPanel === 'comment'} className={currentPanel === 'comment' ? 'context-tab-active' : ''}
-        onClick={() => switchPanel('comment')}>评论</button>
-      <button type="button" role="tab" aria-selected={currentPanel === 'todo'} className={currentPanel === 'todo' ? 'context-tab-active' : ''}
-        onClick={() => switchPanel('todo')}>待办</button>
-      <button type="button" role="tab" id={`ai-tab-${idSuffix}`} aria-controls={`ai-panel-${idSuffix}`} aria-selected={currentPanel === 'ai'} className={currentPanel === 'ai' ? 'context-tab-active' : ''}
-        onClick={() => switchPanel('ai')}>AI 创作</button>
-      <button type="button" role="tab" id={`agent-tab-${idSuffix}`} aria-controls={`agent-panel-${idSuffix}`} aria-selected={currentPanel === 'agent'} className={currentPanel === 'agent' ? 'context-tab-active' : ''}
-        onClick={() => switchPanel('agent')}>Agent 管理</button>
-      <button type="button" role="tab" id={`plot-tab-${idSuffix}`} aria-controls={`plot-panel-${idSuffix}`} aria-selected={currentPanel === 'plot'} className={currentPanel === 'plot' ? 'context-tab-active' : ''}
-        onClick={() => switchPanel('plot')}>剧情</button>
-      <button type="button" role="tab" id={`role-tab-${idSuffix}`} aria-controls={`role-panel-${idSuffix}`} aria-selected={currentPanel === 'role'} className={currentPanel === 'role' ? 'context-tab-active' : ''}
-        onClick={() => switchPanel('role')}>角色</button>
-    </div>;
+    const tabs = <Tabs
+      label="右侧面板"
+      items={[
+        { key: 'chapter', label: '章节信息' },
+        { key: 'revision', label: '修订' },
+        { key: 'version', label: '版本' },
+        { key: 'comment', label: '评论' },
+        { key: 'todo', label: '待办' },
+        { key: 'ai', label: 'AI 创作' },
+        { key: 'agent', label: 'Agent 管理' },
+        { key: 'plot', label: '剧情' },
+        { key: 'role', label: '角色' },
+      ]}
+      activeKey={currentPanel}
+      onChange={(key) => switchPanel(key)}
+    />;
     let body: JSX.Element;
     if (currentPanel === 'revision') {
       body = <RevisionPanel workId={workId} chapterId={chapterId} />;
@@ -294,15 +291,15 @@ export function WorkbenchPage({ client = defaultClient }: Props) {
     } else if (currentPanel === 'todo') {
       body = <TodoPanel workId={workId} />;
     } else if (currentPanel === 'ai') {
-      body = <section id={`ai-panel-${idSuffix}`} role="tabpanel" aria-labelledby={`ai-tab-${idSuffix}`}>
+      body = <section role="tabpanel" aria-label="AI 创作">
         <AiTaskPanel workId={workId} chapterId={chapterId} />
       </section>;
     } else if (currentPanel === 'agent') {
-      body = <section id={`agent-panel-${idSuffix}`} role="tabpanel" aria-labelledby={`agent-tab-${idSuffix}`}>
+      body = <section role="tabpanel" aria-label="Agent 管理">
         <AgentPanel />
       </section>;
     } else if (currentPanel === 'plot') {
-      body = <section id={`plot-panel-${idSuffix}`} role="tabpanel" aria-labelledby={`plot-tab-${idSuffix}`} className="plot-side">
+      body = <section role="tabpanel" aria-label="剧情" className="plot-side">
         <PlotInspector />
         <PlotDerivationPanel workId={workId} client={client.plot ?? plotClient} />
       </section>;
@@ -345,7 +342,7 @@ export function WorkbenchPage({ client = defaultClient }: Props) {
     <div className="workbench">
     <header className="workbench-header">
       <Link to="/works">返回作品库</Link>
-      <button className="panel-trigger left-trigger" type="button" onClick={() => openDialog(leftDialog.current)}>打开章节导航</button>
+      <Button variant="ghost" size="sm" className="panel-trigger left-trigger" onClick={() => openDialog(leftDialog.current)}>打开章节导航</Button>
       <h1>{tree?.work.title ?? '正在加载作品'}</h1>
       <SaveStatusView status={writer.status} onRetry={() => void writer.flush()} onTakeover={() => void writer.takeover()}
         onRestore={() => {
@@ -353,24 +350,24 @@ export function WorkbenchPage({ client = defaultClient }: Props) {
             setError(cause instanceof Error ? cause.message : '服务端恢复失败');
           });
         }} />
-      <button type="button" disabled={exporting} onClick={() => void downloadRecovery()}>{exporting ? '导出中' : '导出恢复数据'}</button>
-      <button type="button" onClick={() => {
+      <Button variant="ghost" size="sm" disabled={exporting} onClick={() => void downloadRecovery()}>{exporting ? '导出中' : '导出恢复数据'}</Button>
+      <Button variant="ghost" size="sm" onClick={() => {
         const next = theme === 'light' ? 'dark' : 'light'; setTheme(next); applyTheme(next);
-      }}>{theme === 'light' ? '切换深色主题' : '切换浅色主题'}</button>
-      <button type="button" aria-label={`通知（${noticeUnread} 条未读）`} onClick={() => {
+      }}>{theme === 'light' ? '切换深色主题' : '切换浅色主题'}</Button>
+      <Button variant="ghost" size="sm" aria-label={`通知（${noticeUnread} 条未读）`} onClick={() => {
         // 每次打开刷新角标，并强制通知中心重新拉取最新通知
         void unreadCount().then((count) => setNoticeUnread(count.unread)).catch(() => {});
         setNoticeOpenKey((key) => key + 1);
         openDialog(noticeDialog.current);
-      }}>通知{noticeUnread > 0 ? `(${noticeUnread})` : ''}</button>
-      <button className="panel-trigger right-trigger" type="button" onClick={() => openDialog(rightDialog.current)}>打开{currentPanel === 'revision' ? '修订' : currentPanel === 'version' ? '版本' : currentPanel === 'comment' ? '评论' : currentPanel === 'todo' ? '待办' : currentPanel === 'ai' ? 'AI 创作' : currentPanel === 'agent' ? 'Agent 管理' : currentPanel === 'plot' ? '剧情' : '章节信息'}</button>
+      }}>通知{noticeUnread > 0 ? `(${noticeUnread})` : ''}</Button>
+      <Button variant="ghost" size="sm" className="panel-trigger right-trigger" onClick={() => openDialog(rightDialog.current)}>打开{currentPanel === 'revision' ? '修订' : currentPanel === 'version' ? '版本' : currentPanel === 'comment' ? '评论' : currentPanel === 'todo' ? '待办' : currentPanel === 'ai' ? 'AI 创作' : currentPanel === 'agent' ? 'Agent 管理' : currentPanel === 'plot' ? '剧情' : '章节信息'}</Button>
     </header>
     {error && <p role="alert">{error}</p>}
     <div className="workbench-grid" style={style}>
       <aside className="workbench-left" aria-label="章节导航栏">
-        <button type="button" onClick={() => updatePanels({ leftCollapsed: !panels.leftCollapsed })}>
+        <Button variant="ghost" size="sm" block onClick={() => updatePanels({ leftCollapsed: !panels.leftCollapsed })}>
           {panels.leftCollapsed ? '展开左侧栏' : '折叠左侧栏'}
-        </button>
+        </Button>
         {!panels.leftCollapsed && <>
           <label htmlFor="left-width">左侧栏宽度</label>
           <input id="left-width" aria-label="左侧栏宽度" type="range" min="200" max="400" step="8"
@@ -379,13 +376,17 @@ export function WorkbenchPage({ client = defaultClient }: Props) {
         </>}
       </aside>
       <main className="workbench-center" aria-label="正文工作区">
-        <div className="center-tabs" role="tablist" aria-label="中央工作区页签">
-          <button type="button" role="tab" aria-selected={currentTab === 'manuscript'}
-            onClick={() => switchTab('manuscript')}>正文</button>
-          <button type="button" role="tab" aria-selected={currentTab === 'plot'}
-            onClick={() => switchTab('plot')}>剧情</button>
-          <button type="button" role="tab" aria-selected={currentTab === 'roles'}
-            onClick={() => switchTab('roles')}>角色版图</button>
+        <div className="center-tabs">
+          <Tabs
+            label="中央工作区页签"
+            items={[
+              { key: 'manuscript', label: '正文' },
+              { key: 'plot', label: '剧情' },
+              { key: 'roles', label: '角色版图' },
+            ]}
+            activeKey={currentTab}
+            onChange={(key) => switchTab(key as 'manuscript' | 'plot' | 'roles')}
+          />
         </div>
         {/* 用 hidden 而不是卸载：切页签不能丢掉正文编辑器的未保存状态；角色版图未来也保持挂载以保留筛选状态 */}
         <div hidden={currentTab !== 'manuscript'}>
@@ -413,25 +414,25 @@ export function WorkbenchPage({ client = defaultClient }: Props) {
         </div>
       </main>
       <aside className="workbench-right" aria-label="章节上下文栏">
-        <button type="button" onClick={() => updatePanels({ rightCollapsed: !panels.rightCollapsed })}>
+        <Button variant="ghost" size="sm" block onClick={() => updatePanels({ rightCollapsed: !panels.rightCollapsed })}>
           {panels.rightCollapsed ? '展开右侧栏' : '折叠右侧栏'}
-        </button>
+        </Button>
         {!panels.rightCollapsed && context('desktop')}
       </aside>
     </div>
     <dialog ref={leftDialog} className="workbench-dialog left-dialog" aria-labelledby="left-dialog-title" onClose={restoreDialogFocus}>
       <h2 id="left-dialog-title">章节导航</h2>
-      <button type="button" onClick={() => leftDialog.current?.close()}>关闭章节导航</button>
+      <Button variant="ghost" size="sm" block onClick={() => leftDialog.current?.close()}>关闭章节导航</Button>
       {navigation}
     </dialog>
     <dialog ref={rightDialog} className="workbench-dialog right-dialog" aria-labelledby="right-dialog-title" onClose={restoreDialogFocus}>
       <h2 id="right-dialog-title">{currentPanel === 'revision' ? '修订' : currentPanel === 'version' ? '版本历史' : currentPanel === 'comment' ? '评论' : currentPanel === 'todo' ? '待办' : currentPanel === 'agent' ? 'Agent 管理' : currentPanel === 'plot' ? '剧情' : currentPanel === 'role' ? '角色版图' : '章节信息'}</h2>
-      <button type="button" onClick={() => rightDialog.current?.close()}>关闭右侧面板</button>
+      <Button variant="ghost" size="sm" block onClick={() => rightDialog.current?.close()}>关闭右侧面板</Button>
       {context('dialog')}
     </dialog>
     <dialog ref={noticeDialog} className="workbench-dialog notice-dialog" aria-labelledby="notice-dialog-title" onClose={restoreDialogFocus}>
       <h2 id="notice-dialog-title">通知中心</h2>
-      <button type="button" onClick={() => noticeDialog.current?.close()}>关闭通知</button>
+      <Button variant="ghost" size="sm" block onClick={() => noticeDialog.current?.close()}>关闭通知</Button>
       <NotificationCenter key={noticeOpenKey} />
     </dialog>
     <ConflictDialog conflict={writer.conflict} onResolve={writer.resolveConflict}
