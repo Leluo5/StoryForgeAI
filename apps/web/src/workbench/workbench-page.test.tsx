@@ -7,22 +7,6 @@ import type { Chapter, TreeResponse } from '@storyforge/contracts';
 import { createEmptyDocument } from '@storyforge/editor-schema';
 import { WorkbenchRoute, type WorkbenchClient } from './workbench-page';
 
-// 知识库面板会调 knowledge-client 发起真实请求，回归用例只验证「面板接入 + tab 存在」，故 mock 客户端隔离网络
-vi.mock('../knowledge/knowledge-client', () => ({
-  createEntryPreview: vi.fn(),
-  commitEntry: vi.fn(),
-  searchEntries: vi.fn(async () => ({ total: 0, items: [] })),
-  getEntry: vi.fn(),
-  updateEntry: vi.fn(),
-  deleteEntry: vi.fn(),
-  linkEntry: vi.fn(),
-  extractOutline: vi.fn(),
-  exportMarkdown: vi.fn(),
-  importPreview: vi.fn(),
-  importMarkdown: vi.fn(),
-  validateMarkdown: vi.fn()
-}));
-
 const workId = crypto.randomUUID();
 const chapterId = crypto.randomUUID();
 const volumeId = crypto.randomUUID();
@@ -140,14 +124,16 @@ describe('WorkbenchRoute', () => {
     await waitFor(() => expect(api.plot?.fetchTree).toHaveBeenCalledWith(workId));
   });
 
-  it('renders the knowledge panel from a deep link and lists the tab', async () => {
+  // 知识库已从工作台右侧 tab 迁移到作品库页头入口（独立路由 /knowledge）。
+  // 旧深链 ?panel=knowledge 不再合法：页面应安全归一化为默认面板（chapter），且不渲染知识库面板。
+  it('normalizes the legacy knowledge deep link back to the chapter panel', async () => {
     const api = client();
     renderPage(api, `/works/${workId}/write/${chapterId}?tab=manuscript&panel=knowledge`);
-    await waitFor(() => expect(screen.getByTestId('location')).toHaveTextContent('?tab=manuscript&panel=knowledge'));
-    // 知识库面板已挂载
-    expect(await screen.findByRole('heading', { name: '知识库' })).toBeVisible();
-    // 右侧面板 tab 包含知识库
+    // 非法 panel 被归一化：URL 不再保留 knowledge
+    await waitFor(() => expect(screen.getByTestId('location')).not.toHaveTextContent('panel=knowledge'));
+    expect(screen.getByTestId('location')).toHaveTextContent('panel=chapter');
     const rightTabs = screen.getByRole('tablist', { name: '右侧面板' });
-    expect(within(rightTabs).getByRole('tab', { name: '知识库' })).toBeVisible();
+    expect(within(rightTabs).queryByRole('tab', { name: '知识库' })).toBeNull();
+    expect(screen.queryByRole('heading', { name: '知识库' })).toBeNull();
   });
 });

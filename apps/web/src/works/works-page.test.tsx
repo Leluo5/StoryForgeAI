@@ -46,6 +46,14 @@ describe('WorksPage', () => {
     expect(createWork).toHaveBeenCalledWith({ title: '星河', description: '' });
   });
 
+  it('renders the knowledge base entry link in the header toolbar', async () => {
+    renderPage();
+    await screen.findByText('既有作品');
+    const entry = screen.getByRole('link', { name: '知识库' });
+    expect(entry).toBeVisible();
+    expect(entry).toHaveAttribute('href', '/knowledge');
+  });
+
   it('archives only after native confirmation', async () => {
     vi.mocked(updateWork).mockResolvedValue({ ...work, status: 'archived' });
     const confirm = vi.spyOn(window, 'confirm').mockReturnValue(true);
