@@ -9,3 +9,4 @@ export * from './character';
 export * from './character-anchor';
 export * from './character-ai';
 export * from './character-portability';
+export * from './arkclaw';

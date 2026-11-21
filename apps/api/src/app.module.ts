@@ -10,9 +10,10 @@ import { AiTaskModule } from './ai/ai-task.module';
 import { AgentModule } from './agent/agent.module';
 import { PlotModule } from './plot/plot.module';
 import { CharacterModule } from './character/character.module';
+import { ArkClawModule } from './arkclaw/arkclaw.module';
 
 @Module({
-  imports: [TypeOrmModule.forRoot({ ...AppDataSource.options }), AuthModule, WritingModule, RevisionModule, AiTaskModule, AgentModule, PlotModule, CharacterModule],
+  imports: [TypeOrmModule.forRoot({ ...AppDataSource.options }), AuthModule, WritingModule, RevisionModule, AiTaskModule, AgentModule, PlotModule, CharacterModule, ArkClawModule],
   controllers: [HealthController]
 })
 export class AppModule implements NestModule {
