@@ -125,6 +125,21 @@ def _get_session_role(token):
     return entry.get("role")
 
 
+def _sanitize_error(exc=None, default="请求失败，请稍后重试", upstream_msg=None):
+    """脱敏：返回通用错误提示，真实异常/上游原文仅记入日志，不透传前端（F3-R4）。"""
+    if exc is not None:
+        app.logger.exception("F3 上游异常: %s", exc)
+    if upstream_msg is not None:
+        app.logger.warning("F3 上游返回错误原文: %s", upstream_msg)
+        msg = str(upstream_msg)
+        if msg and "can't convert" in msg:
+            return "参数类型不匹配，请检查参数配置是否与 Coze 工作流开始节点的参数类型一致"
+        # 作品发布状态属用户可操作的配置信息（非敏感），按 can't convert 同思路给出可执行指引
+        if "has not been published" in msg or "not been published to the channel" in msg:
+            return "该作品尚未发布到 API 渠道，请先在 Coze 后台将其发布（Agent As API）后再试"
+    return default
+
+
 # AI 生成参数异步任务存储
 _gen_tasks = {}
 
@@ -950,13 +965,14 @@ def chat_work(work_id):
 
     user_message = data.get("message", "")
     conversation_id = data.get("conversation_id", "")
+    user_id = data.get("user_id", "")
     parameters = data.get("parameters", {})
 
     if not user_message and not parameters:
         return respond(400, None, "请输入消息或填写参数")
 
     # 构建 Coze 对话请求
-    chat_body = _build_coze_chat_request(work, user_message, conversation_id, parameters)
+    chat_body = _build_coze_chat_request(work, user_message, conversation_id, parameters, user_id)
 
     pat_token = work.get("pat_token", "")
     coze_client.pat_token = pat_token
@@ -971,9 +987,31 @@ def chat_work(work_id):
                 "Content-Type": "application/json"
             }
 
-            resp = requests.post(url, headers=headers, json=chat_body, stream=True, timeout=120)
+            # Coze 官方契约：conversation_id 是 Query 参数，放在 Body 会被忽略并新建会话。
+            chat_params = {"conversation_id": conversation_id} if conversation_id else None
+            resp = requests.post(
+                url, headers=headers, json=chat_body, params=chat_params,
+                stream=True, timeout=120
+            )
             resp.encoding = "utf-8"
             resp.raise_for_status()
+
+            # Coze 业务失败（如 bot 未发布到 Agent As API，错误码 4015）时返回
+            # HTTP200 + JSON 错误体而非 SSE 流；iter_lines 解析不到 data:/event: 前缀
+            # 会静默吞掉错误，导致前端只见 done 永远转圈。显式检测非 SSE 并透出上游错误。
+            # getattr 防御：测试 mock 等无 headers 的对象跳过检查，走正常 SSE 解析。
+            resp_headers = getattr(resp, "headers", None)
+            if resp_headers is not None and "text/event-stream" not in resp_headers.get("Content-Type", ""):
+                try:
+                    err_obj = resp.json()
+                    upstream_msg = err_obj.get("msg") or err_obj.get("message") or resp.text[:200]
+                except (ValueError, AttributeError):
+                    upstream_msg = resp.text[:200]
+                yield "data: " + json.dumps(
+                    {"error": _sanitize_error(default="对话失败，请稍后重试", upstream_msg=upstream_msg)},
+                    ensure_ascii=False
+                ) + "\n\n"
+                return
 
             current_event = ""
 
@@ -1009,41 +1047,43 @@ def chat_work(work_id):
 
                     msg_type = msg_data.get("type", "")
 
-                    # 处理不同事件类型
+                    # 处理不同事件类型（F3-R3：统一 SSE 事件契约 delta/done/error）
                     if current_event == "conversation.message.delta" or msg_type == "answer":
                         content = msg_data.get("content", "")
                         if content:
                             yield "data: " + json.dumps(
-                                {"type": "delta", "content": content}, ensure_ascii=False
+                                {"delta": content}, ensure_ascii=False
                             ) + "\n\n"
                     elif current_event == "conversation.chat.completed":
                         conv_id = msg_data.get("conversation_id", "") or msg_data.get("id", "")
                         yield "data: " + json.dumps(
-                            {
-                                "type": "done",
-                                "conversation_id": conv_id,
-                            },
+                            {"done": True, "conversation_id": conv_id},
                             ensure_ascii=False,
                         ) + "\n\n"
                     elif current_event == "conversation.chat.failed":
-                        error_msg = msg_data.get("msg", msg_data.get("error_msg", "对话失败"))
+                        upstream_msg = msg_data.get("msg") or msg_data.get("error_msg")
                         yield "data: " + json.dumps(
-                            {"type": "error", "content": error_msg}, ensure_ascii=False
+                            {"error": _sanitize_error(
+                                default="对话失败，请稍后重试", upstream_msg=upstream_msg)},
+                            ensure_ascii=False
                         ) + "\n\n"
                     elif current_event == "error":
-                        error_msg = msg_data.get("msg", "未知错误")
+                        upstream_msg = msg_data.get("msg")
                         yield "data: " + json.dumps(
-                            {"type": "error", "content": error_msg}, ensure_ascii=False
+                            {"error": _sanitize_error(
+                                default="对话失败，请稍后重试", upstream_msg=upstream_msg)},
+                            ensure_ascii=False
                         ) + "\n\n"
                     elif current_event == "done":
                         break
 
-            yield "data: " + json.dumps({"type": "stream_end"}, ensure_ascii=False) + "\n\n"
             yield "data: {\"done\": true}\n\n"
 
         except Exception as e:
             yield "data: " + json.dumps(
-                {"type": "error", "content": str(e)}, ensure_ascii=False
+                {"error": _sanitize_error(
+                    exc=e, default="对话失败，请稍后重试")},
+                ensure_ascii=False
             ) + "\n\n"
         finally:
             if resp is not None:
@@ -1060,11 +1100,10 @@ def chat_work(work_id):
 
 
 @app.route("/api/works/<work_id>/upload", methods=["POST"])
+@require_work_access
 def upload_file(work_id):
     """上传文件到 Coze（用于工作流 File 类型参数）"""
-    work = work_manager.get_work(work_id)
-    if work is None:
-        return respond(404, None, "作品不存在")
+    work = request.work_config
 
     pat_token = work.get("pat_token", "")
     if not pat_token:
@@ -1119,24 +1158,18 @@ def upload_file(work_id):
                 return respond(500, None, "上传成功但未获取到 file_id")
             return respond(0, {"success": True, "file_id": file_id, "file_name": file_name}, "ok")
         else:
-            error_msg = result.get("msg", "上传失败")
-            app.logger.info(f"[上传文件] 失败: {error_msg}")
-            return respond(500, None, error_msg)
+            upstream_msg = result.get("msg")
+            return respond(500, None, _sanitize_error(
+                default="文件上传失败，请稍后重试", upstream_msg=upstream_msg))
     except Exception as e:
-        return respond(500, None, str(e))
+        return respond(500, None, _sanitize_error(exc=e, default="文件上传失败，请稍后重试"))
 
 
-@app.route("/api/works/<work_id>/execute", methods=["POST"])
+@app.route("/api/works/<work_id>/workflow/run", methods=["POST"])
+@require_work_access
 def execute_workflow(work_id):
     """执行工作流（通过 Coze API）"""
-    work = work_manager.get_work(work_id)
-    if work is None:
-        return respond(404, None, "作品不存在")
-
-    # 验证访问码
-    access_code = request.headers.get("X-Access-Code", "") or request.args.get("access_code", "")
-    if work.get("access_code") and access_code != work.get("access_code"):
-        return respond(403, None, "访问码错误")
+    work = request.work_config
 
     pat_token = work.get("pat_token", "")
     workflow_id = work.get("coze_workflow_id", "") or work.get(
@@ -1147,90 +1180,50 @@ def execute_workflow(work_id):
         return respond(400, None, "该工作流未正确配置，请联系管理员")
 
     data = request.get_json(force=True) or {}
-    user_inputs = data.get("inputs", {})
+    user_inputs = data.get("params", {})
     stream = data.get("stream", False)
 
-    # 构建 parameters
-    # 需要根据参数类型处理值：
-    # - File 类型：值已经是 file_id，需要包装为 {"file_id": "xxx"}
-    # - Object 类型：值是 JSON 对象，需要序列化为字符串
-    # - 其他类型：直接传入
+    # 构建 parameters：按参数类型白名单转换（F3-R1：抽离 convert_param，非法返 400）
     parameters = {}
     input_params = [p for p in work.get("parameters", []) if p.get("group") != "output"]
 
-    for param in input_params:
-        name = param.get("name", "")
-        value = user_inputs.get(name, param.get("default", ""))
-        param_type = param.get("type", "String")
+    try:
+        for param in input_params:
+            name = param.get("name", "")
+            value = user_inputs.get(name, param.get("default", ""))
+            param_type = param.get("type", "String")
 
-        if not value and value != 0 and value is not False:
-            # 空值跳过（有默认值的话用默认值）
-            if param.get("default"):
-                value = param["default"]
-            else:
-                continue
+            if not value and value != 0 and value is not False:
+                # 空值跳过（有默认值的话用默认值）
+                if param.get("default"):
+                    value = param["default"]
+                else:
+                    continue
 
-        if param_type == "File" and value:
-            # File 类型：包装为 {"file_id": "xxx"}
-            if not (isinstance(value, str) and value.startswith("{")):
-                value = json.dumps({"file_id": value})
-            parameters[name] = value
-        elif param_type == "Object":
-            # Object 类型：如果是字符串尝试解析为 JSON，否则序列化
-            if isinstance(value, str):
-                try:
-                    parsed = json.loads(value)
-                    value = json.dumps(parsed)
-                except json.JSONDecodeError:
-                    value = json.dumps({"value": value})
-            elif isinstance(value, dict):
-                value = json.dumps(value)
-            parameters[name] = value
-        elif param_type == "Array":
-            # Array 类型：如果是字符串，尝试按分隔符拆分或解析为 JSON
-            if isinstance(value, str):
-                try:
-                    parsed = json.loads(value)
-                    if isinstance(parsed, list):
-                        value = json.dumps(parsed)
-                    else:
-                        value = json.dumps([parsed])
-                except json.JSONDecodeError:
-                    # 尝试按常见分隔符拆分
-                    for sep in [",", "，", ";", "；", "\n"]:
-                        if sep in value:
-                            value = json.dumps([v.strip() for v in value.split(sep) if v.strip()])
-                            break
-                    else:
-                        value = json.dumps([value])
-            elif isinstance(value, list):
-                value = json.dumps(value)
-            parameters[name] = value
-        elif param_type == "Integer":
-            try:
-                parameters[name] = int(value)
-            except (ValueError, TypeError):
-                parameters[name] = value
-        elif param_type == "Number":
-            try:
-                parameters[name] = float(value)
-            except (ValueError, TypeError):
-                parameters[name] = value
-        elif param_type == "Boolean":
-            if isinstance(value, str):
-                parameters[name] = value.lower() in ("true", "1", "yes", "是")
-            else:
-                parameters[name] = bool(value)
-        elif param_type == "Time" and value:
-            parameters[name] = str(value)
-        else:
-            parameters[name] = value
+            parameters[name] = convert_param(name, param_type, value)
+    except ParamError as e:
+        return respond(400, None, str(e))
 
     if stream:
         # 流式执行
         def generate():
             """SSE 生成器：转发 Coze 工作流流式执行为增量事件。"""
             resp = None
+
+            def _fallback_run(reason):
+                # R5：流式失败 → 降级到非流式 run，结果包装为 delta + done
+                app.logger.warning("F3 流式执行降级到非流式 run: %s", reason)
+                ok, payload = _run_workflow_sync(pat_token, workflow_id, parameters)
+                if ok:
+                    output_str = payload if isinstance(payload, str) \
+                        else json.dumps(payload, ensure_ascii=False)
+                    yield "data: " + json.dumps(
+                        {"delta": output_str}, ensure_ascii=False) + "\n\n"
+                    yield "data: {\"done\": true}\n\n"
+                else:
+                    yield "data: " + json.dumps(
+                        {"error": payload}, ensure_ascii=False) + "\n\n"
+
             try:
                 url = f"{coze_client.COZE_API_BASE}/v1/workflow/stream_run"
                 headers = {
@@ -1277,36 +1270,26 @@ def execute_workflow(work_id):
                             content = event_data.get("content", "")
                             if content:
                                 yield "data: " + json.dumps(
-                                    {"type": "delta", "content": content}, ensure_ascii=False
+                                    {"delta": content}, ensure_ascii=False
                                 ) + "\n\n"
                         elif current_event == "Done":
                             yield "data: " + json.dumps(
-                                {"type": "done"}, ensure_ascii=False
+                                {"done": True}, ensure_ascii=False
                             ) + "\n\n"
                         elif current_event == "Error":
-                            error_msg = event_data.get("error_message", "执行失败")
-                            # 添加类型不匹配的友好提示
-                            if "can't convert" in error_msg:
-                                error_msg += (
-                                    "\n\n提示：这通常是因为参数类型配置与 Coze 工作流定义不一致。"
-                                    "请检查编辑参数中的类型是否和 Coze 工作流开始节点的参数类型匹配。"
-                                )
-                            yield "data: " + json.dumps(
-                                {"type": "error", "content": error_msg}, ensure_ascii=False
-                            ) + "\n\n"
-                        elif current_event == "Interrupt":
-                            interrupt_data = event_data.get("interrupt_data", {})
-                            yield "data: " + json.dumps(
-                                {"type": "interrupt", "content": interrupt_data},
-                                ensure_ascii=False,
-                            ) + "\n\n"
+                            upstream_msg = event_data.get("error_message")
+                            # R5：上游报错 → 降级到非流式 run
+                            for chunk in _fallback_run(upstream_msg or "upstream Error event"):
+                                yield chunk
+                            break
 
-                yield "data: " + json.dumps({"type": "stream_end"}, ensure_ascii=False) + "\n\n"
-                yield "data: {\"done\": true}\n\n"
+                else:
+                    # 循环正常结束（未因 Error break）→ 兜底 done
+                    yield "data: {\"done\": true}\n\n"
             except Exception as e:
-                yield "data: " + json.dumps(
-                    {"type": "error", "content": str(e)}, ensure_ascii=False
-                ) + "\n\n"
+                # R5：流式异常 → 降级到非流式 run
+                for chunk in _fallback_run(e):
+                    yield chunk
             finally:
                 if resp is not None:
                     resp.close()
@@ -1318,55 +1301,107 @@ def execute_workflow(work_id):
         )
     else:
         # 非流式执行
-        try:
-            url = f"{coze_client.COZE_API_BASE}/v1/workflow/run"
-            headers = {
-                "Authorization": f"Bearer {pat_token}",
-                "Content-Type": "application/json"
-            }
-            body = {
-                "workflow_id": workflow_id,
-                "parameters": parameters
-            }
-            resp = requests.post(url, headers=headers, json=body, timeout=120)
-            resp.raise_for_status()
-            result = resp.json()
-
-            if result.get("code") == 0:
-                output_data = result.get("data", "")
-                return respond(
-                    0,
-                    {
-                        "success": True,
-                        "content": output_data,
-                        "debug_url": result.get("debug_url", ""),
-                    },
-                    "ok",
-                )
-            else:
-                error_msg = result.get("msg", "执行失败")
-                # 添加类型不匹配的友好提示
-                if "can't convert" in error_msg:
-                    error_msg += "（参数类型可能与 Coze 工作流定义不一致，请检查参数配置）"
-                return respond(500, None, error_msg)
-        except Exception as e:
-            return respond(500, None, str(e))
+        ok, payload = _run_workflow_sync(pat_token, workflow_id, parameters)
+        if ok:
+            return respond(0, {"output": payload}, "ok")
+        return respond(500, None, payload)
 
 
 # ==================== 工具函数 ====================
 
-def _build_coze_chat_request(work_config, user_message, conversation_id="", parameters=None):
-    """构建 Coze 对话请求体"""
+class ParamError(ValueError):
+    """参数类型转换失败（含参数名与原因，F3-R1）。"""
+
+
+ALLOWED_PARAM_TYPES = {"String", "Integer", "Number", "Boolean", "Time", "Object", "Array", "File"}
+
+
+def convert_param(name, ptype, value):
+    """按 Coze 参数类型白名单转换值；Integer/Number 非法抛 ParamError（F3-R1）。
+
+    Object/Array/File 保留前端依赖的友好处理（分隔符拆分、兜底包装），
+    仅 Integer/Number 转换失败时抛错（原实现会静默保留原值透传）。
+    """
+    if ptype not in ALLOWED_PARAM_TYPES:
+        raise ParamError(f"参数 {name} 类型不合法: 不支持的类型 {ptype!r}")
+    if value is None:
+        return ""
+    if ptype == "Integer":
+        try:
+            return int(value)
+        except (ValueError, TypeError) as e:
+            raise ParamError(f"参数 {name} 类型不合法: Integer 无法转换 {value!r}") from e
+    if ptype == "Number":
+        try:
+            return float(value)
+        except (ValueError, TypeError) as e:
+            raise ParamError(f"参数 {name} 类型不合法: Number 无法转换 {value!r}") from e
+    if ptype == "Boolean":
+        if isinstance(value, bool):
+            return value
+        if isinstance(value, str):
+            return value.lower() in ("true", "1", "yes", "是")
+        return bool(value)
+    if ptype == "File":
+        if isinstance(value, str) and value.startswith("{"):
+            return value
+        return json.dumps({"file_id": value})
+    if ptype == "Object":
+        if isinstance(value, str):
+            try:
+                return json.dumps(json.loads(value))
+            except json.JSONDecodeError:
+                return json.dumps({"value": value})
+        return json.dumps(value)
+    if ptype == "Array":
+        if isinstance(value, str):
+            try:
+                parsed = json.loads(value)
+                return json.dumps(parsed if isinstance(parsed, list) else [parsed])
+            except json.JSONDecodeError:
+                for sep in [",", "，", ";", "；", "\n"]:
+                    if sep in value:
+                        return json.dumps([v.strip() for v in value.split(sep) if v.strip()])
+                return json.dumps([value])
+        return json.dumps(value)
+    # String / Time
+    return str(value)
+
+
+def _run_workflow_sync(pat_token, workflow_id, parameters):
+    """非流式调用 Coze workflow/run（F3-R5：供流式降级与非流式路径共用）。
+
+    返回 (ok, payload)：
+      ok=True  → payload 为工作流输出 data
+      ok=False → payload 为脱敏后的错误提示
+    """
+    url = f"{coze_client.COZE_API_BASE}/v1/workflow/run"
+    headers = {
+        "Authorization": f"Bearer {pat_token}",
+        "Content-Type": "application/json",
+    }
+    body = {"workflow_id": workflow_id, "parameters": parameters}
+    try:
+        resp = requests.post(url, headers=headers, json=body, timeout=120)
+        resp.raise_for_status()
+        result = resp.json()
+        if result.get("code") == 0:
+            return True, result.get("data", "")
+        return False, _sanitize_error(
+            default="执行失败，请稍后重试", upstream_msg=result.get("msg"))
+    except Exception as e:
+        return False, _sanitize_error(exc=e, default="执行失败，请稍后重试")
+
+
+def _build_coze_chat_request(work_config, user_message, conversation_id="", parameters=None, user_id=""):
+    """构建 Coze 对话请求体；conversation_id 由路由放入 URL Query。"""
     body = {
         "bot_id": work_config["coze_bot_id"],
-        "user_id": "visitor_" + str(uuid.uuid4())[:8],
+        "user_id": user_id or "visitor_" + str(uuid.uuid4())[:8],
         "stream": True,
         "auto_save_history": True,
         "additional_messages": []
     }
-
-    if conversation_id:
-        body["conversation_id"] = conversation_id
 
     # 处理消息内容
     if user_message:

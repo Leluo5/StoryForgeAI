@@ -604,6 +604,91 @@ class TestChat:
             assert r.status_code == 200
             assert "text/event-stream" in r.headers["Content-Type"]
 
+    def test_stream_event_format(self, fake_wm, fake_cc):
+        # R3：SSE 事件契约统一为 delta/done/error，不含旧 type/content 字段
+        app_mod.work_manager.works = [{"id": "w1", "name": "x", "is_public": True}]
+        with mock.patch("app.requests.post") as mp:
+            class _Iter:
+                def __init__(self):
+                    self.lines = [
+                        b"event: conversation.message.delta",
+                        'data: {"type":"answer","content":"你好"}'.encode("utf-8"),
+                        b"event: conversation.message.delta",
+                        'data: {"type":"answer","content":"世界"}'.encode("utf-8"),
+                        b"event: conversation.chat.completed",
+                        b'data: {"conversation_id":"c1"}',
+                    ]
+
+                def __iter__(self):
+                    return iter(self.lines)
+
+            class _Resp:
+                encoding = "utf-8"
+
+                def __init__(self):
+                    self._lines = _Iter()
+
+                def raise_for_status(self):
+                    return None
+
+                def iter_lines(self):
+                    return self._lines
+
+                def close(self):
+                    return None
+
+            mp.return_value = _Resp()
+            r = app_mod.app.test_client().post("/api/works/w1/chat",
+                                               json={"message": "hi"})
+            body = r.get_data(as_text=True)
+            assert '"delta": "你好"' in body
+            assert '"delta": "世界"' in body
+            assert '"done": true' in body
+            assert '"conversation_id": "c1"' in body
+            assert '"type"' not in body  # 旧格式已移除
+
+    @staticmethod
+    def _completed_response():
+        resp = mock.Mock()
+        resp.headers = {"Content-Type": "text/event-stream"}
+        resp.iter_lines.return_value = [
+            b"event: conversation.chat.completed",
+            b'data: {"id":"chat-1","conversation_id":"c1"}',
+        ]
+        return resp
+
+    def test_conversation_id_is_sent_as_query(self, fake_wm, fake_cc):
+        app_mod.work_manager.works = [{"id": "w1", "name": "x", "is_public": True}]
+        with mock.patch("app.requests.post") as mp:
+            mp.return_value = self._completed_response()
+            app_mod.app.test_client().post(
+                "/api/works/w1/chat",
+                json={"message": "hi", "conversation_id": "c1", "user_id": "visitor_1"},
+            )
+        assert mp.call_args.kwargs.get("params") == {"conversation_id": "c1"}
+        assert "conversation_id" not in mp.call_args.kwargs["json"]
+
+    def test_user_id_is_forwarded(self, fake_wm, fake_cc):
+        app_mod.work_manager.works = [{"id": "w1", "name": "x", "is_public": True}]
+        with mock.patch("app.requests.post") as mp:
+            mp.return_value = self._completed_response()
+            app_mod.app.test_client().post(
+                "/api/works/w1/chat",
+                json={"message": "hi", "user_id": "visitor_1"},
+            )
+        assert mp.call_args.kwargs["json"]["user_id"] == "visitor_1"
+
+    def test_error_sanitized(self, fake_wm, fake_cc):
+        # R4：上游异常原文（含敏感串）不得透传到前端 SSE
+        app_mod.work_manager.works = [{"id": "w1", "name": "x", "is_public": True}]
+        secret = "Bearer pat-secret-leak-12345"
+        with mock.patch("app.requests.post", side_effect=Exception(secret)):
+            r = app_mod.app.test_client().post(
+                "/api/works/w1/chat", json={"message": "hi"})
+        body = r.get_data(as_text=True)
+        assert secret not in body
+        assert "对话失败" in body
+
 
 # ---------- 上传文件 ----------
 
@@ -619,26 +704,51 @@ class TestUpload:
                                            data={"file": (io.BytesIO(b"x"), "a.png")})
         assert r.status_code == 400
 
+    def test_unauthorized(self, fake_wm):
+        # R6：upload 接入 require_work_access，设码作品未携带 token → 403
+        app_mod.work_manager.works = [{"id": "w1", "name": "x", "is_public": True,
+                                       "access_code": "abc", "pat_token": "p"}]
+        r = app_mod.app.test_client().post("/api/works/w1/upload",
+                                           data={"file": (io.BytesIO(b"x"), "a.png")})
+        assert r.status_code == 403
+
+    def test_success_returns_file_id(self, fake_wm):
+        # R8：上传成功返回 {file_id} 契约断言
+        app_mod.work_manager.works = [{"id": "w1", "name": "x", "is_public": True,
+                                       "pat_token": "p"}]
+        with mock.patch("app.requests.post") as mp:
+            mp.return_value = mock.Mock(
+                status_code=200, raise_for_status=lambda: None,
+                json=lambda: {"code": 0, "data": {"id": "fid_123", "file_name": "a.png"}})
+            r = app_mod.app.test_client().post(
+                "/api/works/w1/upload",
+                data={"file": (io.BytesIO(b"hello"), "a.png")})
+        assert r.status_code == 200
+        payload = r.get_json() or {}
+        assert payload["data"]["file_id"] == "fid_123"
+        assert payload["data"]["success"] is True
+
 
 # ---------- 执行工作流 ----------
 
 class TestExecute:
     def test_404(self, fake_wm):
-        r = app_mod.app.test_client().post("/api/works/nope/execute", json={})
+        r = app_mod.app.test_client().post("/api/works/nope/workflow/run", json={})
         assert r.status_code == 404
 
     def test_missing_config(self, fake_wm):
         app_mod.work_manager.works = [{"id": "w1", "name": "x", "is_public": True,
                                        "pat_token": "", "coze_meta": {}}]
-        r = app_mod.app.test_client().post("/api/works/w1/execute", json={})
+        r = app_mod.app.test_client().post("/api/works/w1/workflow/run", json={})
         assert r.status_code == 400
 
     def test_wrong_access(self, fake_wm):
         app_mod.work_manager.works = [{"id": "w1", "name": "x", "is_public": True,
                                        "access_code": "abc", "pat_token": "p",
                                        "coze_workflow_id": "wf1"}]
+        # R6：execute 统一接入 require_work_access，无效 X-Access-Token → 403
         r = app_mod.app.test_client().post(
-            "/api/works/w1/execute", json={}, headers={"X-Access-Code": "bad"})
+            "/api/works/w1/workflow/run", json={}, headers={"X-Access-Token": "bad"})
         assert r.status_code == 403
 
     def test_sync_ok(self, fake_wm, fake_cc):
@@ -656,11 +766,186 @@ class TestExecute:
             mp.return_value = mock.Mock(status_code=200,
                                         raise_for_status=lambda: None,
                                         json=lambda: {"code": 0, "data": "结果"})
-            r = app_mod.app.test_client().post("/api/works/w1/execute", json={
-                "inputs": {"n": "5", "arr": "1,2,3", "obj": '{"a":1}',
+            r = app_mod.app.test_client().post("/api/works/w1/workflow/run", json={
+                "params": {"n": "5", "arr": "1,2,3", "obj": '{"a":1}',
                            "f": "fileid", "b": "true", "num": "1.5"},
             })
             assert r.status_code == 200
+
+    def test_converted_params_passed_to_upstream(self, fake_wm, fake_cc):
+        # R8：八类型转换后，传给上游的 parameters 值正确（Integer "5"→5 等）
+        app_mod.work_manager.works = [{"id": "w1", "name": "x", "is_public": True,
+                                       "pat_token": "p", "coze_workflow_id": "wf1",
+                                       "parameters": [
+                                           {"name": "n", "type": "Integer"},
+                                           {"name": "num", "type": "Number"},
+                                           {"name": "b", "type": "Boolean"},
+                                           {"name": "s", "type": "String"},
+                                       ]}]
+        with mock.patch("app.requests.post") as mp:
+            mp.return_value = mock.Mock(status_code=200,
+                                        raise_for_status=lambda: None,
+                                        json=lambda: {"code": 0, "data": "结果"})
+            app_mod.app.test_client().post("/api/works/w1/workflow/run", json={
+                "params": {"n": "5", "num": "1.5", "b": "true", "s": "hi"},
+                "stream": False})
+        sent_body = mp.call_args.kwargs["json"]
+        assert sent_body["workflow_id"] == "wf1"
+        assert sent_body["parameters"]["n"] == 5
+        assert sent_body["parameters"]["num"] == 1.5
+        assert sent_body["parameters"]["b"] is True
+        assert sent_body["parameters"]["s"] == "hi"
+
+    def test_non_stream_returns_output_field(self, fake_wm, fake_cc):
+        # R8：非流式成功返回 {data:{output}} 契约
+        app_mod.work_manager.works = [{"id": "w1", "name": "x", "is_public": True,
+                                       "pat_token": "p", "coze_workflow_id": "wf1"}]
+        with mock.patch("app.requests.post") as mp:
+            mp.return_value = mock.Mock(status_code=200,
+                                        raise_for_status=lambda: None,
+                                        json=lambda: {"code": 0, "data": "输出内容"})
+            r = app_mod.app.test_client().post(
+                "/api/works/w1/workflow/run", json={"params": {}, "stream": False})
+        assert r.status_code == 200
+        payload = r.get_json() or {}
+        assert payload["data"]["output"] == "输出内容"
+
+    def test_error_sanitized(self, fake_wm, fake_cc):
+        # R4：execute 上游异常原文不透传，返回通用提示
+        app_mod.work_manager.works = [{"id": "w1", "name": "x", "is_public": True,
+                                       "pat_token": "p", "coze_workflow_id": "wf1"}]
+        secret = "internal-stack-trace-leak-xyz"
+        with mock.patch("app.requests.post", side_effect=Exception(secret)):
+            r = app_mod.app.test_client().post(
+                "/api/works/w1/workflow/run", json={"params": {}, "stream": False})
+        payload = r.get_json() or {}
+        message = payload.get("message", "")
+        assert secret not in message
+        assert "执行失败" in message
+
+    def test_stream_fallback_on_exception(self, fake_wm, fake_cc):
+        # R5：流式执行抛异常 → 自动降级到非流式 run，下发 delta + done
+        app_mod.work_manager.works = [{"id": "w1", "name": "x", "is_public": True,
+                                       "pat_token": "p", "coze_workflow_id": "wf1"}]
+        with mock.patch("app.requests.post") as mp:
+            run_resp = mock.Mock(status_code=200,
+                                 raise_for_status=lambda: None,
+                                 json=lambda: {"code": 0, "data": "降级输出"})
+            mp.side_effect = [Exception("stream broken"), run_resp]
+            r = app_mod.app.test_client().post(
+                "/api/works/w1/workflow/run", json={"params": {}, "stream": True})
+            body = r.get_data(as_text=True)
+            assert r.status_code == 200
+            assert '"delta": "降级输出"' in body
+            assert '"done": true' in body
+            assert '"error"' not in body
+            called_urls = [c.args[0] for c in mp.call_args_list]
+            assert any("workflow/run" in u and "stream_run" not in u
+                       for u in called_urls)
+
+    def test_stream_fallback_on_error_event(self, fake_wm, fake_cc):
+        # R5：上游主动发 Error 事件 → 降级到非流式 run
+        app_mod.work_manager.works = [{"id": "w1", "name": "x", "is_public": True,
+                                       "pat_token": "p", "coze_workflow_id": "wf1"}]
+        with mock.patch("app.requests.post") as mp:
+            class _Iter:
+                def __init__(self):
+                    self.lines = [
+                        b"event: Error",
+                        b'data: {"error_message":"upstream boom"}',
+                    ]
+
+                def __iter__(self):
+                    return iter(self.lines)
+
+            class _StreamResp:
+                encoding = "utf-8"
+
+                def __init__(self):
+                    self._lines = _Iter()
+
+                def raise_for_status(self):
+                    return None
+
+                def iter_lines(self):
+                    return self._lines
+
+                def close(self):
+                    return None
+
+            run_resp = mock.Mock(status_code=200,
+                                 raise_for_status=lambda: None,
+                                 json=lambda: {"code": 0, "data": "兜底结果"})
+            mp.side_effect = [_StreamResp(), run_resp]
+            r = app_mod.app.test_client().post(
+                "/api/works/w1/workflow/run", json={"params": {}, "stream": True})
+            body = r.get_data(as_text=True)
+            assert r.status_code == 200
+            assert '"delta": "兜底结果"' in body
+            assert '"done": true' in body
+            assert "upstream boom" not in body  # 上游错误原文不透传
+
+
+# ---------- 参数类型转换（F3-R1） ----------
+
+class TestConvertParam:
+    def test_integer(self):
+        assert app_mod.convert_param("n", "Integer", "5") == 5
+        assert app_mod.convert_param("n", "Integer", 5) == 5
+
+    def test_integer_invalid_raises(self):
+        with pytest.raises(app_mod.ParamError):
+            app_mod.convert_param("n", "Integer", "abc")
+
+    def test_number(self):
+        assert app_mod.convert_param("x", "Number", "1.5") == 1.5
+
+    def test_number_invalid_raises(self):
+        with pytest.raises(app_mod.ParamError):
+            app_mod.convert_param("x", "Number", "not-a-number")
+
+    def test_boolean(self):
+        assert app_mod.convert_param("b", "Boolean", "true") is True
+        assert app_mod.convert_param("b", "Boolean", "True") is True
+        assert app_mod.convert_param("b", "Boolean", "1") is True
+        assert app_mod.convert_param("b", "Boolean", "false") is False
+        assert app_mod.convert_param("b", "Boolean", "0") is False
+        assert app_mod.convert_param("b", "Boolean", True) is True
+        assert app_mod.convert_param("b", "Boolean", False) is False
+
+    def test_string_and_time(self):
+        assert app_mod.convert_param("s", "String", "hello") == "hello"
+        assert app_mod.convert_param("t", "Time", "2026-01-01") == "2026-01-01"
+
+    def test_file(self):
+        assert app_mod.convert_param("f", "File", "fileid123") == '{"file_id": "fileid123"}'
+        assert app_mod.convert_param("f", "File", '{"file_id":"x"}') == '{"file_id":"x"}'
+
+    def test_object(self):
+        assert app_mod.convert_param("o", "Object", '{"a":1}') == '{"a": 1}'
+        assert app_mod.convert_param("o", "Object", {"a": 1}) == '{"a": 1}'
+
+    def test_array_json(self):
+        assert app_mod.convert_param("a", "Array", '["1","2"]') == '["1", "2"]'
+
+    def test_array_csv_split(self):
+        assert app_mod.convert_param("a", "Array", "1,2,3") == '["1", "2", "3"]'
+
+    def test_array_list(self):
+        assert app_mod.convert_param("a", "Array", ["x", "y"]) == '["x", "y"]'
+
+    def test_unknown_type_raises(self):
+        with pytest.raises(app_mod.ParamError):
+            app_mod.convert_param("x", "Evil", "1")
+
+    def test_execute_invalid_integer_returns_400(self, fake_wm):
+        # 集成：execute 收到非法 Integer → 400（F3-R1 验收）
+        app_mod.work_manager.works = [{"id": "w1", "name": "x", "is_public": True,
+                                       "pat_token": "p", "coze_workflow_id": "wf1",
+                                       "parameters": [{"name": "n", "type": "Integer", "group": "input"}]}]
+        r = app_mod.app.test_client().post(
+            "/api/works/w1/workflow/run", json={"params": {"n": "not-int"}, "stream": False})
+        assert r.status_code == 400
 
 
 # ---------- 启动脚本 ----------

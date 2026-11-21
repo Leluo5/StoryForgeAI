@@ -26,6 +26,7 @@
         adminToken: '',               // 内存态（不落 sessionStorage，避免明文 Token 持久化）
         accessTokens: {},          // { workId: token }
         conversationId: null,
+        userId: 'visitor_' + Date.now().toString(36) + Math.random().toString(36).slice(2, 10),
         isStreaming: false,
         uploadedFile: null,        // { file_id, file_name }
         mixedUploadedFile: null,
@@ -145,7 +146,7 @@
         refreshWork: (id) => api.request(`/api/admin/works/${id}/refresh`, { method: 'POST' }),
 
         // 体验者 API（需要 access token）
-        async chat(workId, message, conversationId, parameters, signal) {
+        async chat(workId, message, conversationId, parameters, signal, userId) {
             const token = state.accessTokens[workId] || '';
             const resp = await api.requestRaw(`/api/works/${workId}/chat`, {
                 method: 'POST',
@@ -156,6 +157,7 @@
                 body: JSON.stringify({
                     message: message,
                     conversation_id: conversationId || '',
+                    user_id: userId || '',
                     parameters: parameters || {}
                 }),
                 signal: signal
@@ -173,7 +175,7 @@
             formData.append('file', file);
             const resp = await api.requestRaw(`/api/works/${workId}/upload`, {
                 method: 'POST',
-                headers: { 'X-Access-Code': token },
+                headers: { 'X-Access-Token': token },
                 body: formData
             });
             const data = await resp.json();
@@ -498,7 +500,13 @@
         const sendBtn = document.getElementById(sendBtnId);
         const input = document.getElementById(inputId);
 
-        sendBtn.addEventListener('click', () => sendChatMessage(work, messagesId, inputId, sendBtnId, fileInputId, previewAreaId));
+        sendBtn.addEventListener('click', () => {
+            if (state.isStreaming) {
+                abortActiveStream();
+                return;
+            }
+            sendChatMessage(work, messagesId, inputId, sendBtnId, fileInputId, previewAreaId);
+        });
 
         input.onkeydown = (e) => {
             if (e.key === 'Enter' && !e.shiftKey) {
@@ -628,7 +636,10 @@
 
         // Disable input
         state.isStreaming = true;
-        sendBtn.disabled = true;
+        sendBtn.disabled = false;
+        sendBtn.classList.add('is-stop');
+        sendBtn.title = '停止生成';
+        sendBtn.setAttribute('aria-label', '停止生成');
         input.disabled = true;
 
         // Add typing indicator
@@ -639,7 +650,9 @@
         state.streamController = controller;
 
         try {
-            const resp = await api.chat(work.id, messageContent, state.conversationId, null, controller.signal);
+            const resp = await api.chat(
+                work.id, messageContent, state.conversationId, null, controller.signal, state.userId
+            );
             if (controller.signal.aborted) throw new DOMException('Aborted', 'AbortError');
 
             // Remove typing indicator
@@ -667,16 +680,20 @@
                     if (!line.startsWith('data: ')) continue;
                     try {
                         const event = JSON.parse(line.slice(6));
-                        if (event.type === 'delta') {
-                            fullContent += event.content;
+                        if (event.delta !== undefined) {
+                            fullContent += event.delta;
                             bubbleEl.innerHTML = `<div class="chat-message-content">${renderMarkdown(fullContent)}</div>`;
                             scrollMessages(messagesId);
-                        } else if (event.type === 'done') {
+                        } else if (event.done) {
                             if (event.conversation_id) {
                                 state.conversationId = event.conversation_id;
                             }
-                        } else if (event.type === 'error') {
-                            bubbleEl.innerHTML = `<div class="chat-message-content"><span style="color:var(--danger)">错误: ${escapeHtml(event.content)}</span></div>`;
+                        } else if (event.error !== undefined) {
+                            bubbleEl.innerHTML = `<div class="chat-message-content"><span style="color:var(--danger)">错误: ${escapeHtml(event.error)}</span></div>`;
+                            renderRetryButton(bubbleEl, () => {
+                                input.value = message;
+                                sendChatMessage(work, messagesId, inputId, sendBtnId, fileInputId, previewAreaId);
+                            });
                         }
                     } catch (e) { /* ignore parse errors */ }
                 }
@@ -690,16 +707,23 @@
         } catch (e) {
             typingEl.remove();
             // 主动取消（切换页面/卸载）不弹错误气泡，避免竞态残留提示
-            if (e && e.name === 'AbortError') {
+            if (controller.signal.aborted || (e && e.name === 'AbortError')) {
                 // 静默：请求已被取消
             } else {
-                addMessage(messagesId, 'ai', `请求失败: ${e.message}`);
+                const msgEl = addMessage(messagesId, 'ai', `请求失败: ${e.message}`);
+                renderRetryButton(msgEl.querySelector('.chat-message-content') || msgEl, () => {
+                    input.value = message;
+                    sendChatMessage(work, messagesId, inputId, sendBtnId, fileInputId, previewAreaId);
+                });
             }
         } finally {
             // 仅当未被更晚的请求替换时才清空引用
             if (state.streamController === controller) state.streamController = null;
             state.isStreaming = false;
             sendBtn.disabled = false;
+            sendBtn.classList.remove('is-stop');
+            sendBtn.title = '发送';
+            sendBtn.setAttribute('aria-label', '发送');
             input.disabled = false;
             input.focus();
             saveChatHistory(work.id, messagesId);
@@ -755,6 +779,24 @@
         container.appendChild(msgEl);
         scrollMessages(messagesId);
         return msgEl;
+    }
+
+    // F3-R7：流式中断/失败后的重试按钮（IIFE 内用 addEventListener 绑定，避免 inline onclick 失效）
+    function renderRetryButton(containerEl, onClick) {
+        const wrap = document.createElement('div');
+        wrap.style.marginTop = '8px';
+        const btn = document.createElement('button');
+        btn.type = 'button';
+        btn.textContent = '重试';
+        btn.style.cssText = 'padding:5px 14px;border:1px solid var(--border,#ccc);'
+            + 'background:var(--surface,#fff);border-radius:6px;cursor:pointer;font-size:13px;';
+        btn.addEventListener('click', () => {
+            wrap.remove();
+            onClick();
+        });
+        wrap.appendChild(btn);
+        containerEl.appendChild(wrap);
+        return wrap;
     }
 
     function addTypingIndicator(messagesId) {
@@ -1115,7 +1157,7 @@
         contentEl.innerHTML = escapeHtml('') + '<div class="loading-spinner"></div> 正在处理...';
 
         try {
-            const resp = await api.chat(work.id, '', '', parameters);
+            const resp = await api.chat(work.id, '', '', parameters, null, state.userId);
             const reader = resp.body.getReader();
             const decoder = new TextDecoder();
             let fullContent = '';
@@ -1131,17 +1173,14 @@
                     if (!line.startsWith('data: ')) continue;
                     try {
                         const event = JSON.parse(line.slice(6));
-                        if (event.type === 'delta') {
-                            fullContent += event.content;
+                        if (event.delta !== undefined) {
+                            fullContent += event.delta;
                             contentEl.innerHTML = renderMarkdown(fullContent);
-                        } else if (event.type === 'done') {
-                            // Coze 工作流 done 事件可能包含最终结果
-                            if (event.content) {
-                                fullContent = event.content;
-                                contentEl.innerHTML = renderMarkdown(fullContent);
-                            }
-                        } else if (event.type === 'error') {
-                            contentEl.innerHTML = `<span style="color:var(--danger)">错误: ${escapeHtml(event.content)}</span>`;
+                        } else if (event.done) {
+                            // 流结束标记，最终结果已在 delta 中累计
+                        } else if (event.error !== undefined) {
+                            contentEl.innerHTML = `<span style="color:var(--danger)">错误: ${escapeHtml(event.error)}</span>`;
+                            renderRetryButton(contentEl, () => submitForm(work, formId, resultId, resultContentId));
                         }
                     } catch (e) { /* ignore */ }
                 }
@@ -1152,6 +1191,7 @@
             }
         } catch (e) {
             contentEl.innerHTML = `<span style="color:var(--danger)">请求失败: ${escapeHtml(e.message)}</span>`;
+            renderRetryButton(contentEl, () => submitForm(work, formId, resultId, resultContentId));
         }
     }
 
@@ -1167,7 +1207,7 @@
         const typingEl = addTypingIndicator(messagesId);
 
         try {
-            const resp = await api.chat(work.id, '', '', parameters);
+            const resp = await api.chat(work.id, '', '', parameters, null, state.userId);
             typingEl.remove();
 
             const aiMsgEl = addMessage(messagesId, 'ai', '', true);
@@ -1188,14 +1228,15 @@
                     if (!line.startsWith('data: ')) continue;
                     try {
                         const event = JSON.parse(line.slice(6));
-                        if (event.type === 'delta') {
-                            fullContent += event.content;
+                        if (event.delta !== undefined) {
+                            fullContent += event.delta;
                             bubbleEl.innerHTML = renderMarkdown(fullContent);
                             scrollMessages(messagesId);
-                        } else if (event.type === 'done') {
+                        } else if (event.done) {
                             if (event.conversation_id) state.conversationId = event.conversation_id;
-                        } else if (event.type === 'error') {
-                            bubbleEl.innerHTML = `<span style="color:var(--danger)">错误: ${escapeHtml(event.content)}</span>`;
+                        } else if (event.error !== undefined) {
+                            bubbleEl.innerHTML = `<span style="color:var(--danger)">错误: ${escapeHtml(event.error)}</span>`;
+                            renderRetryButton(bubbleEl, () => sendFormAsChat(work, parameters));
                         }
                     } catch (e) { /* ignore */ }
                 }
@@ -1204,7 +1245,9 @@
             if (fullContent) bubbleEl.innerHTML = renderMarkdown(fullContent);
         } catch (e) {
             typingEl.remove();
-            addMessage(messagesId, 'ai', `请求失败: ${e.message}`);
+            const msgEl = addMessage(messagesId, 'ai', `请求失败: ${e.message}`);
+            renderRetryButton(msgEl.querySelector('.chat-message-content') || msgEl,
+                () => sendFormAsChat(work, parameters));
         } finally {
             state.isStreaming = false;
             document.getElementById(sendBtnId).disabled = false;
@@ -2359,6 +2402,12 @@
             form.appendChild(group);
         });
 
+        // F3-R2/R7：流式输出开关（默认开启；关闭则走非流式 {output} 契约）
+        const streamLabel = document.createElement('label');
+        streamLabel.style.cssText = 'display:inline-flex;align-items:center;gap:6px;margin:8px 0;font-size:13px;cursor:pointer;';
+        streamLabel.innerHTML = '<input type="checkbox" data-stream-toggle checked style="cursor:pointer"> 流式输出';
+        form.appendChild(streamLabel);
+
         // Submit button
         const submitBtn = document.createElement('button');
         submitBtn.type = 'button';
@@ -2450,20 +2499,36 @@
         state.streamController = controller;
 
         try {
+            // F3-R2：stream 可切换（表单内 [data-stream-toggle] 复选框，默认流式）
+            const streamToggle = form.querySelector('[data-stream-toggle]');
+            const useStream = !streamToggle || streamToggle.checked;
+
             const token = state.accessTokens[work.id] || '';
-            const resp = await api.requestRaw(`/api/works/${work.id}/execute`, {
+            const resp = await api.requestRaw(`/api/works/${work.id}/workflow/run`, {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
-                    'X-Access-Code': token
+                    'X-Access-Token': token
                 },
-                body: JSON.stringify({ inputs: parameters, stream: true }),
+                body: JSON.stringify({ params: parameters, stream: useStream }),
                 signal: controller.signal
             });
 
             if (!resp.ok) {
                 const data = await resp.json().catch(() => ({}));
                 contentEl.innerHTML = `<span style="color:var(--danger)">错误: ${escapeHtml(data.message || data.error || '请求失败')}</span>`;
+                renderRetryButton(contentEl, () => executeWorkflowForm(work, form, resultEl, contentEl));
+                return;
+            }
+
+            if (!useStream) {
+                // 非流式：后端返回 {code, data:{output}, message}
+                const data = await resp.json().catch(() => ({}));
+                const output = (data && data.data && data.data.output !== undefined)
+                    ? data.data.output
+                    : (data && data.output !== undefined ? data.output : '');
+                contentEl.innerHTML = renderMarkdown(typeof output === 'string'
+                    ? (output || '(无输出)') : JSON.stringify(output, null, 2));
                 return;
             }
 
@@ -2482,11 +2547,14 @@
                     if (!line.startsWith('data: ')) continue;
                     try {
                         const event = JSON.parse(line.slice(6));
-                        if (event.type === 'delta') {
-                            fullContent += event.content;
+                        if (event.delta !== undefined) {
+                            fullContent += event.delta;
                             contentEl.innerHTML = renderMarkdown(fullContent);
-                        } else if (event.type === 'error') {
-                            contentEl.innerHTML = `<span style="color:var(--danger)">错误: ${escapeHtml(event.content)}</span>`;
+                        } else if (event.done) {
+                            // 流结束标记
+                        } else if (event.error !== undefined) {
+                            contentEl.innerHTML = `<span style="color:var(--danger)">错误: ${escapeHtml(event.error)}</span>`;
+                            renderRetryButton(contentEl, () => executeWorkflowForm(work, form, resultEl, contentEl));
                         }
                     } catch (e) { /* ignore */ }
                 }
@@ -2499,6 +2567,7 @@
             // 主动取消（切换页面/卸载）不渲染错误，避免竞态残留
             if (!(e && e.name === 'AbortError')) {
                 contentEl.innerHTML = `<span style="color:var(--danger)">请求失败: ${escapeHtml(e.message)}</span>`;
+                renderRetryButton(contentEl, () => executeWorkflowForm(work, form, resultEl, contentEl));
             }
         } finally {
             if (state.streamController === controller) state.streamController = null;
