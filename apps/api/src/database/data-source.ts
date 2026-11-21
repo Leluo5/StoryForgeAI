@@ -42,6 +42,7 @@ import { CharacterPortabilityJobEntity } from './character-portability-job.entit
 import { CharacterTextAnchorEntity } from './character-text-anchor.entity';
 import { CharacterArchiveScanEntity } from './character-archive-scan.entity';
 import { PlotNodeCharacterOwnerEntity } from './plot-node-character-owner.entity';
+import { CollabSettingEntity } from './collab-setting.entity';
 import { AuthBase1736899200000 } from './migrations/1736899200000-auth-base';
 import { WritingBase1736985600000 } from './migrations/1736985600000-writing-base';
 import { RevisionBase1760000000000 } from './migrations/1760000000000-revision-base';
@@ -103,7 +104,8 @@ export function createDataSource(databaseUrl: string = env.DATABASE_URL): DataSo
       CharacterPortabilityJobEntity,
       CharacterTextAnchorEntity,
       CharacterArchiveScanEntity,
-      PlotNodeCharacterOwnerEntity
+      PlotNodeCharacterOwnerEntity,
+      CollabSettingEntity
     ],
     migrations: [
       AuthBase1736899200000,
@@ -120,7 +122,8 @@ export function createDataSource(databaseUrl: string = env.DATABASE_URL): DataSo
       CharacterRelationTypeSeed1760500002000,
       CharacterAnchors1760500003000,
       PlotNodeCharacterOwners1760500004000,
-      CharacterAiTools1760500005000
+      CharacterAiTools1760500005000,
+      CollabBase1760700000000
     ],
     migrationsTableName: 'migrations',
     synchronize: false,

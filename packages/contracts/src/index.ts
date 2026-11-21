@@ -10,3 +10,4 @@ export * from './character-anchor';
 export * from './character-ai';
 export * from './character-portability';
 export * from './arkclaw';
+export * from './collab';

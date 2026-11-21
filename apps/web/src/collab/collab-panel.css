@@ -1,0 +1,237 @@
+/* F11 多平台 Agent 协同 · 面板样式 */
+.collab-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.collab-card {
+  border: 1px solid var(--border-color, #e2e2e2);
+  border-radius: 10px;
+  padding: 14px 16px;
+  background: var(--card-bg, #fff);
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.collab-card-title {
+  font-size: 14px;
+  font-weight: 600;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.collab-block {
+  border-top: 1px dashed var(--border-color, #e2e2e2);
+  padding-top: 10px;
+  margin-top: 4px;
+}
+
+.collab-block-title {
+  font-size: 13px;
+  font-weight: 600;
+  margin-bottom: 6px;
+}
+
+.collab-label {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-size: 13px;
+  color: var(--text-secondary, #555);
+}
+
+.collab-select,
+.collab-textarea {
+  width: 100%;
+  border: 1px solid var(--border-color, #d9d9d9);
+  border-radius: 6px;
+  padding: 7px 9px;
+  font-size: 13px;
+  background: var(--input-bg, #fff);
+  color: var(--text-primary, #222);
+  box-sizing: border-box;
+}
+
+.collab-textarea {
+  min-height: 64px;
+  resize: vertical;
+}
+
+.collab-fields {
+  display: flex;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.collab-check {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+  color: var(--text-primary, #222);
+}
+
+.collab-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.collab-btn {
+  padding: 7px 14px;
+  border: none;
+  border-radius: 6px;
+  background: var(--accent, #1f6feb);
+  color: #fff;
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.collab-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.collab-btn-small {
+  padding: 4px 9px;
+  font-size: 12px;
+}
+
+.collab-btn-ghost {
+  background: transparent;
+  color: var(--text-primary, #222);
+  border: 1px solid var(--border-color, #d9d9d9);
+}
+
+.collab-btn-danger {
+  background: #d33;
+}
+
+.collab-link {
+  align-self: flex-start;
+  background: none;
+  border: none;
+  color: var(--accent, #1f6feb);
+  font-size: 12px;
+  cursor: pointer;
+  padding: 0;
+}
+
+.collab-modal-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.4);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 100;
+}
+
+.collab-modal {
+  background: var(--card-bg, #fff);
+  border-radius: 12px;
+  padding: 18px 20px;
+  width: min(420px, 90vw);
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  box-shadow: 0 8px 30px rgba(0, 0, 0, 0.18);
+}
+
+.collab-writeback {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  border: 1px solid var(--border-color, #eee);
+  border-radius: 8px;
+  padding: 10px 12px;
+}
+
+.collab-writeback-field {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  font-size: 13px;
+}
+
+.collab-archive {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.collab-tag-danger {
+  background: #fde7e7;
+  color: #d33;
+}
+
+.collab-sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+}
+
+.collab-tag {
+  font-size: 11px;
+  padding: 2px 7px;
+  border-radius: 10px;
+  background: var(--accent-soft, #e6f0ff);
+  color: var(--accent, #1f6feb);
+}
+
+.collab-tag-muted {
+  background: var(--muted-bg, #f0f0f0);
+  color: var(--text-secondary, #777);
+}
+
+.collab-note {
+  font-size: 12px;
+  color: var(--text-secondary, #777);
+}
+
+.collab-muted {
+  color: var(--text-secondary, #777);
+  font-size: 13px;
+}
+
+.collab-error {
+  font-size: 12px;
+  color: #d33;
+}
+
+.collab-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.collab-item {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.collab-item-title {
+  font-size: 13px;
+  font-weight: 500;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.collab-item-sub {
+  font-size: 12px;
+  color: var(--text-secondary, #777);
+}
