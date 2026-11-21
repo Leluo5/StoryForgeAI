@@ -10,6 +10,8 @@ const WorksPage = lazy(() => import('./works/works-page').then((mod) => ({ defau
 const WorkbenchRoute = lazy(() => import('./workbench/workbench-page').then((mod) => ({ default: mod.WorkbenchRoute })));
 const ArkClawPage = lazy(() => import('./arkclaw/arkclaw-page').then((mod) => ({ default: mod.ArkClawPage })));
 const KnowledgePage = lazy(() => import('./knowledge/knowledge-page').then((mod) => ({ default: mod.KnowledgePage })));
+const AgentsPage = lazy(() => import('./agent/agents-page').then((mod) => ({ default: mod.AgentsPage })));
+const WorkflowsPage = lazy(() => import('./agent/workflows-page').then((mod) => ({ default: mod.WorkflowsPage })));
 
 export function App() {
   const [session, setSession] = useState<SessionResponse>();
@@ -30,6 +32,8 @@ export function App() {
       <Route path="/works" element={<Suspense fallback={<p role="status">正在加载作品库</p>}><WorksPage /></Suspense>} />
       <Route path="/knowledge" element={<Suspense fallback={<p role="status">正在加载知识库</p>}><KnowledgePage /></Suspense>} />
       <Route path="/arkclaw" element={<Suspense fallback={<p role="status">正在加载 ArkClaw 验证页</p>}><ArkClawPage /></Suspense>} />
+      <Route path="/agents" element={<Suspense fallback={<p role="status">正在加载智能体管理</p>}><AgentsPage /></Suspense>} />
+      <Route path="/workflows" element={<Suspense fallback={<p role="status">正在加载工作流管理</p>}><WorkflowsPage /></Suspense>} />
       <Route path="/works/:workId/write/:chapterId" element={<Suspense fallback={<p role="status">正在加载工作台</p>}><WorkbenchRoute /></Suspense>} />
       <Route path="*" element={<Navigate to="/works" replace />} />
     </Routes>

@@ -54,6 +54,17 @@ describe('WorksPage', () => {
     expect(entry).toHaveAttribute('href', '/knowledge');
   });
 
+  it('renders the agent and workflow management entry links beside the knowledge base', async () => {
+    renderPage();
+    await screen.findByText('既有作品');
+    const agents = screen.getByRole('link', { name: '智能体管理' });
+    expect(agents).toBeVisible();
+    expect(agents).toHaveAttribute('href', '/agents');
+    const workflows = screen.getByRole('link', { name: '工作流管理' });
+    expect(workflows).toBeVisible();
+    expect(workflows).toHaveAttribute('href', '/workflows');
+  });
+
   it('archives only after native confirmation', async () => {
     vi.mocked(updateWork).mockResolvedValue({ ...work, status: 'archived' });
     const confirm = vi.spyOn(window, 'confirm').mockReturnValue(true);

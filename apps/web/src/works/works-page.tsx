@@ -113,6 +113,8 @@ export function WorksPage() {
           </form>
           <Button variant="ghost" onClick={() => navigate('/arkclaw')}>ArkClaw 验证</Button>
           <Link to="/knowledge"><Button variant="secondary">知识库</Button></Link>
+          <Link to="/agents"><Button variant="secondary">智能体管理</Button></Link>
+          <Link to="/workflows"><Button variant="secondary">工作流管理</Button></Link>
           <Button variant="primary" onClick={openCreate}>新建作品</Button>
         </div>
       </div>
