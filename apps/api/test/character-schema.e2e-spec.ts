@@ -227,11 +227,16 @@ describe('character schema migrations', () => {
     expect(first(nodeCount).total).toBe('1');
   });
 
-  // 角色域迁移共 6 个：1760500000000(base) ~ 1760500005000(ai-tools 种子)。
-  // F11（1760700000000-collab-base、1760700001000-ai-task-role-profile-scope）注册在角色域之后，
-  // 撤销时需先撤销这 2 个，再撤销角色域 6 个，共 8 次；重放后断言仍成立（scope 约束含 role_profile 但不含 character）。
+  // 角色域迁移共 6 个（1760500000000(base) ~ 1760500005000(ai-tools 种子)）。
+  // 注：不能假设它们是注册顺序的「最后 6 个」——知识库等后续域会追加 migration。
+  // 故循环回滚，直到 character 域 14 张表全部消失（防御上限 40 次，超限则断言失败暴露错位）。
   it('rolls back and re-applies the six character migrations', async () => {
-    for (let index = 0; index < 8; index += 1) {
+    for (let index = 0; index < 40; index += 1) {
+      const remaining: Array<{ table_name: string }> = await dataSource.query(
+        "SELECT table_name FROM information_schema.tables WHERE table_schema = 'public' AND table_name = ANY($1)",
+        [CHARACTER_TABLES]
+      );
+      if (remaining.length === 0) break;
       await dataSource.undoLastMigration();
     }
     const afterDown: Array<{ table_name: string }> = await dataSource.query(

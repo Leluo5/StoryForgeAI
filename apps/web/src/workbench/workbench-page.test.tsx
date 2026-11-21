@@ -7,6 +7,22 @@ import type { Chapter, TreeResponse } from '@storyforge/contracts';
 import { createEmptyDocument } from '@storyforge/editor-schema';
 import { WorkbenchRoute, type WorkbenchClient } from './workbench-page';
 
+// 知识库面板会调 knowledge-client 发起真实请求，回归用例只验证「面板接入 + tab 存在」，故 mock 客户端隔离网络
+vi.mock('../knowledge/knowledge-client', () => ({
+  createEntryPreview: vi.fn(),
+  commitEntry: vi.fn(),
+  searchEntries: vi.fn(async () => ({ total: 0, items: [] })),
+  getEntry: vi.fn(),
+  updateEntry: vi.fn(),
+  deleteEntry: vi.fn(),
+  linkEntry: vi.fn(),
+  extractOutline: vi.fn(),
+  exportMarkdown: vi.fn(),
+  importPreview: vi.fn(),
+  importMarkdown: vi.fn(),
+  validateMarkdown: vi.fn()
+}));
+
 const workId = crypto.randomUUID();
 const chapterId = crypto.randomUUID();
 const volumeId = crypto.randomUUID();
@@ -87,7 +103,8 @@ describe('WorkbenchRoute', () => {
     expect(await screen.findByTestId('location')).toHaveTextContent('?tab=manuscript&panel=chapter');
     const slider = await screen.findByRole('slider', { name: '左侧栏宽度' });
     fireEvent.change(slider, { target: { value: '296' } });
-    expect(JSON.parse(localStorage.getItem(`storyforge-workbench:${workId}`)!)).toMatchObject({ leftWidth: 296 });
+    // 持久化经 rAF 节流 + 150ms 防抖异步写入，需等待防抖完成后再断言 localStorage
+    await waitFor(() => expect(JSON.parse(localStorage.getItem(`storyforge-workbench:${workId}`)!)).toMatchObject({ leftWidth: 296 }));
   });
 
   it('restores focus to the narrow-screen navigation trigger after closing its dialog', async () => {
@@ -121,5 +138,16 @@ describe('WorkbenchRoute', () => {
     await waitFor(() => expect(screen.getByTestId('location')).toHaveTextContent('?tab=plot&panel=plot'));
     expect(await screen.findByRole('button', { name: '新建空树' })).toBeVisible();
     await waitFor(() => expect(api.plot?.fetchTree).toHaveBeenCalledWith(workId));
+  });
+
+  it('renders the knowledge panel from a deep link and lists the tab', async () => {
+    const api = client();
+    renderPage(api, `/works/${workId}/write/${chapterId}?tab=manuscript&panel=knowledge`);
+    await waitFor(() => expect(screen.getByTestId('location')).toHaveTextContent('?tab=manuscript&panel=knowledge'));
+    // 知识库面板已挂载
+    expect(await screen.findByRole('heading', { name: '知识库' })).toBeVisible();
+    // 右侧面板 tab 包含知识库
+    const rightTabs = screen.getByRole('tablist', { name: '右侧面板' });
+    expect(within(rightTabs).getByRole('tab', { name: '知识库' })).toBeVisible();
   });
 });
