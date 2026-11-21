@@ -32,7 +32,7 @@ export function App() {
     <Routes>
       <Route path="/" element={<Navigate to="/works" replace />} />
       <Route path="/login" element={<Navigate to="/works" replace />} />
-      {/* 功能模块壳：左侧共享导航工具栏 + 右侧模块内容，六个模块共用同一布局 */}
+      {/* 功能模块壳：左侧共享导航工具栏 + 右侧模块内容，七个路由共用同一布局 */}
       <Route element={<ModuleLayout />}>
         <Route path="/works" element={<Suspense fallback={<p role="status">正在加载作品库</p>}><WorksPage /></Suspense>} />
         <Route path="/knowledge" element={<Suspense fallback={<p role="status">正在加载知识库</p>}><KnowledgePage /></Suspense>} />
@@ -40,11 +40,11 @@ export function App() {
         <Route path="/workflows" element={<Suspense fallback={<p role="status">正在加载工作流管理</p>}><WorkflowsPage /></Suspense>} />
         <Route path="/models" element={<Suspense fallback={<p role="status">正在加载模型</p>}><ModelsPage /></Suspense>} />
         <Route path="/admin" element={<Suspense fallback={<p role="status">正在加载后台</p>}><AdminPage /></Suspense>} />
+        {/* 写作工作台：纳入共享壳，常驻左侧侧边栏；「作品库」入口保持高亮（NavLink 子路径自动激活） */}
+        <Route path="/works/:workId/write/:chapterId" element={<Suspense fallback={<p role="status">正在加载工作台</p>}><WorkbenchRoute /></Suspense>} />
       </Route>
       {/* ArkClaw 验证页：main 演进功能，独立于模块壳 */}
       <Route path="/arkclaw" element={<Suspense fallback={<p role="status">正在加载 ArkClaw 验证页</p>}><ArkClawPage /></Suspense>} />
-      {/* 工作台独立于模块壳：进入作品后全屏沉浸式编辑，不含左侧工具栏 */}
-      <Route path="/works/:workId/write/:chapterId" element={<Suspense fallback={<p role="status">正在加载工作台</p>}><WorkbenchRoute /></Suspense>} />
       <Route path="*" element={<Navigate to="/works" replace />} />
     </Routes>
   </BrowserRouter>;
