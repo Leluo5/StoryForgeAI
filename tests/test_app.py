@@ -10,6 +10,7 @@ import io
 import json
 import os
 import sys
+import uuid
 from unittest import mock
 
 import pytest
@@ -162,6 +163,35 @@ def test_role_agent_scheduler_wires_agent_components():
     assert isinstance(scheduler.clients["trae"], TraeAgentClient)
 
 
+def test_admin_page_exposes_global_agent_pool():
+    root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    with open(os.path.join(root, "templates", "index.html"), encoding="utf-8") as f:
+        template = f.read()
+    with open(os.path.join(root, "static", "js", "app.js"), encoding="utf-8") as f:
+        script = f.read()
+
+    assert 'data-tab="agents"' in template
+    assert 'id="admin-agents-list"' in template
+    assert "从 Coze 导入资源" in template
+    assert "getGlobalAgents" in script
+    assert "/api/agents?project_id=_global&kind=unclassified" in script
+    assert "renderAdminAgents" in script
+
+
+def test_admin_page_exposes_workflow_pool():
+    root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    with open(os.path.join(root, "templates", "index.html"), encoding="utf-8") as f:
+        template = f.read()
+    with open(os.path.join(root, "static", "js", "app.js"), encoding="utf-8") as f:
+        script = f.read()
+
+    assert 'data-tab="workflows"' in template
+    assert 'id="admin-workflows-list"' in template
+    assert "getWorkflows" in script
+    assert "/api/workflows?project_id=_global" in script
+    assert "renderAdminWorkflows" in script
+
+
 # ---------- 首页 ----------
 
 class TestIndex:
@@ -293,21 +323,51 @@ class TestImportWorks:
                                            headers=_auth(admin_token))
         assert r.status_code == 400
 
-    def test_bot_success(self, admin_token, fake_cc, fake_wm):
+    def test_bot_success(self, admin_token, fake_cc, fake_wm, monkeypatch):
+        agent_service = mock.Mock()
+        agent_service.import_coze_agent.return_value = {
+            "id": "agent-1", "name": "小说角色塑造师",
+        }
+        monkeypatch.setattr(app_mod, "_agent_service", agent_service)
+        fake_wm.import_from_coze = mock.Mock(return_value={"id": "new1", "name": "智能体"})
+
         r = app_mod.app.test_client().post("/api/admin/works/import",
-                                           json={"pat_token": "p",
+                                           json={"pat_token": "p", "workspace_id": "ws1",
                                                  "bot_ids": [{"id": "b1", "name": "b"}]},
                                            headers=_auth(admin_token))
         assert r.status_code == 200
-        assert r.get_json()["data"]["imported"] == 1
+        data = r.get_json()["data"]
+        assert data["imported"] == 1
+        assert data["results"][0] == {
+            "success": True, "agent_id": "agent-1",
+            "name": "小说角色塑造师", "type": "bot",
+        }
+        agent_service.import_coze_agent.assert_called_once_with(
+            {"name": "智能体", "bot_id": "b1"}, "ws1")
+        fake_wm.import_from_coze.assert_not_called()
 
-    def test_workflow_success(self, admin_token, fake_cc, fake_wm):
+    def test_workflow_success(self, admin_token, fake_cc, fake_wm, monkeypatch):
+        wf_service = mock.Mock()
+        wf_service.import_coze_workflow.return_value = {
+            "id": "workflow-1", "name": "章节流",
+        }
+        monkeypatch.setattr(app_mod, "_workflow_service", wf_service)
+        fake_wm.import_workflow = mock.Mock(return_value={"id": "old-wf", "name": "w"})
+
         r = app_mod.app.test_client().post("/api/admin/works/import",
-                                           json={"pat_token": "p",
+                                           json={"pat_token": "p", "workspace_id": "ws1",
                                                  "bot_ids": [{"id": "wf1", "name": "w",
                                                               "_source_type": "workflow"}]},
                                            headers=_auth(admin_token))
         assert r.status_code == 200
+        data = r.get_json()["data"]
+        assert data["results"][0] == {
+            "success": True, "workflow_id": "workflow-1",
+            "name": "章节流", "type": "workflow",
+        }
+        wf_service.import_coze_workflow.assert_called_once_with(
+            {"id": "wf1", "name": "w", "description": "", "icon_url": ""}, "ws1")
+        fake_wm.import_workflow.assert_not_called()
 
     def test_bot_info_fail(self, admin_token, fake_wm):
         cc = _FakeCozeClient()
@@ -365,6 +425,61 @@ class TestImportWorkflow:
                                            json={"pat_token": "p", "workflow_id": "nope"},
                                            headers=_auth(admin_token))
         assert r.status_code == 404
+
+
+# ---------- 工作流管理 API ----------
+
+class TestWorkflowApi:
+    def _payload(self, **over):
+        base = {
+            "name": "章节流", "description": "生成章节",
+            "platform": "coze",
+            "platform_config": {"workflow_id": f"wf-api-{uuid.uuid4().hex[:8]}",
+                                "workspace_id": "ws"},
+            "llm_config": {"base_url": "", "api_key": "", "model": "gpt"},
+        }
+        base.update(over)
+        return base
+
+    def test_create_and_list(self):
+        client = app_mod.app.test_client()
+        r = client.post("/api/workflows", json=self._payload())
+        assert r.status_code == 200
+        data = r.get_json()["data"]
+        assert data["project_id"] == "_global"
+        assert data["source"] == "manual"
+
+        r2 = client.get("/api/workflows?project_id=_global&page=1&page_size=10")
+        assert r2.status_code == 200
+        listed = r2.get_json()["data"]
+        assert listed["total"] >= 1
+        assert listed["items"][0]["id"] == data["id"]
+
+    def test_get_update_status_delete(self):
+        client = app_mod.app.test_client()
+        created = client.post("/api/workflows", json=self._payload()).get_json()["data"]
+        wid = created["id"]
+
+        r = client.get(f"/api/workflows/{wid}?project_id=_global")
+        assert r.get_json()["data"]["name"] == "章节流"
+
+        r = client.put(f"/api/workflows/{wid}?project_id=_global",
+                       json={"name": "改名后"})
+        assert r.get_json()["data"]["name"] == "改名后"
+
+        r = client.post(f"/api/workflows/{wid}/status?project_id=_global",
+                        json={"status": "disabled"})
+        assert r.get_json()["data"]["status"] == "disabled"
+
+        r = client.delete(f"/api/workflows/{wid}?project_id=_global&force=true")
+        assert r.get_json()["data"] == {"success": True}
+
+    def test_status_rejects_invalid(self):
+        client = app_mod.app.test_client()
+        created = client.post("/api/workflows", json=self._payload()).get_json()["data"]
+        r = client.post(f"/api/workflows/{created['id']}/status?project_id=_global",
+                        json={"status": "paused"})
+        assert r.status_code == 400
 
 
 # ---------- 作品管理（admin） ----------

@@ -53,6 +53,9 @@ def test_validate_agent_identity_enforces_kind_fields():
     validate_agent_identity("role_agent", {"role_id": "r1"})
     validate_agent_identity("tool_agent", {"tool_name": "gen_outline"})
     validate_agent_identity("flow_step_agent", {"step_order": 1})
+    validate_agent_identity("unclassified", {})
+    with pytest.raises(AppError):
+        validate_agent_identity("unclassified", {"role_id": "r1"})
     with pytest.raises(AppError):
         validate_agent_identity("role_agent", {"tool_name": "x"})
     with pytest.raises(AppError):

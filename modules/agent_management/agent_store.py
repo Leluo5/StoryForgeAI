@@ -90,7 +90,10 @@ class AgentStore:
             "role_id": payload.get("role_id"),
             "tool_name": payload.get("tool_name"),
             "step_order": payload.get("step_order"),
-            "scope": payload.get("scope") or ("role" if kind == "role_agent" else "project"),
+            "scope": payload.get("scope") or (
+                "global" if kind == "unclassified"
+                else "role" if kind == "role_agent" else "project"
+            ),
             "platform": platform,
             "platform_config": platform_config,
             "credential_source": "global",

@@ -9,6 +9,7 @@ from typing import Any, Dict, List, Optional
 from ..common.errors import bad_request, not_found
 from ..common.storage import read_json
 from .agent_grouping import build_tree
+from .types import GLOBAL_AGENT_PROJECT_ID
 
 
 class AgentService:
@@ -31,6 +32,41 @@ class AgentService:
         orders = [int(s.get("step_order", 0)) for s in self.flow_template]
         if sorted(orders) != list(range(1, 12)):
             raise bad_request("flow_template 必须包含 1-11 完整步骤")
+
+    # ---------- Coze 全局 Agent 导入 ----------
+
+    def import_coze_agent(self, bot: Dict[str, Any], workspace_id: str = "") -> Dict[str, Any]:
+        """导入到全局未分类池；按 Coze bot_id 更新，且不持久化 PAT。"""
+        bot_id = str(bot.get("bot_id") or bot.get("id") or "")
+        if not bot_id:
+            raise bad_request("Coze Agent 缺少 bot_id")
+        onboarding = bot.get("onboarding_info") or {}
+        payload = {
+            "kind": "unclassified",
+            "name": bot.get("name") or "未命名 Agent",
+            "description": bot.get("description") or onboarding.get("prologue") or "",
+            "scope": "global",
+            "platform": "coze",
+            "platform_config": {"bot_id": bot_id, "workspace_id": workspace_id},
+            "model_config": {
+                "system_prompt": (bot.get("prompt_info") or {}).get("prompt") or "",
+            },
+            "source": "coze_import",
+        }
+        existing = next((
+            agent for agent in self.store.list_agents(GLOBAL_AGENT_PROJECT_ID)
+            if agent.get("kind") == "unclassified"
+            and (agent.get("platform_config") or {}).get("bot_id") == bot_id
+        ), None)
+        if existing is not None:
+            updates = {key: payload[key] for key in (
+                "name", "description", "scope", "platform", "platform_config", "model_config",
+            )}
+            return self.store.update_agent(
+                GLOBAL_AGENT_PROJECT_ID, existing["id"], updates,
+                note="同步 Coze Agent 元信息",
+            )
+        return self.store.create_agent(GLOBAL_AGENT_PROJECT_ID, payload)
 
     # ---------- 作品默认 Agent 开通 ----------
 

@@ -7,12 +7,13 @@ from typing import Any, Dict, Optional
 
 from ..common.errors import bad_request
 
-KINDS = {"role_agent", "tool_agent", "flow_step_agent"}
+KINDS = {"role_agent", "tool_agent", "flow_step_agent", "unclassified"}
 PLATFORMS = {"coze", "trae"}
 STATUSES = {"active", "disabled", "archived"}
 CHANGE_TYPES = {"create", "update", "archive", "restore", "rollback"}
 RESPONSE_FORMATS = {"text", "json", "markdown"}
-SCOPES = {"project", "role"}
+SCOPES = {"project", "role", "global"}
+GLOBAL_AGENT_PROJECT_ID = "_global"
 MAX_VERSIONS = 50
 STEP_MIN, STEP_MAX = 1, 11
 
@@ -93,11 +94,14 @@ def validate_platform_config(platform: str, raw: Optional[Dict[str, Any]]) -> Di
 def validate_agent_identity(kind: str, fields: Dict[str, Any]) -> None:
     """校验 kind 与归属字段组合。"""
     if kind not in KINDS:
-        raise bad_request("kind 须为 role_agent/tool_agent/flow_step_agent")
+        raise bad_request("kind 须为 role_agent/tool_agent/flow_step_agent/unclassified")
     role_id = fields.get("role_id")
     tool_name = fields.get("tool_name")
     step_order = fields.get("step_order")
-    if kind == "role_agent":
+    if kind == "unclassified":
+        if role_id or tool_name or step_order is not None:
+            raise bad_request("unclassified 不能提供 role_id/tool_name/step_order")
+    elif kind == "role_agent":
         if not role_id or tool_name or step_order is not None:
             raise bad_request("role_agent 必须且只能提供 role_id")
     elif kind == "tool_agent":

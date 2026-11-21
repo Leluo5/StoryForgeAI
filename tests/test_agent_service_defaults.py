@@ -86,3 +86,32 @@ def test_bind_does_not_overwrite_custom_step(env):
     service.bind_role_default_flow(project["id"], role["id"])
     again = role_store.get_bindings(project["id"], role["id"])[0]
     assert again["agent_ref_id"] == custom["id"]
+
+
+def test_import_coze_agent_uses_global_pool_and_is_idempotent(env):
+    service, store, _, _ = env
+    bot = {
+        "bot_id": "bot-role-writer",
+        "name": "小说角色塑造师",
+        "description": "生成角色设定",
+        "prompt_info": {"prompt": "你是小说角色塑造师"},
+    }
+
+    imported = service.import_coze_agent(bot, "workspace-1")
+    assert imported["project_id"] == "_global"
+    assert imported["kind"] == "unclassified"
+    assert imported["scope"] == "global"
+    assert imported["source"] == "coze_import"
+    assert imported["platform_config"] == {
+        "bot_id": "bot-role-writer", "workspace_id": "workspace-1",
+    }
+    assert imported["model_config"]["system_prompt"] == "你是小说角色塑造师"
+    assert "pat_token" not in imported
+
+    updated = service.import_coze_agent(
+        {**bot, "description": "更新后的角色设定"}, "workspace-1")
+    agents = store.list_agents("_global")
+    assert len(agents) == 1
+    assert updated["id"] == imported["id"]
+    assert updated["description"] == "更新后的角色设定"
+    assert updated["version_no"] == 2

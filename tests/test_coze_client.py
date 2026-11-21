@@ -180,6 +180,19 @@ class TestAllResources:
             res = client.get_all_resources()
         assert res["success"] is True
 
+    def test_both_fail_returns_error(self):
+        """PAT 无效等导致两个来源都失败时，必须返回 success:False + 具体原因，
+        而不是误报 success:True,total:0（避免用户分不清 PAT 错误与空间为空）。"""
+        client = CozeClient("bad_pat")
+        with mock.patch.object(client, "get_bot_list") as gb, \
+                mock.patch.object(client, "get_workflow_list") as gw:
+            gb.return_value = {"success": False, "error": "401 unauthorized"}
+            gw.return_value = {"success": False, "error": "401 unauthorized"}
+            res = client.get_all_resources()
+        assert res["success"] is False
+        assert res["total"] == 0
+        assert "401" in res["error"]
+
     def test_test_connection(self):
         client = CozeClient("pat")
         with mock.patch.object(client, "get_all_resources") as ga:

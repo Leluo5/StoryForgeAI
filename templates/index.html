@@ -215,7 +215,9 @@
         <div id="admin-panel" class="admin-section hidden">
             <div class="admin-tabs">
                 <button class="tab-btn active" data-tab="works" type="button">作品管理</button>
-                <button class="tab-btn" data-tab="import" type="button">导入作品</button>
+                <button class="tab-btn" data-tab="agents" type="button">Agent 管理</button>
+                <button class="tab-btn" data-tab="workflows" type="button">工作流管理</button>
+                <button class="tab-btn" data-tab="import" type="button">导入资源</button>
                 <button class="tab-btn" data-tab="settings" type="button">站点设置</button>
             </div>
 
@@ -233,10 +235,56 @@
                 </div>
             </div>
 
-            <!-- 导入作品 -->
+            <!-- Agent 管理 -->
+            <div id="tab-agents" class="tab-content">
+                <div class="import-card">
+                    <h3>全局未分类 Agent</h3>
+                    <p class="text-muted">从 Coze 导入的智能体会显示在这里，暂不绑定作品、角色、工具或流程步骤。</p>
+                </div>
+                <div class="admin-works-list" id="admin-agents-list">
+                    <!-- 动态生成 -->
+                </div>
+            </div>
+
+            <!-- 工作流管理 -->
+            <div id="tab-workflows" class="tab-content">
+                <div class="import-card">
+                    <div class="admin-works-toolbar">
+                        <h3>工作流管理</h3>
+                        <button class="btn btn-sm" id="btn-new-workflow" type="button">＋ 新建工作流</button>
+                    </div>
+                    <p class="text-muted">从 Coze 导入的工作流会显示在这里，支持启用/禁用、编辑与删除。</p>
+
+                    <!-- 新建/编辑工作流表单（默认隐藏） -->
+                    <div id="workflow-form" class="workflow-form hidden">
+                        <div class="form-group">
+                            <label for="workflow-name">名称</label>
+                            <input type="text" id="workflow-name" class="form-input" placeholder="请输入工作流名称">
+                        </div>
+                        <div class="form-group">
+                            <label for="workflow-description">描述</label>
+                            <textarea id="workflow-description" class="form-input" rows="2" placeholder="请输入工作流描述"></textarea>
+                        </div>
+                        <div class="form-group">
+                            <label for="workflow-platform-id">Coze 工作流 ID</label>
+                            <input type="text" id="workflow-platform-id" class="form-input" placeholder="coze workflow_id">
+                        </div>
+                        <div class="btn-row">
+                            <button class="btn-primary" id="btn-submit-workflow" type="button">保存</button>
+                            <button class="btn-secondary" id="btn-cancel-workflow" type="button">取消</button>
+                        </div>
+                    </div>
+                </div>
+                <div class="admin-works-list" id="admin-workflows-list">
+                    <!-- 动态生成 -->
+                </div>
+            </div>
+
+            <!-- 导入资源 -->
             <div id="tab-import" class="tab-content">
                 <div class="import-card">
-                    <h3>从 Coze 导入作品</h3>
+                    <h3>从 Coze 导入资源</h3>
+                    <p class="text-muted">智能体将进入 Agent 管理，工作流将进入工作流管理。</p>
                     <div class="form-group">
                         <label for="import-pat">PAT Token</label>
                         <input type="password" id="import-pat" class="form-input" placeholder="请输入 Coze PAT Token" aria-label="PAT Token">
@@ -255,13 +303,13 @@
 
                     <div class="btn-row">
                         <button class="btn-secondary" id="btn-test-pat" type="button">测试连接</button>
-                        <button class="btn-primary" id="btn-fetch-bots" type="button">获取作品列表</button>
+                        <button class="btn-primary" id="btn-fetch-bots" type="button">获取资源列表</button>
                     </div>
 
                     <!-- 资源列表（统一） -->
                     <div id="resource-list" class="bot-list resource-panel hidden" data-resource-panel="all">
                         <div class="bot-list-header">
-                            <h4>选择要导入的作品</h4>
+                            <h4>选择要导入的资源</h4>
                             <label class="checkbox-label">
                                 <input type="checkbox" id="select-all-resources" aria-label="全选所有资源"> 全选
                             </label>
@@ -269,7 +317,7 @@
                         <div id="resource-items" class="bot-items">
                             <!-- 动态生成 -->
                         </div>
-                        <button class="btn-primary" id="btn-import-selected-resources" type="button">导入选中作品</button>
+                        <button class="btn-primary" id="btn-import-selected-resources" type="button">导入选中资源</button>
                     </div>
                 </div>
             </div>
@@ -442,7 +490,7 @@
     <!-- ==================== Toast 提示 ==================== -->
     <div id="toast-container" class="toast-container"></div>
 
-    <script src="/static/js/app.js?v=4"></script>
+    <script src="/static/js/app.js?v=6"></script>
     <!-- F5→P3 知识库角色同步导入组件（全局 StoryForgeKBRoleImport） -->
     <script src="/static/js/novel_editor.js?v=2"></script>
     <!-- F7 剧情树面板组件（全局 StoryForgePlotPanel） -->

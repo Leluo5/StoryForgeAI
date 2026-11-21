@@ -292,18 +292,20 @@ def import_works():
         actual_id = bid.get("id", bid) if isinstance(bid, dict) else bid
 
         if source_type == "workflow":
-            # 导入工作流
+            # 导入工作流：进入独立工作流管理模块的全局未分类池
+            # Coze 工作流列表项可能同时带 id 与 workflow_id，优先取 workflow_id
+            actual_id = bid.get("workflow_id") or bid.get("id", bid) if isinstance(bid, dict) else bid
             wf_info = {
                 "id": actual_id,
                 "name": bid.get("name", ""),
                 "description": bid.get("description", ""),
                 "icon_url": bid.get("icon_url", ""),
             }
-            work = work_manager.import_workflow(wf_info, pat_token, workspace_id, access_code)
+            wf = _workflow_service.import_coze_workflow(wf_info, workspace_id)
             results.append({
                 "success": True,
-                "work_id": work["id"],
-                "name": work["name"],
+                "workflow_id": wf["id"],
+                "name": wf["name"],
                 "type": "workflow",
             })
         else:
@@ -312,11 +314,11 @@ def import_works():
             if not result.get("success"):
                 result = coze_client.get_bot_info(actual_id, is_published=False)
             if result.get("success"):
-                work = work_manager.import_from_coze(result["data"], pat_token, access_code)
+                agent = _agent_service.import_coze_agent(result["data"], workspace_id)
                 results.append({
                     "success": True,
-                    "work_id": work["id"],
-                    "name": work["name"],
+                    "agent_id": agent["id"],
+                    "name": agent["name"],
                     "type": "bot",
                 })
             else:
@@ -1469,6 +1471,29 @@ _novel_bp = create_blueprint(
 app.register_blueprint(_novel_bp)
 app.register_blueprint(create_agent_blueprint(_agent_service, _flow_progress_store))
 app.register_blueprint(_knowledge_bp)
+
+# 工作流管理模块：独立资源生命周期管理（参考 agent 模块四层结构）
+from modules.workflow_management.workflow_store import WorkflowStore as _WorkflowStore
+from modules.workflow_management.workflow_service import WorkflowService as _WorkflowService
+from modules.workflow_management.routes import create_blueprint as _create_workflow_blueprint
+
+_workflow_store = _WorkflowStore(os.path.join(DATA_DIR, "workflows"))
+_workflow_service = _WorkflowService(_workflow_store)
+app.register_blueprint(_create_workflow_blueprint(_workflow_service))
+
+
+def _bootstrap_workflow_migration():
+    """一次性存量迁移：把 work_manager 中 Coze 工作流作品幂等迁入全局池。
+
+    失败仅告警，不阻塞启动，可重复执行（按 workflow_id 幂等）。
+    """
+    try:
+        _workflow_service.migrate_from_work_manager(work_manager)
+    except Exception as _e:  # noqa: BLE001 - 引导阶段容错
+        app.logger.warning("[工作流迁移] 存量 Coze 工作流迁移失败: %s", _e)
+
+
+_bootstrap_workflow_migration()
 
 # 剧情推衍聊天室蓝图（F6）：模块级 bp，注册后挂载 /api/story/* 全部接口
 from modules.routes_story import bp as _story_bp

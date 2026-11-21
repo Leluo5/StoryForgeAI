@@ -24,5 +24,6 @@
 ## 四、功能说明
 
 - **功能名**：资源拉取与批量导入
-- **核心目标**：管理员从 Coze 平台拉取 bot / workflow / dataset 资源，批量导入为展示作品。
-- **涉及代码**：`coze_client.py`、`work_manager.py`、`app.py`（见 02-技术方案.md）。
+- **核心目标**：管理员从 Coze 平台拉取 bot / workflow / dataset 资源并分类导入：Bot 进入全局未分类 Agent 池，workflow / dataset 进入作品管理。
+- **涉及代码**：`coze_client.py`、`work_manager.py`、`modules/agent_management/`、`app.py`（见 02-技术方案.md）。
+- **2026-11-21 归属修正**：Coze Bot 是 Agent 智能体，不再创建展示作品；重复导入按 `bot_id` 更新原 Agent，且不持久化 PAT。

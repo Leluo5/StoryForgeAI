@@ -1159,6 +1159,25 @@ select.form-input {
     margin-top: var(--sp-1);
 }
 
+/* 工作流状态徽章 */
+.workflow-status {
+    padding: 1px 8px;
+    border-radius: 999px;
+    font-size: 11px;
+    font-weight: var(--fw-semibold);
+    line-height: 1.6;
+}
+
+.workflow-status-active {
+    background: rgba(16, 185, 129, 0.12);
+    color: #10b981;
+}
+
+.workflow-status-inactive {
+    background: rgba(148, 163, 184, 0.15);
+    color: #64748b;
+}
+
 .admin-work-actions {
     display: flex;
     gap: var(--sp-2);

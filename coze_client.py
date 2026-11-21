@@ -55,25 +55,39 @@ class CozeClient:
                         all_items.append(item)
                         seen_ids.add(item_id)
 
+        errors = []
+        succeeded = 0
+
         # 1. 智能体
         try:
             bot_result = self.get_bot_list(workspace_id)
             if bot_result.get("success"):
+                succeeded += 1
                 _add_items(bot_result.get("bots", []), "bot")
             else:
+                errors.append(f"智能体: {bot_result.get('error')}")
                 _logger.warning(f"[get_all_resources] bots failed: {bot_result.get('error')}")
         except Exception as e:
+            errors.append(f"智能体: {e}")
             _logger.warning(f"[get_all_resources] bots error: {e}")
 
         # 2. 工作流
         try:
             wf_result = self.get_workflow_list(workspace_id)
             if wf_result.get("success"):
+                succeeded += 1
                 _add_items(wf_result.get("items", []), "workflow")
             else:
+                errors.append(f"工作流: {wf_result.get('error')}")
                 _logger.warning(f"[get_all_resources] workflows failed: {wf_result.get('error')}")
         except Exception as e:
+            errors.append(f"工作流: {e}")
             _logger.warning(f"[get_all_resources] workflows error: {e}")
+
+        # 两个来源都失败（如 PAT 无效/无权限）→ 返回失败与具体原因，
+        # 避免误报 success:True,total:0 让用户分不清「PAT 错误」与「空间为空」。
+        if succeeded == 0:
+            return {"success": False, "error": "; ".join(errors) or "无法连接 Coze", "bots": [], "total": 0}
 
         _logger.info(f"[get_all_resources] total: {len(all_items)} items")
         return {"success": True, "bots": all_items, "total": len(all_items)}
@@ -84,7 +98,10 @@ class CozeClient:
         params = {
             "workspace_id": workspace_id,
             "page_num": 1,
-            "page_size": 50
+            "page_size": 50,
+            # 默认 published_online 只返回已发布正式版，草稿/未发布会被过滤，
+            # 导致 PAT 有效却查到空列表。用 all 返回所有状态，便于用户确认作品。
+            "publish_status": "all",
         }
         try:
             resp = requests.get(url, headers=self._headers(), params=params, timeout=15)

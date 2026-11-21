@@ -37,6 +37,8 @@
         cachedWorkflows: [],
         currentResourceTab: 'all',
         adminWorks: [],
+        adminAgents: [],
+        adminWorkflows: [],
         // 流式/请求取消控制：切换页面或页面卸载时 abort，避免竞态与泄漏
         streamController: null
     };
@@ -45,6 +47,9 @@
     const api = {
         async request(url, options = {}) {
             const headers = { 'Content-Type': 'application/json', ...options.headers };
+            if (!options.noAuth && state.adminToken) {
+                headers['X-Admin-Token'] = state.adminToken;
+            }
             try {
                 const resp = await fetch(url, { ...options, headers });
                 const data = await resp.json();
@@ -116,6 +121,22 @@
             body: JSON.stringify({ pat_token: pat, workflow_id: workflowId, workspace_id: workspaceId || '', access_code: accessCode })
         }),
         getAdminWorks: () => api.request('/api/admin/works'),
+        getGlobalAgents: () => api.request('/api/agents?project_id=_global&kind=unclassified&page_size=100'),
+        listWorkflows: () => api.request('/api/workflows?project_id=_global&page_size=100'),
+        createWorkflow: (data) => api.request('/api/workflows', {
+            method: 'POST',
+            body: JSON.stringify(data)
+        }),
+        updateWorkflow: (id, data) => api.request(`/api/workflows/${id}`, {
+            method: 'PUT',
+            body: JSON.stringify(data)
+        }),
+        deleteWorkflow: (id) => api.request(`/api/workflows/${id}?force=true`, { method: 'DELETE' }),
+        setWorkflowStatus: (id, status) => api.request(`/api/workflows/${id}/status`, {
+            method: 'POST',
+            body: JSON.stringify({ status })
+        }),
+        restoreWorkflow: (id) => api.request(`/api/workflows/${id}/restore`, { method: 'POST' }),
         updateWork: (id, data) => api.request(`/api/admin/works/${id}`, {
             method: 'PUT',
             body: JSON.stringify(data)
@@ -1228,9 +1249,11 @@
 
     async function loadAdminData() {
         try {
-            const [config, worksData] = await Promise.all([
+            const [config, worksData, agentsData, workflowsData] = await Promise.all([
                 api.getConfig(),
-                api.getAdminWorks()
+                api.getAdminWorks(),
+                api.getGlobalAgents(),
+                api.listWorkflows()
             ]);
 
             // Fill settings
@@ -1247,11 +1270,226 @@
             // Apply theme
             document.body.dataset.theme = config.theme || 'light';
 
-            // Render works list
+            // Render works and agents lists
             state.adminWorks = worksData.works || [];
+            state.adminAgents = agentsData.items || [];
+            state.adminWorkflows = workflowsData.items || [];
             renderAdminWorks(state.adminWorks);
+            renderAdminAgents(state.adminAgents);
+            renderAdminWorkflows(state.adminWorkflows);
         } catch (e) {
             showToast('加载数据失败: ' + e.message, 'error');
+        }
+    }
+
+    function renderAdminAgents(agents) {
+        const list = document.getElementById('admin-agents-list');
+        if (!list) return;
+        if (agents.length === 0) {
+            list.innerHTML = '<p style="color:var(--text-tertiary);text-align:center;padding:40px;">暂无已导入的智能体，请前往“导入资源”页面</p>';
+            return;
+        }
+
+        list.innerHTML = agents.map(agent => {
+            const platformConfig = agent.platform_config || {};
+            return `
+                <div class="admin-work-item" data-agent-id="${escapeHtml(agent.id)}">
+                    <div class="admin-work-icon" style="background:linear-gradient(135deg,var(--brand-500,#4f46e5),var(--violet-500,#a855f7));display:flex;align-items:center;justify-content:center;color:var(--text-inverse,#fff);font-size:16px;border-radius:var(--radius-sm);">AI</div>
+                    <div class="admin-work-info">
+                        <div class="admin-work-name">${escapeHtml(agent.name)}</div>
+                        <div class="admin-work-meta">
+                            <span>Coze 智能体 · 未分类</span>
+                            <span>Bot ID: ${escapeHtml(platformConfig.bot_id || '')}</span>
+                            <span>v${escapeHtml(String(agent.version_no || 1))}</span>
+                        </div>
+                    </div>
+                </div>
+            `;
+        }).join('');
+    }
+
+    // ==================== 工作流管理 ====================
+    // 国际化文案集中定义（项目无独立 i18n 文件，统一收敛于此）
+    const WORKFLOW_TEXT = {
+        empty: '暂无工作流，请前往“导入资源”页面导入，或点击右上角新建。',
+        status: {
+            active: '启用',
+            disabled: '禁用',
+            archived: '已归档'
+        },
+        btnToggle: '切换',
+        btnRestore: '恢复',
+        btnEdit: '编辑',
+        btnDelete: '删除',
+        source: {
+            manual: '手动创建',
+            coze_import: 'Coze 导入'
+        },
+        deleteConfirm: (name) => `确定要删除工作流「${name}」吗？此操作不可撤销。`,
+        statusConfirm: (name, status) => `确定要${status === 'active' ? '启用' : '禁用'}工作流「${name}」吗？`,
+        restoreConfirm: (name) => `确定要恢复已归档的工作流「${name}」吗？`
+    };
+
+    function renderAdminWorkflows(workflows) {
+        const list = document.getElementById('admin-workflows-list');
+        if (!list) return;
+        if (workflows.length === 0) {
+            list.innerHTML = `<p style="color:var(--text-tertiary);text-align:center;padding:40px;">${WORKFLOW_TEXT.empty}</p>`;
+            return;
+        }
+
+        list.innerHTML = workflows.map(wf => {
+            const platformConfig = wf.platform_config || {};
+            const workflowId = platformConfig.workflow_id || '';
+            const status = wf.status || 'active';
+            const statusLabel = WORKFLOW_TEXT.status[status] || status;
+            const statusClass = status === 'active' ? 'workflow-status-active' : 'workflow-status-inactive';
+            const sourceLabel = WORKFLOW_TEXT.source[wf.source] || wf.source || WORKFLOW_TEXT.source.manual;
+            // 已归档工作流不提供启停切换，改为「恢复」；非归档提供「切换」
+            const statusBtn = status === 'archived'
+                ? `<button class="btn-sm btn-restore-workflow" data-id="${escapeHtml(wf.id)}" data-name="${escapeHtml(wf.name)}" title="恢复">${WORKFLOW_TEXT.btnRestore}</button>`
+                : `<button class="btn-sm btn-toggle-workflow" data-id="${escapeHtml(wf.id)}" data-name="${escapeHtml(wf.name)}" data-status="${escapeHtml(status)}" title="切换状态">${WORKFLOW_TEXT.btnToggle}</button>`;
+            return `
+                <div class="admin-work-item" data-workflow-id="${escapeHtml(wf.id)}">
+                    <div class="admin-work-icon" style="background:linear-gradient(135deg,var(--brand-500,#4f46e5),var(--violet-500,#a855f7));display:flex;align-items:center;justify-content:center;color:var(--text-inverse,#fff);font-size:16px;border-radius:var(--radius-sm);">W</div>
+                    <div class="admin-work-info">
+                        <div class="admin-work-name">${escapeHtml(wf.name)}</div>
+                        <div class="admin-work-meta">
+                            <span>${escapeHtml(sourceLabel)}</span>
+                            <span>Workflow ID: ${escapeHtml(workflowId)}</span>
+                            <span class="workflow-status ${statusClass}">${escapeHtml(statusLabel)}</span>
+                            <span>v${escapeHtml(String(wf.version_no || 1))}</span>
+                        </div>
+                    </div>
+                    <div class="admin-work-actions">
+                        ${statusBtn}
+                        <button class="btn-sm btn-edit-workflow" data-id="${escapeHtml(wf.id)}" title="编辑">${WORKFLOW_TEXT.btnEdit}</button>
+                        <button class="btn-sm danger btn-delete-workflow" data-id="${escapeHtml(wf.id)}" data-name="${escapeHtml(wf.name)}" title="删除">${WORKFLOW_TEXT.btnDelete}</button>
+                    </div>
+                </div>
+            `;
+        }).join('');
+
+        list.querySelectorAll('.btn-toggle-workflow').forEach(btn => {
+            btn.addEventListener('click', () => toggleWorkflowStatus(btn.dataset.id, btn.dataset.name, btn.dataset.status));
+        });
+        list.querySelectorAll('.btn-restore-workflow').forEach(btn => {
+            btn.addEventListener('click', () => restoreWorkflow(btn.dataset.id, btn.dataset.name));
+        });
+        list.querySelectorAll('.btn-edit-workflow').forEach(btn => {
+            btn.addEventListener('click', () => openWorkflowForm(btn.dataset.id));
+        });
+        list.querySelectorAll('.btn-delete-workflow').forEach(btn => {
+            btn.addEventListener('click', () => deleteWorkflow(btn.dataset.id, btn.dataset.name));
+        });
+    }
+
+    function openWorkflowForm(workflowId) {
+        const form = document.getElementById('workflow-form');
+        if (!form) return;
+        const editing = workflowId ? state.adminWorkflows.find(w => w.id === workflowId) : null;
+        const nameInput = document.getElementById('workflow-name');
+        const descInput = document.getElementById('workflow-description');
+        const platformIdInput = document.getElementById('workflow-platform-id');
+        if (nameInput) nameInput.value = editing ? (editing.name || '') : '';
+        if (descInput) descInput.value = editing ? (editing.description || '') : '';
+        if (platformIdInput) platformIdInput.value = editing ? ((editing.platform_config && editing.platform_config.workflow_id) || '') : '';
+        form.dataset.editingId = editing ? editing.id : '';
+        // 保留原始来源与工作空间，编辑时不改写 source、不清空 workspace_id
+        form.dataset.origSource = editing ? (editing.source || 'manual') : 'manual';
+        form.dataset.origWorkspace = editing ? ((editing.platform_config && editing.platform_config.workspace_id) || '') : '';
+        form.dataset.origParams = editing ? JSON.stringify(editing.params || []) : '[]';
+        form.dataset.origLlm = editing ? JSON.stringify(editing.llm_config || { base_url: '', api_key: '', model: '' }) : '{}';
+        form.classList.remove('hidden');
+        form.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    }
+
+    function closeWorkflowForm() {
+        const form = document.getElementById('workflow-form');
+        if (form) {
+            form.classList.add('hidden');
+            form.dataset.editingId = '';
+        }
+    }
+
+    async function submitWorkflowForm() {
+        const form = document.getElementById('workflow-form');
+        if (!form) return;
+        const editingId = form.dataset.editingId || '';
+        const origSource = form.dataset.origSource || 'manual';
+        const origWorkspace = form.dataset.origWorkspace || '';
+        const name = document.getElementById('workflow-name').value.trim();
+        const description = document.getElementById('workflow-description').value.trim();
+        const workflowId = document.getElementById('workflow-platform-id').value.trim();
+
+        if (!name) {
+            showToast('请输入工作流名称', 'warning');
+            return;
+        }
+        if (!workflowId) {
+            showToast('请输入 Coze 工作流 ID', 'warning');
+            return;
+        }
+
+        const payload = {
+            name,
+            description,
+            platform: 'coze',
+            // 编辑时保留原 workspace_id，避免清空
+            platform_config: { workflow_id: workflowId, workspace_id: origWorkspace },
+            // 编辑时保留原参数与 LLM 配置，避免覆盖；新建用空默认
+            params: editingId ? JSON.parse(form.dataset.origParams || '[]') : [],
+            llm_config: editingId ? JSON.parse(form.dataset.origLlm || '{}') : { base_url: '', api_key: '', model: '' },
+            // 编辑时保留原来源，避免把 coze_import 改写为 manual
+            source: editingId ? origSource : 'manual'
+        };
+
+        try {
+            if (editingId) {
+                await api.updateWorkflow(editingId, payload);
+                showToast('工作流更新成功', 'success');
+            } else {
+                await api.createWorkflow(payload);
+                showToast('工作流创建成功', 'success');
+            }
+            closeWorkflowForm();
+            await loadAdminData();
+        } catch (e) {
+            showToast('保存失败: ' + e.message, 'error');
+        }
+    }
+
+    async function deleteWorkflow(id, name) {
+        if (!confirm(WORKFLOW_TEXT.deleteConfirm(name || id))) return;
+        try {
+            await api.deleteWorkflow(id);
+            showToast('工作流已删除', 'success');
+            await loadAdminData();
+        } catch (e) {
+            showToast('删除失败: ' + e.message, 'error');
+        }
+    }
+
+    async function toggleWorkflowStatus(id, name, currentStatus) {
+        const next = currentStatus === 'active' ? 'disabled' : 'active';
+        if (!confirm(WORKFLOW_TEXT.statusConfirm(name || id, next))) return;
+        try {
+            await api.setWorkflowStatus(id, next);
+            showToast(`工作流已${next === 'active' ? '启用' : '禁用'}`, 'success');
+            await loadAdminData();
+        } catch (e) {
+            showToast('状态切换失败: ' + e.message, 'error');
+        }
+    }
+
+    async function restoreWorkflow(id, name) {
+        if (!confirm(WORKFLOW_TEXT.restoreConfirm(name || id))) return;
+        try {
+            await api.restoreWorkflow(id);
+            showToast('工作流已恢复', 'success');
+            await loadAdminData();
+        } catch (e) {
+            showToast('恢复失败: ' + e.message, 'error');
         }
     }
 
@@ -2418,12 +2656,12 @@
             return;
         }
         if (selectedItems.length === 0) {
-            showToast('请选择要导入的作品', 'warning');
+            showToast('请选择要导入的资源', 'warning');
             return;
         }
 
         try {
-            showToast(`正在导入 ${selectedItems.length} 个作品...`, 'info');
+            showToast(`正在导入 ${selectedItems.length} 个资源...`, 'info');
             const result = await api.importWorks(pat, selectedItems, '', workspaceId);
             if (result.success) {
                 showToast(`导入完成: 成功 ${result.imported}/${result.total} 个`, result.imported === result.total ? 'success' : 'warning');
@@ -2804,6 +3042,14 @@
         document.getElementById('btn-fetch-bots').addEventListener('click', fetchBots);
         const btnImportResources = document.getElementById('btn-import-selected-resources');
         if (btnImportResources) btnImportResources.addEventListener('click', importSelectedResources);
+
+        // 工作流管理
+        const btnNewWorkflow = document.getElementById('btn-new-workflow');
+        if (btnNewWorkflow) btnNewWorkflow.addEventListener('click', () => openWorkflowForm(''));
+        const btnSubmitWorkflow = document.getElementById('btn-submit-workflow');
+        if (btnSubmitWorkflow) btnSubmitWorkflow.addEventListener('click', submitWorkflowForm);
+        const btnCancelWorkflow = document.getElementById('btn-cancel-workflow');
+        if (btnCancelWorkflow) btnCancelWorkflow.addEventListener('click', closeWorkflowForm);
 
         // Settings
         document.getElementById('btn-save-settings').addEventListener('click', saveSettings);
