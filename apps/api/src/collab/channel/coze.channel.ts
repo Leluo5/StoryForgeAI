@@ -15,6 +15,8 @@ interface CozeChatResponse {
   code?: number;
   msg?: string;
   data?: {
+    // v3 返回 id 作为 chat_id
+    id?: string;
     chat_id?: string;
     conversation_id?: string;
   };
@@ -25,17 +27,25 @@ interface CozeRetrieveResponse {
   msg?: string;
   data?: {
     status?: string;
-    messages?: Array<{
-      role?: string;
-      type?: string;
-      content?: string;
-      content_type?: string;
-    }>;
   };
 }
 
-// F11 Coze 适配器（F2 §5.1）：POST {COZE_API_BASE}/open_api/v3/chat 发起，
-// 按返回 chat_id 轮询 /open_api/v3/chat/retrieve 直到 completed 或超时，取消息列表文本。
+interface CozeMessageListResponse {
+  code?: number;
+  msg?: string;
+  data?: Array<{
+    role?: string;
+    type?: string;
+    content?: string;
+    content_type?: string;
+  }>;
+}
+
+// F11 Coze 适配器（F2 §5.1）：
+//   POST {COZE_API_BASE}/v3/chat 发起 → 轮询 GET /v3/chat/retrieve → completed 后
+//   GET /v3/chat/message/list 取 assistant answer 文本。
+// 说明（真实链路校准）：Coze v3 的 retrieve 为 GET + query 参数且不返回消息体；
+// 消息需单独调 message/list。路径前缀是 /v3 而非 /open_api/v3。
 // JSON 输出交给统一结果校验器（T13）。Coze 与 Flowise 并存，可回退。
 @Injectable()
 export class CozeChannel implements AgentChannel {
@@ -55,13 +65,13 @@ export class CozeChannel implements AgentChannel {
     const deadline = Date.now() + COLLAB_HTTP_TIMEOUT_MS;
 
     // 1) 发起对话
+    // 注意：auto_save_history=false 时 Coze 强制要求 stream=true，这里不传该字段以保持同步轮询。
     const chat = await this.post<CozeChatResponse>(
-      `${base}/open_api/v3/chat`,
+      `${base}/v3/chat`,
       {
         bot_id: COZE_BOT_ID,
         user_id: `storyforge-${request.workId}`,
         stream: false,
-        auto_save_history: false,
         additional_messages: [
           {
             role: 'user',
@@ -70,7 +80,13 @@ export class CozeChannel implements AgentChannel {
               workId: request.workId,
               roleContext: request.roleContext,
               citations: request.citations,
-              outputFields: request.outputFields
+              outputFields: request.outputFields,
+              // 把结果契约一并告知 Bot：仅靠 instruction 无法约束 Bot 的输出结构与长度
+              outputContract: {
+                format:
+                  '只输出一个 JSON 对象，顶层仅允许 fields（可选 notes）；fields 的键必须与 outputFields 完全一致，禁止翻译或增减',
+                maxChars: { identity: 80, personality: 2000, experience: 20000 }
+              }
             }),
             content_type: 'text'
           }
@@ -80,17 +96,18 @@ export class CozeChannel implements AgentChannel {
       deadline
     );
 
-    if (!chat.data?.chat_id || !chat.data.conversation_id) {
+    const chatId = chat.data?.id ?? chat.data?.chat_id;
+    const conversationId = chat.data?.conversation_id;
+    if (!chatId || !conversationId) {
       throw upstreamFailedError('Coze 未返回 chat_id');
     }
 
-    // 2) 轮询检索结果
-    const pollUrl = `${base}/open_api/v3/chat/retrieve`;
-    let lastText = '';
+    const query = `conversation_id=${encodeURIComponent(conversationId)}&chat_id=${encodeURIComponent(chatId)}`;
+
+    // 2) 轮询检索状态（GET + query）
     while (Date.now() < deadline) {
-      const retrieved = await this.post<CozeRetrieveResponse>(
-        pollUrl,
-        { chat_id: chat.data.chat_id, conversation_id: chat.data.conversation_id },
+      const retrieved = await this.get<CozeRetrieveResponse>(
+        `${base}/v3/chat/retrieve?${query}`,
         COZE_PAT,
         deadline
       );
@@ -99,21 +116,16 @@ export class CozeChannel implements AgentChannel {
         throw upstreamFailedError(`Coze 检索失败: ${retrieved.msg ?? '未知'}`);
       }
       const status = retrieved.data?.status;
-      const messages = retrieved.data?.messages ?? [];
-      const answer = messages
-        .filter((m) => m.role === 'assistant' && typeof m.content === 'string')
-        .map((m) => m.content)
-        .join('\n');
-      if (answer.trim() !== '') lastText = answer;
 
       if (status === 'completed') {
-        if (lastText.trim() === '') {
-          throw upstreamFailedError('Coze 完成但无有效文本');
-        }
-        return { rawText: lastText, model: 'coze', latencyMs: Date.now() - startedAt };
+        const text = await this.fetchAnswer(base, query, COZE_PAT, deadline);
+        return { rawText: text, model: 'coze', latencyMs: Date.now() - startedAt };
       }
       if (status === 'failed' || status === 'error') {
         throw upstreamFailedError('Coze 任务失败');
+      }
+      if (status === 'requires_action') {
+        throw upstreamFailedError('Coze 需要额外动作，暂不支持');
       }
 
       // 尚未完成：等待后继续轮询
@@ -123,20 +135,49 @@ export class CozeChannel implements AgentChannel {
     throw timeoutError(`Coze 请求超时 ${COLLAB_HTTP_TIMEOUT_MS}ms`);
   }
 
+  /** completed 后取消息列表中的 assistant answer 文本（多个 answer 拼接） */
+  private async fetchAnswer(base: string, query: string, pat: string, deadline: number): Promise<string> {
+    const listed = await this.get<CozeMessageListResponse>(
+      `${base}/v3/chat/message/list?${query}`,
+      pat,
+      deadline
+    );
+    if (listed.code !== 0) {
+      throw upstreamFailedError(`Coze 消息列表失败: ${listed.msg ?? '未知'}`);
+    }
+    const answer = (listed.data ?? [])
+      .filter((m) => m.role === 'assistant' && m.type === 'answer' && typeof m.content === 'string')
+      .map((m) => m.content as string)
+      .join('\n')
+      .trim();
+    if (answer === '') {
+      throw upstreamFailedError('Coze 完成但无有效文本');
+    }
+    return answer;
+  }
+
+  private async get<T>(url: string, pat: string, deadline: number): Promise<T> {
+    return this.request<T>(url, { method: 'GET', headers: { Authorization: `Bearer ${pat}` } }, deadline);
+  }
+
   private async post<T>(url: string, body: unknown, pat: string, deadline: number): Promise<T> {
+    return this.request<T>(
+      url,
+      {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${pat}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify(body)
+      },
+      deadline
+    );
+  }
+
+  private async request<T>(url: string, init: RequestInit, deadline: number): Promise<T> {
     const controller = new AbortController();
     const remaining = Math.max(0, deadline - Date.now());
     const timer = setTimeout(() => controller.abort(), remaining);
     try {
-      const response = await fetch(url, {
-        method: 'POST',
-        headers: {
-          Authorization: `Bearer ${pat}`,
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify(body),
-        signal: controller.signal
-      });
+      const response = await fetch(url, { ...init, signal: controller.signal });
       if (!response.ok) {
         throw upstreamFailedError(`Coze 返回 ${response.status}`);
       }

@@ -27,9 +27,13 @@ export class CollabArchiveQueue implements OnModuleDestroy {
     });
   }
 
-  /** 入队一次投递（jobId = taskId，重复入队幂等，不新增 job） */
-  async enqueue(taskId: string): Promise<void> {
-    await this.queue.add('deliver', { taskId }, { jobId: taskId });
+  /**
+   * 入队一次投递（jobId 缺省 = taskId，重复入队幂等，不新增 job）。
+   * 人工重试需传独立 jobId：BullMQ 对同 jobId 不会重复添加，
+   * 首次 job 失败后仍留在 failed 集合，复用原 jobId 会导致重试不生效。
+   */
+  async enqueue(taskId: string, jobId = taskId): Promise<void> {
+    await this.queue.add('deliver', { taskId }, { jobId });
   }
 
   /** 暴露原始 Queue（供 Worker 同实例复用 / 测试调试） */

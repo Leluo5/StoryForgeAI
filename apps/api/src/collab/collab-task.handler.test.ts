@@ -10,6 +10,7 @@ import { CollabUpstreamError } from './channel/collab-upstream.error';
 import { COLLAB_WRITEBACK_PORT, type CollabWritebackPort } from './collab-writeback.port';
 import { AiTaskEntity } from '../database/ai-task.entity';
 import type { FastGptClient } from './retrieval/fastgpt.client';
+import type { CollabArchiveQueue } from './collab-archive.queue';
 import type { AgentChannelRegistry } from './channel/agent-channel.registry';
 import type { AgentChannel, AgentChannelResult, CollabCitation } from '@storyforge/contracts';
 
@@ -21,11 +22,13 @@ let fixture: WritingFixture;
 const fastGptSearch = vi.fn();
 const channelInvoke = vi.fn();
 const writebackApply = vi.fn();
+const archiveEnqueue = vi.fn();
 
 function makeStubs(): {
   fastGpt: FastGptClient;
   registry: AgentChannelRegistry;
   writeback: CollabWritebackPort;
+  archiveQueue: CollabArchiveQueue;
 } {
   return {
     fastGpt: { search: fastGptSearch } as unknown as FastGptClient,
@@ -37,17 +40,19 @@ function makeStubs(): {
     } as unknown as AgentChannelRegistry,
     writeback: {
       applyWriteback: writebackApply
-    }
+    },
+    archiveQueue: { enqueue: archiveEnqueue } as unknown as CollabArchiveQueue
   };
 }
 
 function makeHandler(): CollabTaskHandler {
-  const { fastGpt, registry, writeback } = makeStubs();
-  return new CollabTaskHandler(fixture.dataSource, fastGpt, registry, writeback);
+  const { fastGpt, registry, writeback, archiveQueue } = makeStubs();
+  return new CollabTaskHandler(fixture.dataSource, fastGpt, registry, writeback, archiveQueue);
 }
 
 beforeEach(async () => {
   vi.clearAllMocks();
+  archiveEnqueue.mockResolvedValue(undefined);
   fixture = await createWritingFixture();
 });
 
@@ -254,6 +259,10 @@ describe('CollabTaskHandler (T13 role_profile 编排)', () => {
     expect(bySource['doc-1']!.dataset_id).toBe('ds-1');
     expect(bySource['doc-1']!.score).toBe('0.9000');
     expect(bySource['doc-2']!.score).toBeNull();
+
+    // 写回事务提交后入队归档（F2 §5.4：失败只影响 outbox，不影响任务成功）
+    expect(archiveEnqueue).toHaveBeenCalledTimes(1);
+    expect(archiveEnqueue).toHaveBeenCalledWith(taskId);
   });
 
   it('结果非法（缺字段）→ COLLAB_INVALID_RESULT，不调用写回', async () => {

@@ -45,7 +45,10 @@ export class FlowiseChannel implements AgentChannel {
           overrideConfig: {
             // 仅注入请求上下文，不传递任何凭据或敏感键
             sessionId: request.taskId,
-            systemMessage: JSON.stringify({
+            // Flowise 2.x 的 overrideConfig 覆盖键必须是「节点参数名」。
+            // 以其它键名（如 systemMessage）发送会被 isParameterEnabled 直接跳过，
+            // 导致角色上下文静默丢失（真实链路验证发现）。
+            systemMessagePrompt: JSON.stringify({
               workId: request.workId,
               roleContext: request.roleContext,
               citations: request.citations,

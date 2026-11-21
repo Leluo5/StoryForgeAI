@@ -58,6 +58,30 @@ describe('FlowiseChannel (T10)', () => {
     expect(body.overrideConfig.sessionId).toBe('task-1');
   });
 
+  it('injects role context under the node parameter name systemMessagePrompt (regression)', async () => {
+    // Flowise 2.x 的 overrideConfig 覆盖键必须是「节点参数名」。
+    // 历史 BUG：曾以 systemMessage 发送，被 Flowise isParameterEnabled 静默跳过，角色上下文全部丢失。
+    fetchMock.mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: async () => ({ text: '{"fields":{}}' })
+    });
+    const channel = new FlowiseChannel(baseEnv);
+    await channel.invoke(makeRequest());
+
+    const [, init] = fetchMock.mock.calls[0]!;
+    const body = JSON.parse(String((init as RequestInit).body));
+    expect(body.overrideConfig).not.toHaveProperty('systemMessage');
+    expect(typeof body.overrideConfig.systemMessagePrompt).toBe('string');
+
+    const injected = JSON.parse(body.overrideConfig.systemMessagePrompt);
+    expect(injected.workId).toBe('work-1');
+    expect(injected.roleContext).toEqual({ name: '林默' });
+    expect(injected.citations).toEqual([{ source_id: 's1', title: 't1', snippet: '片段' }]);
+    expect(injected.outputFields).toEqual(['identity', 'personality']);
+    expect(body.overrideConfig.sessionId).toBe('task-1');
+  });
+
   it('throws COLLAB_CHANNEL_NOT_CONFIGURED when env missing', async () => {
     const channel = new FlowiseChannel({});
     await expect(channel.invoke(makeRequest())).rejects.toMatchObject({

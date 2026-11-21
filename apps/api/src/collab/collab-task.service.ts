@@ -16,6 +16,7 @@ import { CollabReadinessService } from './collab-readiness.service';
 import { AI_TASK_QUEUE, type AiTaskQueuePort } from '../ai/ai-task.service';
 import { AiTaskEventBus, AI_TASK_EVENT_BUS } from '../ai/ai-task.sse';
 import { AuditService } from '../revision/audit.service';
+import { CollabArchiveQueue } from './collab-archive.queue';
 
 // F11 角色资料协同任务：创建（POST role-profile/tasks）与查询详情（GET role-profile/tasks/:taskId）
 // 校验链（F2 §8.1）：作品归属 → 协同启用 → 测试角色匹配 → 字段白名单 → 通道就绪 → 幂等 → 创建入队
@@ -33,7 +34,8 @@ export class CollabTaskService {
     @Inject(CollabReadinessService) private readonly readiness: CollabReadinessService,
     @Inject(AI_TASK_QUEUE) private readonly queue: AiTaskQueuePort,
     @Inject(AI_TASK_EVENT_BUS) private readonly eventBus: AiTaskEventBus,
-    @Inject(AuditService) private readonly audit: AuditService
+    @Inject(AuditService) private readonly audit: AuditService,
+    @Inject(CollabArchiveQueue) private readonly archiveQueue: CollabArchiveQueue
   ) {}
 
   /**
@@ -186,6 +188,58 @@ export class CollabTaskService {
           }
         : null
     };
+  }
+
+  /**
+   * 人工重试归档（F2 §5.6 / §4.1 POST archive-retry）。
+   * 只重置同一行 outbox 并重新入队，不新增记录、不触碰任务与写回单。
+   * 已投递则幂等返回当前状态。
+   */
+  async retryArchive(
+    authorId: string,
+    workId: string,
+    taskId: string
+  ): Promise<{ status: CollabArchiveStatus; attempts: number; external_id: string | null; delivered_at: string | null }> {
+    await this.collab.getCollabSettings(authorId, workId).catch(() => {
+      throw new NotFoundException('作品不存在');
+    });
+
+    const task = await this.dataSource.getRepository(AiTaskEntity).findOneBy({
+      id: taskId,
+      work_id: workId,
+      scope: 'role_profile'
+    });
+    if (!task) throw new NotFoundException('协同任务不存在');
+
+    const repo = this.dataSource.getRepository(AgentArchiveOutboxEntity);
+    const outbox = await repo.findOneBy({ task_id: taskId });
+    if (!outbox) throw new NotFoundException('归档记录不存在');
+
+    const snapshot = () => ({
+      status: outbox.status as CollabArchiveStatus,
+      attempts: outbox.attempts,
+      external_id: outbox.external_id,
+      delivered_at: outbox.delivered_at ? outbox.delivered_at.toISOString() : null
+    });
+
+    // 已投递：不重复投递，直接返回既有记录
+    if (outbox.status === 'delivered') return snapshot();
+
+    // failed → 重置为 pending（不新增行），再重新入队；pending 视为投递在途，重复入队由 jobId 幂等吸收
+    if (outbox.status === 'failed') {
+      outbox.status = 'pending';
+      outbox.last_error = null;
+      outbox.updated_at = new Date();
+      await repo.save(outbox);
+    }
+
+    await this.archiveQueue.enqueue(taskId, `retry:${outbox.attempts}:${Date.now()}`);
+    await this.audit.record(authorId, 'collab_archive_retry', 'agent_archive_outbox', outbox.id, {
+      task_id: taskId,
+      attempts: outbox.attempts
+    }, workId);
+
+    return snapshot();
   }
 
   private async mapWriteback(writebackId: string): Promise<CollabWriteback> {

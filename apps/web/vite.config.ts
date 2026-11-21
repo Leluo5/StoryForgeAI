@@ -8,7 +8,8 @@ export default defineConfig({
     port: 5173,
     strictPort: true,
     proxy: {
-      '/api': { target: 'http://127.0.0.1:3001', changeOrigin: true }
+      // FastGPT 占用 127.0.0.1:3001，API 服务改到 3002
+      '/api': { target: 'http://127.0.0.1:3002', changeOrigin: true }
     }
   },
   optimizeDeps: {

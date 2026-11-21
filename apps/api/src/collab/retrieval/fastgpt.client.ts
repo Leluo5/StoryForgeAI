@@ -26,23 +26,44 @@ export interface FastGptSearchResult {
   hits: FastGptHit[];
 }
 
-// 响应 zod 解析：容忍上游新增字段（对象 .passthrough()），只取需要的键
-const fastGptSearchResponseSchema = z.object({
-  data: z.array(
-    z.object({
-      id: z.string().min(1),
-      title: z.string().optional(),
-      content: z.string().optional(),
-      score: z.union([z.number(), z.string()]).nullable().optional()
-    }).passthrough()
-  )
-}).passthrough();
+// 响应 zod 解析：容忍上游新增字段（对象 .passthrough()），只取需要的键。
+// v4.17.4 实际结构为 { data: { list: [...] } }，条目内容在 q、来源名在 sourceName、score 为分项数组；
+// 旧版 / 简化实现返回 { data: [...] }，条目用 content/title 与数字 score —— 两者都接受。
+const scorePartSchema = z
+  .object({ type: z.string().optional(), value: z.number().optional() })
+  .passthrough();
+
+const fastGptHitSchema = z
+  .object({
+    id: z.string().min(1),
+    title: z.string().optional(),
+    content: z.string().optional(),
+    q: z.string().optional(),
+    sourceName: z.string().optional(),
+    score: z.union([z.number(), z.string(), z.array(scorePartSchema)]).nullable().optional()
+  })
+  .passthrough();
+
+const fastGptSearchResponseSchema = z
+  .object({
+    data: z.union([z.array(fastGptHitSchema), z.object({ list: z.array(fastGptHitSchema) }).passthrough()])
+  })
+  .passthrough();
 
 function normalizeScore(value: unknown): number | null {
   if (typeof value === 'number' && Number.isFinite(value)) return value;
   if (typeof value === 'string') {
     const parsed = Number.parseFloat(value);
     if (Number.isFinite(parsed)) return parsed;
+  }
+  if (Array.isArray(value)) {
+    // v4.17 混合检索返回分项分：[{type:'embedding'|'fullText'|'rrf', value, index}]
+    // rrf 是融合排序分，优先使用；缺失时回退到第一个可用的数值
+    const parts = value as Array<{ type?: unknown; value?: unknown }>;
+    const rrf = parts.find((part) => part && part.type === 'rrf' && typeof part.value === 'number');
+    if (rrf) return rrf.value as number;
+    const first = parts.find((part) => part && typeof part.value === 'number');
+    if (first) return first.value as number;
   }
   return null;
 }
@@ -83,7 +104,8 @@ export class FastGptClient {
           text: query,
           limit,
           similarity: 0.3,
-          searchMode: 'hybrid'
+          // FastGPT v4.17 合法枚举：embedding / keyword / mixedRecall（'hybrid' 会被上游 zod 拒绝）
+          searchMode: 'mixedRecall'
         }),
         signal: controller.signal
       });
@@ -93,10 +115,13 @@ export class FastGptClient {
       }
       const raw = (await response.json()) as unknown;
       const parsed = fastGptSearchResponseSchema.parse(raw);
-      const hits: FastGptHit[] = parsed.data.map((item) => ({
+      const list = Array.isArray(parsed.data) ? parsed.data : parsed.data.list;
+      const hits: FastGptHit[] = list.map((item) => ({
         id: item.id,
-        title: item.title ?? '',
-        content: item.content ?? '',
+        // v4.17 用 sourceName 表示来源文件名；旧结构用 title
+        title: item.title ?? item.sourceName ?? '',
+        // v4.17 用 q 表示片段正文；旧结构用 content
+        content: item.content ?? item.q ?? '',
         score: normalizeScore(item.score)
       }));
 

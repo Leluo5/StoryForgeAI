@@ -4,6 +4,7 @@ import { AppModule } from './app.module';
 import { configureApp } from './app.setup';
 import { env } from './config/env';
 import { AiTaskProcessor } from './ai/ai-task.processor';
+import { CollabArchiveProcessor } from './collab/collab-archive.processor';
 
 export async function bootstrap(): Promise<void> {
   const app = await NestFactory.create(AppModule);
@@ -11,13 +12,15 @@ export async function bootstrap(): Promise<void> {
 
   // 启动 AI 任务消费 Worker（A5/A8 要求：bootstrap 时拉起队列消费者，任务才能 queued→running→succeeded）
   const worker = app.get(AiTaskProcessor).createWorker();
+  // F11 归档投递使用独立队列，必须单独拉起消费者，否则 outbox 永停留 pending（F2 §5.5）
+  const archiveWorker = app.get(CollabArchiveProcessor).createWorker();
 
   await app.listen(env.PORT, '127.0.0.1');
 
   // 优雅关闭：先停 Worker（不再消费），再关 HTTP，最后收尾
   const shutdown = async (signal: string): Promise<void> => {
-    console.log(`[bootstrap] ${signal}: closing AI worker`);
-    await worker.close();
+    console.log(`[bootstrap] ${signal}: closing workers`);
+    await Promise.all([worker.close(), archiveWorker.close()]);
     await app.close();
     process.exit(0);
   };

@@ -92,4 +92,24 @@ export class CollabTaskController {
       );
     }
   }
+
+  /** 人工重试归档：只补齐 n8n 投递，不重新生成、不重复写回（F2 §5.6）。 */
+  @Post('works/:workId/role-profile/tasks/:taskId/archive-retry')
+  @UseGuards(CsrfGuard)
+  async retryArchive(
+    @Req() req: AuthenticatedRequest,
+    @Param('workId') workId: string,
+    @Param('taskId') taskId: string
+  ): Promise<unknown> {
+    try {
+      const archive = await this.taskService.retryArchive(req.author.id, workId, taskId);
+      return ok(req, { archive });
+    } catch (cause) {
+      if (cause instanceof HttpException) throw cause;
+      throw new HttpException(
+        { code: 'COLLAB_UPSTREAM_ERROR', message: cause instanceof Error ? cause.message : '归档重试失败' },
+        HttpStatus.BAD_REQUEST
+      );
+    }
+  }
 }

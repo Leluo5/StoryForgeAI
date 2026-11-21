@@ -79,6 +79,17 @@ export class CollabController {
         fieldKey as never,
         input?.expected_value
       );
+      // 字段冲突：当前值已被改动，按契约返回 409，业务码置于 details.code（与全项目 envelope 一致）
+      // 冲突时不覆盖当前值，冲突详情随 details 返回供前端提示
+      if (result.conflict) {
+        throw new HttpException(
+          {
+            message: '该字段已被修改，请刷新后重试',
+            details: { code: 'COLLAB_FIELD_CONFLICT', ...result.conflict }
+          },
+          HttpStatus.CONFLICT
+        );
+      }
       return ok(request, result);
     } catch (err) {
       if (err instanceof CollabUpstreamError) {

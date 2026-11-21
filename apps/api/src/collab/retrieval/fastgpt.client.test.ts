@@ -50,8 +50,62 @@ describe('FastGptClient (T11)', () => {
     expect(body.datasetId).toBe('ds-1');
     expect(body.text).toBe('林默');
     expect(body.limit).toBe(8);
-    expect(body.searchMode).toBe('hybrid');
+    expect(body.searchMode).toBe('mixedRecall');
     expect((init as RequestInit).headers).toMatchObject({ Authorization: 'Bearer fg-secret' });
+  });
+
+  it('parses the FastGPT v4.17 data.list shape (q/sourceName/score parts)', async () => {
+    // 真实链路（v4.17.4）返回：{code, data:{list:[{q, id, sourceName, score:[{type,value,index}]}]}}
+    // 历史 BUG：客户端只接受 data 为数组，真实结构报 "Expected array, received object"。
+    fetchMock.mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: async () => ({
+        code: 200,
+        statusText: '',
+        message: '',
+        data: {
+          list: [
+            {
+              q: '北城旧货市场共四十七家铺面，分为纸市、铜器街与无名巷三段。',
+              id: 'chunk-1',
+              datasetId: 'ds-1',
+              collectionId: 'col-1',
+              sourceName: '旧货市场地理.txt',
+              sourceId: 'dataset/ds-1/file/a.txt',
+              chunkIndex: 0,
+              score: [
+                { type: 'embedding', value: 0.6632, index: 0 },
+                { type: 'fullText', value: 1.0384, index: 1 },
+                { type: 'rrf', value: 0.0161, index: 0 }
+              ]
+            },
+            {
+              q: '沈砚舟在雨夜清点孤本。',
+              id: 'chunk-2',
+              sourceName: '角色-沈砚舟.txt',
+              score: [{ type: 'embedding', value: 0.6123, index: 0 }]
+            }
+          ],
+          duration: '0.26s',
+          searchMode: 'mixedRecall'
+        }
+      })
+    });
+
+    const client = new FastGptClient(baseEnv);
+    const result = await client.search('沈砚舟', 8);
+
+    expect(result.hits).toHaveLength(2);
+    // q -> content，sourceName -> title
+    expect(result.hits[0]).toEqual({
+      id: 'chunk-1',
+      title: '旧货市场地理.txt',
+      content: '北城旧货市场共四十七家铺面，分为纸市、铜器街与无名巷三段。',
+      score: 0.0161 // 优先 rrf
+    });
+    // 无 rrf 时回退到首个可用分值
+    expect(result.hits[1]!.score).toBeCloseTo(0.6123, 4);
   });
 
   it('throws COLLAB_CHANNEL_NOT_CONFIGURED when env missing', async () => {

@@ -16,6 +16,7 @@ import { CollabUpstreamError } from './channel/collab-upstream.error';
 import { buildRoleContext } from './collab-context.builder';
 import { validateGeneratedResult } from './collab-result.validator';
 import { COLLAB_WRITEBACK_PORT, type CollabWritebackPort } from './collab-writeback.port';
+import { CollabArchiveQueue } from './collab-archive.queue';
 
 // F11 角色资料任务处理器：编排 检索 → 引用落库 → 通道生成 → 结果校验 → 写回（F2 §5.2-5.4）
 // 处理器只依赖通道端口与写回端口，不出现厂商分支（F2 §5.1）
@@ -53,7 +54,8 @@ export class CollabTaskHandler {
     @Inject(DataSource) private readonly dataSource: DataSource,
     @Inject(FastGptClient) private readonly fastGpt: FastGptClient,
     @Inject(AgentChannelRegistry) private readonly channelRegistry: AgentChannelRegistry,
-    @Inject(COLLAB_WRITEBACK_PORT) private readonly writeback: CollabWritebackPort
+    @Inject(COLLAB_WRITEBACK_PORT) private readonly writeback: CollabWritebackPort,
+    @Inject(CollabArchiveQueue) private readonly archiveQueue: CollabArchiveQueue
   ) {}
 
   /** 完整编排：返回写回摘要（处理器写入 succeeded 事件与审计） */
@@ -110,6 +112,12 @@ export class CollabTaskHandler {
         resultText: result.rawText
       })
     );
+
+    // 事务提交后才投递归档任务：投递失败只影响 outbox 状态，不影响已提交的写回与任务成功（F2 §5.4）
+    // 入队失败不阻断（outbox 已落库为 pending，可经人工重试补齐）
+    await this.archiveQueue.enqueue(ctx.taskId).catch((error: unknown) => {
+      this.logger.warn(`归档入队失败 task=${ctx.taskId}: ${error instanceof Error ? error.message : '未知错误'}`);
+    });
 
     return {
       scope: 'role_profile',

@@ -25,6 +25,7 @@ let readinessMock: { getReadiness: ReturnType<typeof vi.fn> };
 let queueMock: { enqueue: ReturnType<typeof vi.fn> };
 let eventBusMock: { publish: ReturnType<typeof vi.fn> };
 let auditMock: { record: ReturnType<typeof vi.fn> };
+let archiveQueueMock: { enqueue: ReturnType<typeof vi.fn> };
 
 // 种子数据：Agent / 测试角色 / 设置
 let agentId: string;
@@ -78,7 +79,8 @@ function makeService(): void {
     readinessMock as unknown as CollabReadinessService,
     queueMock as unknown as never,
     eventBusMock as unknown as never,
-    auditMock as unknown as never
+    auditMock as unknown as never,
+    archiveQueueMock as unknown as never
   );
 }
 
@@ -116,6 +118,7 @@ beforeEach(async () => {
   queueMock = { enqueue: vi.fn().mockResolvedValue(undefined) };
   eventBusMock = { publish: vi.fn() };
   auditMock = { record: vi.fn().mockResolvedValue(undefined) };
+  archiveQueueMock = { enqueue: vi.fn().mockResolvedValue(undefined) };
   makeService();
 });
 

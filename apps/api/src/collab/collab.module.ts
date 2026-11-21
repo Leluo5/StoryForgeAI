@@ -1,4 +1,4 @@
-import { Module, forwardRef } from '@nestjs/common';
+import { Module, forwardRef, type OnModuleInit, Inject, Injectable } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { CollabSettingEntity } from '../database/collab-setting.entity';
 import { CharacterEntity } from '../database/character.entity';
@@ -28,6 +28,24 @@ import { COLLAB_WRITEBACK_PORT } from './collab-writeback.port';
 import { AuditService } from '../revision/audit.service';
 
 /**
+ * 通道装配：把 Flowise / Coze 实现注册进 AgentChannelRegistry。
+ * 注册表本身不感知具体厂商（端口隔离），装配职责集中在此。
+ */
+@Injectable()
+export class CollabChannelBootstrap implements OnModuleInit {
+  constructor(
+    @Inject(AgentChannelRegistry) private readonly registry: AgentChannelRegistry,
+    @Inject(FlowiseChannel) private readonly flowise: FlowiseChannel,
+    @Inject(CozeChannel) private readonly coze: CozeChannel
+  ) {}
+
+  onModuleInit(): void {
+    if (!this.registry.has('flowise')) this.registry.register(this.flowise);
+    if (!this.registry.has('coze')) this.registry.register(this.coze);
+  }
+}
+
+/**
  * F11 多平台 Agent 协同模块。
  * 组装：CollabService + 通道注册表 + REST 控制器 + 写回服务。
  * 依赖鉴权（SessionGuard → AuthModule）；导出 CollabService 供后续任务编排复用。
@@ -53,6 +71,7 @@ import { AuditService } from '../revision/audit.service';
     AgentChannelRegistry,
     FlowiseChannel,
     CozeChannel,
+    CollabChannelBootstrap,
     FastGptClient,
     CollabTaskHandler,
     CollabRevertService,

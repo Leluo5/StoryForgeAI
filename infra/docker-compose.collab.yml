@@ -15,8 +15,11 @@ services:
     restart: unless-stopped
     environment:
       PORT: "3000"
-      FLOWISE_USERNAME: ${FLOWISE_USERNAME:-}
-      FLOWISE_PASSWORD: ${FLOWISE_PASSWORD:-}
+      FLOWISE_USERNAME: ${FLOWISE_USERNAME:-storyforge}
+      FLOWISE_PASSWORD: ${FLOWISE_PASSWORD:-StoryForge2026!}
+      # Flowise 2.x 已移除账号体系，改用静态 API key。storageType 默认 json，
+      # key 落在 <APIKEY_PATH>/api.json；指向挂载卷保证重建容器后 key 仍有效。
+      APIKEY_PATH: /root/.flowise
       # 复用主 compose 的 Postgres（仅创建独立数据库，不覆盖 storyforge 库）
       DATABASE_URL: postgresql://storyforge:storyforge@postgres:5432/flowise
     ports:
@@ -51,7 +54,7 @@ services:
       INVOKE_TOKEN_SECRET: ${INVOKE_TOKEN_SECRET:-544ed7355dd20de797da9bb334df428d9cc39f433df8e85c077c872bc416fcf4}
       # FastGPT 主站启动仅校验 AIPROXY 变量非空；F11 演示仅用 FastGPT 知识库检索（向量检索不走 AIProxy），
       # 不部署完整 AIProxy 组件。生产若启用模型对话需部署官方 fastgpt-aiproxy 服务并指向真实端点。
-      AIPROXY_API_ENDPOINT: ${AIPROXY_API_ENDPOINT:-http://127.0.0.1:3001/aiproxy}
+      AIPROXY_API_ENDPOINT: ${AIPROXY_API_ENDPOINT:-http://aiproxy:3001/aiproxy}
       AIPROXY_API_TOKEN: ${AIPROXY_API_TOKEN:-544ed7355dd20de797da9bb334df428d9cc39f433df8e85c077c872bc416fcf4}
       # 前端访问域名（宿主机映射地址）
       FE_DOMAIN: ${FE_DOMAIN:-http://127.0.0.1:3001}
@@ -85,6 +88,7 @@ services:
       - fastgpt-rustfs
       - fastgpt-plugin
       - fastgpt-code-sandbox
+      - aiproxy
     healthcheck:
       test: ["CMD-SHELL", "node -e \"fetch('http://fastgpt:3000/').then((r) => { if (!r.ok) throw new Error(String(r.status)); }).catch(() => process.exit(1))\" || exit 1"]
       interval: 10s
@@ -279,6 +283,27 @@ services:
       timeout: 5s
       retries: 30
       start_period: 30s
+
+  # AIProxy 本地自举代理：FastGPT v4.17 起所有模型调用（含 embedding）统一经
+  # AIPROXY_API_ENDPOINT 代理，不再直连 model config 的 baseUrl。本地演示不部署官方
+  # AIProxy 组件，故用 nginx 把 /aiproxy/v1/* 剥离前缀后转发到 Ollama 的 OpenAI 兼容端点。
+  # 缺此服务时 FastGPT 的占位地址指向宿主机映射端口，容器内无监听 → 一律 ECONNREFUSED。
+  aiproxy:
+    image: nginx:1.27-alpine
+    profiles: ["collab"]
+    restart: unless-stopped
+    command: ["nginx", "-c", "/etc/nginx/aiproxy.conf"]
+    volumes:
+      - ./nginx/aiproxy.conf:/etc/nginx/aiproxy.conf:ro
+    depends_on:
+      - ollama
+    networks:
+      - storyforge_default
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:3001/aiproxy/v1/models >/dev/null 2>&1 || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
 
   # n8n：归档工作流，持久化到独立卷 + 现有 Postgres 的 n8n 库
   n8n:

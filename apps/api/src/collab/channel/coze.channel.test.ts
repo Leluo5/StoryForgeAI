@@ -22,6 +22,27 @@ const baseEnv: CozeChannelEnv = {
   COLLAB_HTTP_TIMEOUT_MS: 10_000
 };
 
+const chatOk = {
+  ok: true,
+  status: 200,
+  json: async () => ({ code: 0, data: { id: 'chat-1', conversation_id: 'conv-1' } })
+};
+
+const retrieveOk = (status: string) => ({
+  ok: true,
+  status: 200,
+  json: async () => ({ code: 0, data: { status } })
+});
+
+const answerOk = (content: string) => ({
+  ok: true,
+  status: 200,
+  json: async () => ({
+    code: 0,
+    data: [{ role: 'assistant', type: 'answer', content, content_type: 'text' }]
+  })
+});
+
 describe('CozeChannel (T10)', () => {
   let fetchMock: ReturnType<typeof vi.fn>;
 
@@ -34,25 +55,11 @@ describe('CozeChannel (T10)', () => {
     vi.unstubAllGlobals();
   });
 
-  it('POSTs to chat, polls retrieve, and returns assistant text', async () => {
-    // 第一次调用 = chat 发起；后续调用 = retrieve 轮询
+  it('POSTs /v3/chat, polls GET retrieve, then reads message/list', async () => {
     fetchMock
-      .mockResolvedValueOnce({
-        ok: true,
-        status: 200,
-        json: async () => ({ code: 0, data: { chat_id: 'chat-1', conversation_id: 'conv-1' } })
-      })
-      .mockResolvedValueOnce({
-        ok: true,
-        status: 200,
-        json: async () => ({
-          code: 0,
-          data: {
-            status: 'completed',
-            messages: [{ role: 'assistant', content: '{"fields":{"identity":"林默"}}', content_type: 'text' }]
-          }
-        })
-      });
+      .mockResolvedValueOnce(chatOk)
+      .mockResolvedValueOnce(retrieveOk('completed'))
+      .mockResolvedValueOnce(answerOk('{"fields":{"identity":"林默"}}'));
 
     const channel = new CozeChannel(baseEnv);
     const result = await channel.invoke(makeRequest());
@@ -60,52 +67,64 @@ describe('CozeChannel (T10)', () => {
     expect(result.rawText).toContain('"fields"');
     expect(result.model).toBe('coze');
 
-    // 首个请求是 chat 发起
+    // 1) 发起：POST /v3/chat（真实路径，非 /open_api/v3）
     const [chatUrl, chatInit] = fetchMock.mock.calls[0]!;
-    expect(String(chatUrl)).toBe('https://api.coze.example.com/open_api/v3/chat');
+    expect(String(chatUrl)).toBe('https://api.coze.example.com/v3/chat');
+    expect((chatInit as RequestInit).method).toBe('POST');
     const chatBody = JSON.parse(String((chatInit as RequestInit).body));
     expect(chatBody.bot_id).toBe('bot-1');
+    // auto_save_history=false 会强制要求 stream=true，必须不传该字段
+    expect(chatBody).not.toHaveProperty('auto_save_history');
     expect((chatInit as RequestInit).headers).toMatchObject({ Authorization: 'Bearer pat-secret' });
 
-    // 第二个请求是 retrieve
-    const [pollUrl] = fetchMock.mock.calls[1]!;
-    expect(String(pollUrl)).toBe('https://api.coze.example.com/open_api/v3/chat/retrieve');
-    const pollBody = JSON.parse(String((fetchMock.mock.calls[1]![1] as RequestInit).body));
-    expect(pollBody.chat_id).toBe('chat-1');
+    // 2) 轮询：GET /v3/chat/retrieve + query 参数（无 body）
+    const [pollUrl, pollInit] = fetchMock.mock.calls[1]!;
+    const pollUrlStr = String(pollUrl);
+    expect(pollUrlStr).toContain('/v3/chat/retrieve?');
+    expect(pollUrlStr).toContain('chat_id=chat-1');
+    expect(pollUrlStr).toContain('conversation_id=conv-1');
+    expect((pollInit as RequestInit).method).toBe('GET');
+    expect((pollInit as RequestInit).body).toBeUndefined();
+
+    // 3) 取消息：GET /v3/chat/message/list
+    const [listUrl] = fetchMock.mock.calls[2]!;
+    expect(String(listUrl)).toContain('/v3/chat/message/list?');
   });
 
   it('polls multiple times until completed', async () => {
     fetchMock
-      .mockResolvedValueOnce({
-        ok: true,
-        status: 200,
-        json: async () => ({ code: 0, data: { chat_id: 'chat-2', conversation_id: 'conv-2' } })
-      })
-      // 第一次轮询：in_progress，无消息
-      .mockResolvedValueOnce({
-        ok: true,
-        status: 200,
-        json: async () => ({ code: 0, data: { status: 'in_progress', messages: [] } })
-      })
-      // 第二次轮询：completed，有文本
+      .mockResolvedValueOnce(chatOk)
+      .mockResolvedValueOnce(retrieveOk('in_progress'))
+      .mockResolvedValueOnce(retrieveOk('completed'))
+      .mockResolvedValueOnce(answerOk('{"fields":{"personality":"冷静"}}'));
+
+    const channel = new CozeChannel({ ...baseEnv, COLLAB_HTTP_TIMEOUT_MS: 5_000 });
+    const result = await channel.invoke(makeRequest());
+    expect(result.rawText).toContain('"fields"');
+    // chat 1 + 轮询 2 + 消息列表 1
+    expect(fetchMock).toHaveBeenCalledTimes(4);
+  });
+
+  it('ignores non-answer messages and throws when no answer text', async () => {
+    fetchMock
+      .mockResolvedValueOnce(chatOk)
+      .mockResolvedValueOnce(retrieveOk('completed'))
       .mockResolvedValueOnce({
         ok: true,
         status: 200,
         json: async () => ({
           code: 0,
-          data: {
-            status: 'completed',
-            messages: [{ role: 'assistant', content: '{"fields":{"personality":"冷静"}}' }]
-          }
+          data: [
+            { role: 'assistant', type: 'verbose', content: '思考中' },
+            { role: 'assistant', type: 'answer', content: '   ' }
+          ]
         })
       });
 
-    // 缩短轮询间隔以加速测试
-    const channel = new CozeChannel({ ...baseEnv, COLLAB_HTTP_TIMEOUT_MS: 2_000 });
-    const result = await channel.invoke(makeRequest());
-    expect(result.rawText).toContain('"fields"');
-    // chat 1 次 + 轮询 2 次
-    expect(fetchMock).toHaveBeenCalledTimes(3);
+    const channel = new CozeChannel(baseEnv);
+    await expect(channel.invoke(makeRequest())).rejects.toMatchObject({
+      code: 'COLLAB_UPSTREAM_FAILED'
+    });
   });
 
   it('throws COLLAB_CHANNEL_NOT_CONFIGURED when env missing', async () => {
@@ -116,18 +135,23 @@ describe('CozeChannel (T10)', () => {
     });
   });
 
-  it('maps failed retrieve status to COLLAB_UPSTREAM_FAILED', async () => {
+  it('maps non-zero retrieve code to COLLAB_UPSTREAM_FAILED', async () => {
     fetchMock
+      .mockResolvedValueOnce(chatOk)
       .mockResolvedValueOnce({
         ok: true,
         status: 200,
-        json: async () => ({ code: 0, data: { chat_id: 'chat-3', conversation_id: 'conv-3' } })
-      })
-      .mockResolvedValueOnce({
-        ok: true,
-        status: 200,
-        json: async () => ({ code: 0, data: { status: 'failed', messages: [] } })
+        json: async () => ({ code: 4200, msg: 'bot not found' })
       });
+
+    const channel = new CozeChannel(baseEnv);
+    await expect(channel.invoke(makeRequest())).rejects.toMatchObject({
+      code: 'COLLAB_UPSTREAM_FAILED'
+    });
+  });
+
+  it('maps failed retrieve status to COLLAB_UPSTREAM_FAILED', async () => {
+    fetchMock.mockResolvedValueOnce(chatOk).mockResolvedValueOnce(retrieveOk('failed'));
 
     const channel = new CozeChannel(baseEnv);
     await expect(channel.invoke(makeRequest())).rejects.toMatchObject({
@@ -137,11 +161,7 @@ describe('CozeChannel (T10)', () => {
 
   it('maps abort during polling to COLLAB_UPSTREAM_TIMEOUT', async () => {
     fetchMock
-      .mockResolvedValueOnce({
-        ok: true,
-        status: 200,
-        json: async () => ({ code: 0, data: { chat_id: 'chat-4', conversation_id: 'conv-4' } })
-      })
+      .mockResolvedValueOnce(chatOk)
       .mockImplementation((_url: string, init: RequestInit) => {
         return new Promise((_resolve, reject) => {
           (init.signal as AbortSignal).addEventListener('abort', () => {
