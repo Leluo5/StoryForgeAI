@@ -19,6 +19,7 @@ function renderPage() {
   return render(<MemoryRouter initialEntries={['/works']}><Routes>
     <Route path="/works" element={<WorksPage />} />
     <Route path="/works/:workId/write/:chapterId" element={<div>工作台深链</div>} />
+    <Route path="/arkclaw" element={<div>ArkClaw 验证页面</div>} />
   </Routes></MemoryRouter>);
 }
 
@@ -52,5 +53,12 @@ describe('WorksPage', () => {
     await userEvent.click(await screen.findByRole('button', { name: '归档既有作品' }));
     expect(confirm).toHaveBeenCalled();
     expect(updateWork).toHaveBeenCalledWith(work.id, { status: 'archived' });
+  });
+
+  it('opens the ArkClaw verification page from the works library', async () => {
+    renderPage();
+    expect(await screen.findByText('既有作品')).toBeVisible();
+    await userEvent.click(screen.getByRole('button', { name: 'ArkClaw 验证' }));
+    expect(await screen.findByText('ArkClaw 验证页面')).toBeVisible();
   });
 });

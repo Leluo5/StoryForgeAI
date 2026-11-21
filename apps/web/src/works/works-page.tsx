@@ -51,6 +51,7 @@ export function WorksPage() {
       <input id="work-search" value={query} onChange={(event) => setQuery(event.target.value)} />
       <button type="submit">搜索</button>
       <button type="button" onClick={() => setShowForm((value) => !value)}>新建作品</button>
+      <button type="button" onClick={() => navigate('/arkclaw')}>ArkClaw 验证</button>
     </form>
     {showForm && <form onSubmit={submitWork}>
       <label htmlFor="work-title">作品名称</label>

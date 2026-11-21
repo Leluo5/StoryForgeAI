@@ -8,6 +8,7 @@ import { getSession, login, logout } from './auth/auth-client';
 // 未登录时只需下载登录页所需代码。
 const WorksPage = lazy(() => import('./works/works-page').then((mod) => ({ default: mod.WorksPage })));
 const WorkbenchRoute = lazy(() => import('./workbench/workbench-page').then((mod) => ({ default: mod.WorkbenchRoute })));
+const ArkClawPage = lazy(() => import('./arkclaw/arkclaw-page').then((mod) => ({ default: mod.ArkClawPage })));
 
 export function App() {
   const [session, setSession] = useState<SessionResponse>();
@@ -26,6 +27,7 @@ export function App() {
         <Route path="/" element={<Navigate to="/works" replace />} />
         <Route path="/login" element={<Navigate to="/works" replace />} />
         <Route path="/works" element={<Suspense fallback={<p role="status">正在加载作品库</p>}><WorksPage /></Suspense>} />
+        <Route path="/arkclaw" element={<Suspense fallback={<p role="status">正在加载 ArkClaw 验证页</p>}><ArkClawPage /></Suspense>} />
         <Route path="/works/:workId/write/:chapterId" element={<Suspense fallback={<p role="status">正在加载工作台</p>}><WorkbenchRoute /></Suspense>} />
         <Route path="*" element={<Navigate to="/works" replace />} />
       </Routes>

@@ -3,11 +3,13 @@ import type { SessionResponse } from '@storyforge/contracts';
 import { App } from './app';
 import { getSession } from './auth/auth-client';
 
-vi.mock('./auth/auth-client', () => ({ getSession: vi.fn(), login: vi.fn() }));
+vi.mock('./auth/auth-client', () => ({ getSession: vi.fn(), login: vi.fn(), logout: vi.fn() }));
 vi.mock('./works/works-page', () => ({ WorksPage: () => <p>作品库页面</p> }));
+vi.mock('./arkclaw/arkclaw-page', () => ({ ArkClawPage: () => <p>ArkClaw 验证页面</p> }));
 
 beforeEach(() => {
-  window.history.replaceState({}, '', '/');
+  window.history.pushState({}, '', '/works');
+  vi.mocked(getSession).mockReset();
 });
 
 const session: SessionResponse = {
@@ -35,4 +37,12 @@ it('redirects an unauthenticated deep link to the login route', async () => {
   expect(await screen.findByRole('button', { name: '登录' })).toBeInTheDocument();
   await waitFor(() => expect(window.location.pathname).toBe('/login'));
   expect(screen.queryByText('作品库页面')).not.toBeInTheDocument();
+});
+
+it('loads the lazy ArkClaw route for an authenticated author', async () => {
+  window.history.pushState({}, '', '/arkclaw');
+  vi.mocked(getSession).mockResolvedValue(session);
+  render(<App />);
+
+  expect(await screen.findByText('ArkClaw 验证页面')).toBeInTheDocument();
 });
