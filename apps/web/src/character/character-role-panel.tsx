@@ -5,15 +5,17 @@ import { CharacterRelationPanel } from './character-relation-panel';
 import { CharacterGrowthPanel } from './character-growth-panel';
 import { CharacterAiPreview } from './character-ai-preview';
 import { CharacterAnchorPanel } from './character-anchor-panel';
+import { CollabPanel } from '../collab/collab-panel';
 
-type RoleTab = 'dossier' | 'relations' | 'growth' | 'ai' | 'anchor';
+type RoleTab = 'dossier' | 'relations' | 'growth' | 'ai' | 'anchor' | 'collab';
 
 const ROLE_TABS: { key: RoleTab; label: string }[] = [
   { key: 'dossier', label: '资料' },
   { key: 'relations', label: '关系' },
   { key: 'growth', label: '成长线' },
   { key: 'ai', label: 'AI 候选' },
-  { key: 'anchor', label: '归档影响' }
+  { key: 'anchor', label: '归档影响' },
+  { key: 'collab', label: 'AI 协同' }
 ];
 
 interface Props {
@@ -59,6 +61,7 @@ export function CharacterRolePanel({ workId, characterId, chapters, client = cha
           <CharacterAnchorPanel workId={workId} characterId={characterId} client={client}
             {...(chapters ? { chapters, chapterIds: chapters.map((chapter) => chapter.id) } : {})} />
         ) : null}
+        {tab === 'collab' ? <CollabPanel workId={workId} characterId={characterId} /> : null}
       </div>
     </div>
   );

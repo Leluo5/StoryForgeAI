@@ -10,8 +10,10 @@ export class AiTaskEntity {
   @Column({ type: 'uuid' }) work_id!: string;
   // 章节任务必填；剧情推衍任务（scope='plot'）为空
   @Column({ type: 'uuid', nullable: true }) chapter_id!: string | null;
-  // 任务作用域：chapter（章节正文修订）/ plot（剧情推衍与结构生成）/ character（角色版图）
-  @Column({ type: 'varchar', length: 16, default: 'chapter' }) scope!: 'chapter' | 'plot' | 'character';
+  // 任务作用域：chapter（章节正文修订）/ plot（剧情推衍与结构生成）/ character（角色版图）/ role_profile（F11 角色资料生成）
+  @Column({ type: 'varchar', length: 16, default: 'chapter' }) scope!: 'chapter' | 'plot' | 'character' | 'role_profile';
+  // F11 任务实际执行通道：flowise / coze（列由 1760700000000-collab-base 迁移建立，历史任务为 NULL）
+  @Column({ type: 'varchar', length: 16, nullable: true }) channel!: string | null;
   // 工具标识（如 continue）
   @Column({ type: 'varchar', length: 40 }) tool!: string;
   // 执行 Agent（M3a 预留，M3b 接入）

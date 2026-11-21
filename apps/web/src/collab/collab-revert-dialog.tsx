@@ -1,13 +1,10 @@
 import { useCallback, useRef, useState, type JSX } from 'react';
 import type { CollabRoleField, CollabWritebackField } from '@storyforge/contracts';
 import type { CollabClient } from './collab-client';
-import './collab-panel.css';
+import { COLLAB_FIELD_LABEL, collabErrorMessage } from './collab-state';
+import './collab.css';
 
-const FIELD_LABEL: Record<CollabRoleField, string> = {
-  identity: '身份定位',
-  personality: '性格',
-  experience: '经历'
-};
+const FIELD_LABEL = COLLAB_FIELD_LABEL;
 
 interface Props {
   workId: string;
@@ -39,7 +36,7 @@ export function CollabRevertDialog({ workId, writebackId, field, client, onClose
       onReverted?.(field.field_key);
       onClose();
     } catch (cause) {
-      const message = cause instanceof Error ? cause.message : '撤销失败';
+      const message = collabErrorMessage(cause);
       setError(message);
       setAnnounce(message);
     } finally {

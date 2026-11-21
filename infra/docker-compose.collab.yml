@@ -1,0 +1,327 @@
+# F11 多平台 Agent 协同 · 协同组件部署（独立 project，按需启动）
+# 用法：docker compose --profile collab -f infra/docker-compose.collab.yml up -d
+# 约定：
+#   - 所有服务带 profiles: ["collab"]，默认 docker compose up 不启动
+#   - 加入现有 storyforge_default 网络，复用主 compose 的 Postgres
+#   - 禁止 latest 标签（运维锁定镜像版本）
+#   - FastGPT 不接入现有 storyforge 库，使用独立 fastgpt-pg（pgvector）
+name: storyforge-collab
+
+services:
+  # Flowise：执行 Chatflow，持久化到独立卷 + 现有 Postgres 的 flowise 库
+  flowise:
+    image: flowiseai/flowise:2.2.7
+    profiles: ["collab"]
+    restart: unless-stopped
+    environment:
+      PORT: "3000"
+      FLOWISE_USERNAME: ${FLOWISE_USERNAME:-}
+      FLOWISE_PASSWORD: ${FLOWISE_PASSWORD:-}
+      # 复用主 compose 的 Postgres（仅创建独立数据库，不覆盖 storyforge 库）
+      DATABASE_URL: postgresql://storyforge:storyforge@postgres:5432/flowise
+    ports:
+      # 仅本机可访问，禁止 0.0.0.0（F2 §6.3）
+      - "127.0.0.1:3000:3000"
+    volumes:
+      - storyforge_flowise:/root/.flowise
+    networks:
+      - storyforge_default
+    # postgres 由主 compose（infra/docker-compose.yml）提供，已接入同一网络，无需 depends_on
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:3000/api/v1/ping || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 20
+
+  # FastGPT：检索与演示知识库，依赖独立 Mongo 与 PgVector，不接 storyforge 库
+  # 镜像源：Docker Hub（labring/fastgpt）已下架，改用 GitHub Container Registry 稳定版 v4.17.4
+  fastgpt:
+    image: ghcr.io/labring/fastgpt:v4.17.4
+    profiles: ["collab"]
+    restart: unless-stopped
+    environment:
+      PORT: "3000"
+      MONGODB_URI: mongodb://fastgpt:fastgpt@fastgpt-mongo:27017/fastgpt?authSource=admin
+      PG_URL: postgresql://fastgpt:fastgpt@fastgpt-pg:5432/fastgpt
+      REDIS_URL: redis://default:fastgpt_redis_pw@fastgpt-redis:6379
+      SANDBOX_HOST: fastgpt
+      # v4.17+ 必填校验项（本地演示默认值；生产应通过环境变量覆盖）
+      FILE_TOKEN_KEY: ${FILE_TOKEN_KEY:-ff03b913ebf26fc98fe1f6ec4c2fea15f11c2b15df2b671d6d636d9dd3685b3b}
+      AES256_SECRET_KEY: ${AES256_SECRET_KEY:-f1ca8df9b7cad71c803fb1a141bbacb24b7ec8d1f1964f16d83ca7cd269c4ec0}
+      INVOKE_TOKEN_SECRET: ${INVOKE_TOKEN_SECRET:-544ed7355dd20de797da9bb334df428d9cc39f433df8e85c077c872bc416fcf4}
+      # FastGPT 主站启动仅校验 AIPROXY 变量非空；F11 演示仅用 FastGPT 知识库检索（向量检索不走 AIProxy），
+      # 不部署完整 AIProxy 组件。生产若启用模型对话需部署官方 fastgpt-aiproxy 服务并指向真实端点。
+      AIPROXY_API_ENDPOINT: ${AIPROXY_API_ENDPOINT:-http://127.0.0.1:3001/aiproxy}
+      AIPROXY_API_TOKEN: ${AIPROXY_API_TOKEN:-544ed7355dd20de797da9bb334df428d9cc39f433df8e85c077c872bc416fcf4}
+      # 前端访问域名（宿主机映射地址）
+      FE_DOMAIN: ${FE_DOMAIN:-http://127.0.0.1:3001}
+      # 对象存储（RustFS S3 兼容，FastGPT 启动 instrumentation-check 强制校验 public bucket 可达）
+      STORAGE_VENDOR: minio
+      STORAGE_REGION: us-east-1
+      STORAGE_ACCESS_KEY_ID: ${RUSTFS_ACCESS_KEY:-rustfsadmin}
+      STORAGE_SECRET_ACCESS_KEY: ${RUSTFS_SECRET_KEY:-rustfsadmin}
+      STORAGE_PUBLIC_BUCKET: fastgpt-public
+      STORAGE_PRIVATE_BUCKET: fastgpt-private
+      STORAGE_DOWNLOAD_URL_MODE: short-proxy
+      STORAGE_S3_ENDPOINT: http://fastgpt-rustfs:9000
+      STORAGE_S3_FORCE_PATH_STYLE: "true"
+      STORAGE_S3_MAX_RETRIES: 3
+      # 插件与代码沙箱（FastGPT 启动 instrumentation-check 会 fetch plugin / code-sandbox 健康）
+      PLUGIN_BASE_URL: http://fastgpt-plugin:3000
+      PLUGIN_TOKEN: ${FASTGPT_PLUGIN_TOKEN:-fastgpt_plugin_auth_token_32char}
+      CODE_SANDBOX_URL: http://fastgpt-code-sandbox:3000
+      CODE_SANDBOX_TOKEN: ${FASTGPT_CODE_SANDBOX_TOKEN:-codesandbox}
+    ports:
+      - "127.0.0.1:3001:3000"
+    volumes:
+      - storyforge_fastgpt_config:/app/data/config
+      - storyforge_fastgpt_files:/app/files
+    networks:
+      - storyforge_default
+    depends_on:
+      - fastgpt-mongo
+      - fastgpt-pg
+      - fastgpt-redis
+      - fastgpt-rustfs
+      - fastgpt-plugin
+      - fastgpt-code-sandbox
+    healthcheck:
+      test: ["CMD-SHELL", "node -e \"fetch('http://fastgpt:3000/').then((r) => { if (!r.ok) throw new Error(String(r.status)); }).catch(() => process.exit(1))\" || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 30
+
+  # FastGPT 元数据存储（单节点副本集 rs0，FastGPT 事务依赖）
+  fastgpt-mongo:
+    image: mongo:7
+    profiles: ["collab"]
+    restart: unless-stopped
+    command: mongod --keyFile /data/mongodb.key --replSet rs0
+    entrypoint:
+      - bash
+      - -c
+      - |
+        openssl rand -base64 128 > /data/mongodb.key
+        chmod 400 /data/mongodb.key
+        chown 999:999 /data/mongodb.key
+        echo 'try { rs.status(); } catch (error) { if (error.code !== 94) throw error; rs.initiate({ _id: "rs0", members: [{ _id: 0, host: "fastgpt-mongo:27017" }] }); }' > /data/initReplicaSet.js
+        docker-entrypoint.sh "$$@" &
+        mongo_pid=$$!
+        until { mongosh --quiet -u fastgpt -p fastgpt --authenticationDatabase admin /data/initReplicaSet.js & wait $$!; }; do
+          if ! kill -0 "$$mongo_pid" 2>/dev/null; then wait "$$mongo_pid"; exit $$?; fi
+          echo "Waiting for MongoDB replica set initialization..."
+          sleep 2
+        done
+        wait "$$mongo_pid"
+    environment:
+      MONGO_INITDB_ROOT_USERNAME: fastgpt
+      MONGO_INITDB_ROOT_PASSWORD: fastgpt
+    volumes:
+      - storyforge_fastgpt_mongo:/data/db
+    networks:
+      - storyforge_default
+    healthcheck:
+      test: ["CMD-SHELL", "mongosh --quiet -u fastgpt -p fastgpt --authenticationDatabase admin --eval \"quit(db.hello().isWritablePrimary ? 0 : 1)\" || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 30
+      start_period: 30s
+
+  # FastGPT 向量存储（pgvector）
+  fastgpt-pg:
+    image: pgvector/pgvector:pg16
+    profiles: ["collab"]
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: fastgpt
+      POSTGRES_PASSWORD: fastgpt
+      POSTGRES_DB: fastgpt
+    volumes:
+      - storyforge_fastgpt_pg:/var/lib/postgresql/data
+    networks:
+      - storyforge_default
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U fastgpt -d fastgpt"]
+      interval: 10s
+      timeout: 5s
+      retries: 30
+
+  # FastGPT 缓存/队列 Redis（官方要求独立 Redis，带密码 + AOF）
+  fastgpt-redis:
+    image: redis:7
+    profiles: ["collab"]
+    restart: unless-stopped
+    command:
+      - redis-server
+      - --requirepass
+      - fastgpt_redis_pw
+      - --appendonly
+      - "yes"
+      - --save
+      - "60"
+      - "10"
+      - --maxmemory
+      - 4gb
+      - --maxmemory-policy
+      - noeviction
+    volumes:
+      - storyforge_fastgpt_redis:/data
+    networks:
+      - storyforge_default
+    healthcheck:
+      test: ["CMD-SHELL", "redis-cli -a fastgpt_redis_pw ping | grep PONG || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 30
+
+  # FastGPT 对象存储（RustFS S3 兼容，FastGPT 启动强制校验 public bucket）
+  fastgpt-rustfs:
+    image: rustfs/rustfs:1.0.4
+    profiles: ["collab"]
+    restart: unless-stopped
+    environment:
+      RUSTFS_ACCESS_KEY: ${RUSTFS_ACCESS_KEY:-rustfsadmin}
+      RUSTFS_SECRET_KEY: ${RUSTFS_SECRET_KEY:-rustfsadmin}
+      RUSTFS_VOLUMES: /data
+      RUSTFS_ADDRESS: :9000
+      RUSTFS_CONSOLE_ADDRESS: :9001
+      RUSTFS_CONSOLE_ENABLE: "true"
+      RUSTFS_OBS_LOGGER_LEVEL: error
+      RUSTFS_OBS_LOG_DIRECTORY: /logs
+    volumes:
+      - storyforge_fastgpt_rustfs:/data
+    networks:
+      - storyforge_default
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://127.0.0.1:9000/health || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 30
+
+  # FastGPT 插件服务（v1.2.0，独立 Mongo 库 fastgpt-plugin，主站启动校验其健康）
+  fastgpt-plugin:
+    image: ghcr.io/labring/fastgpt-plugin:v1.2.0
+    profiles: ["collab"]
+    restart: unless-stopped
+    environment:
+      MONGODB_URI: mongodb://fastgpt:fastgpt@fastgpt-mongo:27017/fastgpt-plugin?authSource=admin
+      DB_MAX_LINK: 100
+      AUTH_TOKEN: ${FASTGPT_PLUGIN_TOKEN:-fastgpt_plugin_auth_token_32char}
+      FASTGPT_BASE_URL: http://fastgpt:3000
+      SERVICE_REQUEST_MAX_CONTENT_LENGTH: 10
+      MAX_API_SIZE: 10
+      # plugin 依赖 Redis 与对象存储（与主站一致的连接配置）
+      REDIS_URL: redis://default:fastgpt_redis_pw@fastgpt-redis:6379
+      STORAGE_VENDOR: minio
+      STORAGE_REGION: us-east-1
+      STORAGE_ACCESS_KEY_ID: ${RUSTFS_ACCESS_KEY:-rustfsadmin}
+      STORAGE_SECRET_ACCESS_KEY: ${RUSTFS_SECRET_KEY:-rustfsadmin}
+      STORAGE_PUBLIC_BUCKET: fastgpt-public
+      STORAGE_PRIVATE_BUCKET: fastgpt-private
+      STORAGE_DOWNLOAD_URL_MODE: short-proxy
+      STORAGE_S3_ENDPOINT: http://fastgpt-rustfs:9000
+      STORAGE_S3_FORCE_PATH_STYLE: "true"
+      STORAGE_S3_MAX_RETRIES: 3
+    depends_on:
+      - fastgpt-mongo
+      - fastgpt-redis
+      - fastgpt-rustfs
+    networks:
+      - storyforge_default
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://127.0.0.1:3000/health || exit 1"]
+      interval: 30s
+      timeout: 20s
+      retries: 3
+
+  # FastGPT 代码沙箱（v5.0.0，主站启动校验其健康；仅代码执行节点使用）
+  fastgpt-code-sandbox:
+    image: ghcr.io/labring/fastgpt-code-sandbox:v5.0.0
+    profiles: ["collab"]
+    restart: unless-stopped
+    environment:
+      SANDBOX_TOKEN: ${FASTGPT_CODE_SANDBOX_TOKEN:-codesandbox}
+      SANDBOX_API_MAX_BODY_MB: 8
+      SANDBOX_MAX_TIMEOUT: 60000
+      SANDBOX_MAX_MEMORY_MB: 256
+      SANDBOX_MAX_OUTPUT_MB: 10
+      SANDBOX_POOL_SIZE: 5
+      CHECK_INTERNAL_IP: "true"
+      SANDBOX_REQUEST_MAX_COUNT: 30
+      SANDBOX_REQUEST_TIMEOUT: 60000
+      SANDBOX_REQUEST_MAX_RESPONSE_MB: 10
+      SANDBOX_REQUEST_MAX_BODY_MB: 5
+      SANDBOX_JS_ALLOWED_MODULES: lodash,dayjs,moment,uuid,crypto-js,qs,url,querystring
+      SANDBOX_PYTHON_ALLOWED_MODULES: math,cmath,decimal,fractions,random,statistics,collections,array,heapq,bisect,queue,copy,itertools,functools,operator,string,re,difflib,textwrap,unicodedata,codecs,datetime,time,calendar,_strptime,json,csv,base64,binascii,struct,hashlib,hmac,secrets,uuid,typing,abc,enum,dataclasses,contextlib,pprint,weakref,numpy,pandas,matplotlib
+    networks:
+      - storyforge_default
+    healthcheck:
+      test: ["CMD-SHELL", "node -e \"fetch('http://127.0.0.1:3000/health').then((r) => { if (!r.ok) throw new Error(String(r.status)); })\" || exit 1"]
+      interval: 30s
+      timeout: 20s
+      retries: 3
+
+  # Ollama：本地 embedding 向量模型（FastGPT ai_models 配置使用，OpenAI 兼容 /v1/embeddings）
+  # 用途：为 FastGPT 演示知识库提供 embedding 向量化（C2 前置）；完全本地私有，无需外部 API key
+  ollama:
+    image: ollama/ollama:0.5.13
+    profiles: ["collab"]
+    restart: unless-stopped
+    volumes:
+      - storyforge_ollama:/root/.ollama
+    ports:
+      - "127.0.0.1:11434:11434"
+    networks:
+      - storyforge_default
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://127.0.0.1:11434/api/version || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 30
+      start_period: 30s
+
+  # n8n：归档工作流，持久化到独立卷 + 现有 Postgres 的 n8n 库
+  n8n:
+    image: n8nio/n8n:1.75.1
+    profiles: ["collab"]
+    restart: unless-stopped
+    environment:
+      N8N_HOST: localhost
+      N8N_PORT: "5678"
+      DB_TYPE: postgresdb
+      DB_POSTGRESDB_HOST: postgres
+      DB_POSTGRESDB_DATABASE: n8n
+      DB_POSTGRESDB_USER: storyforge
+      DB_POSTGRESDB_PASSWORD: storyforge
+      # 归档 Webhook 鉴权（供 API 调用）
+      N8N_ARCHIVE_WEBHOOK_URL: ${N8N_ARCHIVE_WEBHOOK_URL:-}
+      N8N_ARCHIVE_TOKEN: ${N8N_ARCHIVE_TOKEN:-}
+    ports:
+      - "127.0.0.1:5678:5678"
+    volumes:
+      - storyforge_n8n:/home/node/.n8n
+    networks:
+      - storyforge_default
+    # postgres 由主 compose 提供，已接入同一网络
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:5678/healthz || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 30
+
+volumes:
+  storyforge_flowise:
+  storyforge_fastgpt_config:
+  storyforge_fastgpt_files:
+  storyforge_fastgpt_mongo:
+  storyforge_fastgpt_pg:
+  storyforge_fastgpt_redis:
+  storyforge_fastgpt_rustfs:
+  storyforge_n8n:
+  storyforge_ollama:
+
+networks:
+  # 复用主 compose（infra/docker-compose.yml，name: storyforge）的默认网络
+  storyforge_default:
+    name: storyforge_default
+    external: true

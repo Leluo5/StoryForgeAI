@@ -227,9 +227,11 @@ describe('character schema migrations', () => {
     expect(first(nodeCount).total).toBe('1');
   });
 
-  // 角色域迁移共 6 个：1760500000000(base) ~ 1760500005000(ai-tools 种子)，为注册顺序的最后 6 个
+  // 角色域迁移共 6 个：1760500000000(base) ~ 1760500005000(ai-tools 种子)。
+  // F11（1760700000000-collab-base、1760700001000-ai-task-role-profile-scope）注册在角色域之后，
+  // 撤销时需先撤销这 2 个，再撤销角色域 6 个，共 8 次；重放后断言仍成立（scope 约束含 role_profile 但不含 character）。
   it('rolls back and re-applies the six character migrations', async () => {
-    for (let index = 0; index < 6; index += 1) {
+    for (let index = 0; index < 8; index += 1) {
       await dataSource.undoLastMigration();
     }
     const afterDown: Array<{ table_name: string }> = await dataSource.query(

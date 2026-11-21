@@ -2,13 +2,10 @@ import { useCallback, useEffect, useState, type JSX } from 'react';
 import type { CollabRoleField, CollabWriteback, CollabWritebackField } from '@storyforge/contracts';
 import type { CollabClient } from './collab-client';
 import { CollabRevertDialog } from './collab-revert-dialog';
-import './collab-panel.css';
+import { COLLAB_FIELD_LABEL, collabErrorMessage } from './collab-state';
+import './collab.css';
 
-const FIELD_LABEL: Record<CollabRoleField, string> = {
-  identity: '身份定位',
-  personality: '性格',
-  experience: '经历'
-};
+const FIELD_LABEL = COLLAB_FIELD_LABEL;
 
 interface Props {
   workId: string;
@@ -39,7 +36,7 @@ export function CollabWritebackList({ workId, characterId, client }: Props): JSX
       setWritebacks(rows);
       setError('');
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : '写回历史加载失败');
+      setError(collabErrorMessage(cause));
     } finally {
       setLoading(false);
     }

@@ -7,7 +7,8 @@ import './agent-panel.css';
 
 const PLATFORM_LABEL: Record<AgentPlatform, string> = {
   mock: 'Mock（内置）',
-  coze: 'Coze（预留）'
+  coze: 'Coze（预留）',
+  flowise: 'Flowise（自建）'
 };
 
 /** 工具配置表单编辑状态 */

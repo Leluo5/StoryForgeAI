@@ -2,11 +2,12 @@ import { useCallback, useEffect, useState, type JSX } from 'react';
 import type { CollabReadiness, CollabSettings, CollabRoleField } from '@storyforge/contracts';
 import type { TaskEvent } from '../ai/ai-client';
 import { collabClient, type CollabClient, type CreateRoleProfileTaskResult } from './collab-client';
+import { collabErrorMessage } from './collab-state';
 import { CollabSettingsForm } from './collab-settings-form';
 import { CollabTaskForm } from './collab-task-form';
 import { CollabTaskProgress } from './collab-task-progress';
 import { CollabWritebackList } from './collab-writeback-list';
-import './collab-panel.css';
+import './collab.css';
 
 interface Props {
   workId: string;
@@ -39,7 +40,7 @@ export function CollabPanel({ workId, characterId, client = collabClient, subscr
       setReadiness(r);
       setLoadError('');
     } catch (cause) {
-      setLoadError(cause instanceof Error ? cause.message : '协同状态加载失败');
+      setLoadError(collabErrorMessage(cause));
     } finally {
       setLoaded(true);
     }

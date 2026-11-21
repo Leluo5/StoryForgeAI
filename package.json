@@ -5,7 +5,7 @@
   "packageManager": "pnpm@10.12.4",
   "scripts": {
     "build": "pnpm -r build",
-    "test": "pnpm --filter @storyforge/contracts build && node --test tests/node/*.test.mjs && pnpm vitest run",
+    "test": "pnpm --filter @storyforge/contracts build && node --test tests/node/*.test.mjs && pnpm vitest run --no-file-parallelism",
     "test:e2e": "pnpm --filter @storyforge/contracts build && playwright test",
     "verify:m0": "node scripts/verify-m0.mjs",
     "verify:m1:db": "node scripts/verify-m1-db-failure.mjs",

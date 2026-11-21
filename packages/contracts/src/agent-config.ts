@@ -7,10 +7,20 @@ const timestamp = z.string().datetime();
 // ───────────────────────────── 枚举 ─────────────────────────────
 
 export const agentStatusSchema = z.enum(['active', 'disabled']);
-export const agentPlatformSchema = z.enum(['mock', 'coze']);
+export const agentPlatformSchema = z.enum(['mock', 'coze', 'flowise']);
 
 export type AgentStatus = z.infer<typeof agentStatusSchema>;
 export type AgentPlatform = z.infer<typeof agentPlatformSchema>;
+
+// 平台级配置：仅允许非敏感标识，禁止 URL/令牌/任意键；地址与密钥只能来自环境变量
+// F2 §4.5：platform_config 只存 flowise_chatflow_id，Coze/Mock 使用空对象
+export const agentPlatformConfigSchema = z
+  .object({
+    flowise_chatflow_id: z.string().regex(/^[A-Za-z0-9-]{1,64}$/).optional()
+  })
+  .strict()
+  .default({});
+export type AgentPlatformConfig = z.infer<typeof agentPlatformConfigSchema>;
 
 // 模型参数：受控字段（温度/最大 token），防任意 JSON 注入
 export const modelConfigSchema = z
@@ -29,6 +39,7 @@ export const agentSchema = z.object({
   author_id: id,
   name: z.string().min(1).max(80),
   platform: agentPlatformSchema,
+  platform_config: agentPlatformConfigSchema.optional().default({}),
   model_id: z.string().min(1).max(80),
   model_config: modelConfigSchema,
   status: agentStatusSchema,
@@ -69,6 +80,7 @@ export type AgentSummary = z.infer<typeof agentSummarySchema>;
 export const createAgentRequestSchema = z.object({
   name: z.string().min(1).max(80),
   platform: agentPlatformSchema.default('mock'),
+  platform_config: agentPlatformConfigSchema.optional(),
   model_id: z.string().min(1).max(80),
   model_config: modelConfigSchema,
   is_default: z.boolean().optional()
@@ -78,6 +90,8 @@ export const createAgentRequestSchema = z.object({
 export const updateAgentRequestSchema = z
   .object({
     name: z.string().min(1).max(80).optional(),
+    platform: agentPlatformSchema.optional(),
+    platform_config: agentPlatformConfigSchema.optional(),
     model_id: z.string().min(1).max(80).optional(),
     model_config: modelConfigSchema.optional(),
     status: agentStatusSchema.optional(),
@@ -198,7 +212,7 @@ export const agentV2Schema = agentSchema.extend({
   tool_name: z.string().max(40).optional().nullable(),
   step_order: z.number().int().min(1).max(11).optional().nullable(),
   scope: agentScopeSchema.optional().default('project'),
-  platform_config: z.record(z.unknown()).optional().default({}),
+  platform_config: agentPlatformConfigSchema.optional().default({}),
   source: agentSourceSchema.optional().default('manual'),
   tags: z.array(z.string()).optional().default([]),
   manual_group_key: id.optional().nullable(),
@@ -241,7 +255,7 @@ export const createAgentV2RequestSchema = z
     step_order: z.number().int().min(1).max(11).optional(),
     scope: agentScopeSchema.optional(),
     platform: agentPlatformSchema.default('mock'),
-    platform_config: z.record(z.unknown()).optional(),
+    platform_config: agentPlatformConfigSchema.optional(),
     model_id: z.string().min(1).max(80).optional(),
     model_config: modelConfigV2Schema.optional(),
     source: agentSourceSchema.optional(),
@@ -261,7 +275,7 @@ export const updateAgentV2RequestSchema = z
     name: z.string().min(1).max(80).optional(),
     description: z.string().max(500).optional(),
     platform: agentPlatformSchema.optional(),
-    platform_config: z.record(z.unknown()).optional(),
+    platform_config: agentPlatformConfigSchema.optional(),
     model_id: z.string().min(1).max(80).optional(),
     model_config: modelConfigV2Schema.optional(),
     status: agentStatusV2Schema.optional(),

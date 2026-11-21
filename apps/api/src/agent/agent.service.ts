@@ -34,6 +34,7 @@ function toAgent(entity: AgentEntity): Agent {
     author_id: entity.author_id,
     name: entity.name,
     platform: entity.platform as Agent['platform'],
+    platform_config: entity.platform_config ?? {},
     model_id: entity.model_id,
     model_config: entity.model_config,
     status: entity.status as Agent['status'],
@@ -156,6 +157,7 @@ export class AgentService {
       agent.author_id = authorId;
       agent.name = input.name;
       agent.platform = input.platform ?? 'mock';
+      agent.platform_config = input.platform_config ?? {};
       agent.model_id = input.model_id;
       agent.model_config = input.model_config ?? {};
       agent.status = 'active';
@@ -183,6 +185,8 @@ export class AgentService {
         if (dup && dup.id !== agentId) throw new ConflictException({ message: 'Agent name already exists' });
         agent.name = input.name;
       }
+      if (input.platform !== undefined) agent.platform = input.platform;
+      if (input.platform_config !== undefined) agent.platform_config = input.platform_config;
       if (input.model_id !== undefined) agent.model_id = input.model_id;
       if (input.model_config !== undefined) agent.model_config = input.model_config;
       if (input.status !== undefined) {

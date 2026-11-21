@@ -1,7 +1,8 @@
 import { useCallback, useState, type JSX } from 'react';
 import type { CollabRoleField } from '@storyforge/contracts';
 import type { CollabClient, CreateRoleProfileTaskResult } from './collab-client';
-import './collab-panel.css';
+import { collabErrorMessage } from './collab-state';
+import './collab.css';
 
 const FIELD_OPTIONS: { value: CollabRoleField; label: string }[] = [
   { value: 'identity', label: '身份定位' },
@@ -43,7 +44,7 @@ export function CollabTaskForm({ workId, client, characterId, whitelistFields, o
       setInstruction('');
       onCreated?.(result);
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : '任务创建失败');
+      setError(collabErrorMessage(cause));
     } finally {
       setSubmitting(false);
     }

@@ -28,6 +28,8 @@ import {
   CharacterTaskHandler,
   type CharacterTaskContext
 } from '../character/character-task.handler';
+import { CollabTaskHandler } from '../collab/collab-task.handler';
+import { CollabUpstreamError } from '../collab/channel/collab-upstream.error';
 import { env } from '../config/env';
 
 // ───────────────────────────── 结果映射端口（A6 实现，避免 A5↔A6 循环依赖） ─────────────────────────────
@@ -119,7 +121,11 @@ interface CharacterProcessContext extends BaseProcessContext {
   kind: 'character';
 }
 
-type ProcessContext = ChapterProcessContext | PlotProcessContext | CharacterProcessContext;
+interface RoleProfileProcessContext extends BaseProcessContext {
+  kind: 'role_profile';
+}
+
+type ProcessContext = ChapterProcessContext | PlotProcessContext | CharacterProcessContext | RoleProfileProcessContext;
 
 /**
  * AI 任务处理器：消费 BullMQ 队列，执行一次 AI 创作任务。
@@ -140,7 +146,10 @@ export class AiTaskProcessor {
     @Inject(PlotTaskHandler) private readonly plotHandler: PlotTaskHandler = new PlotTaskHandler(),
     @Optional()
     @Inject(forwardRef(() => CharacterTaskHandler))
-    private readonly characterHandler?: CharacterTaskHandler
+    private readonly characterHandler?: CharacterTaskHandler,
+    @Optional()
+    @Inject(CollabTaskHandler)
+    private readonly collabHandler?: CollabTaskHandler
   ) {}
 
   /** 创建消费该队列的 BullMQ Worker（A8 在 main.ts 启动；测试可直接调用） */
@@ -180,6 +189,21 @@ export class AiTaskProcessor {
           inputSummary: started.context.inputSummary
         });
         await this.finishCharacterSucceeded(started.context, summary);
+        return;
+      }
+
+      if (started.context.kind === 'role_profile') {
+        if (!this.collabHandler) {
+          throw new Error('CollabTaskHandler 未装配');
+        }
+        const summary = await this.collabHandler.handle({
+          taskId: started.context.taskId,
+          authorId: started.context.authorId,
+          workId: started.context.workId,
+          tool: started.context.tool,
+          inputSummary: started.context.inputSummary
+        });
+        await this.finishRoleProfileSucceeded(started.context, summary);
         return;
       }
 
@@ -240,6 +264,24 @@ export class AiTaskProcessor {
           skipped: false,
           context: {
             kind: 'character',
+            taskId: task.id,
+            authorId: task.created_by,
+            workId: task.work_id,
+            tool: task.tool,
+            inputSummary: task.input_summary
+          }
+        };
+      }
+
+      // scope='role_profile'（F11）任务无章节，通道已在任务创建时写入 task.channel
+      if (task.scope === 'role_profile') {
+        if (task.channel !== 'flowise' && task.channel !== 'coze') {
+          throw new Error(`Role profile task ${task.id} missing valid channel`);
+        }
+        return {
+          skipped: false,
+          context: {
+            kind: 'role_profile',
             taskId: task.id,
             authorId: task.created_by,
             workId: task.work_id,
@@ -496,13 +538,45 @@ export class AiTaskProcessor {
     });
   }
 
+  /** F11 角色资料任务成功：锁任务 → succeeded + 审计（写回已由 handler 在事务内完成） */
+  private async finishRoleProfileSucceeded(
+    context: RoleProfileProcessContext,
+    summary: Record<string, unknown>
+  ): Promise<{ skipped: boolean }> {
+    return this.dataSource.transaction(async (manager) => {
+      const task = await manager.getRepository(AiTaskEntity).createQueryBuilder('task')
+        .where('task.id = :taskId', { taskId: context.taskId })
+        .setLock('pessimistic_write')
+        .getOne();
+      if (!task || task.status !== 'running') return { skipped: true };
+
+      task.status = 'succeeded';
+      await appendEvent(manager, task, this.eventBus, 'succeeded', {
+        tool: context.tool,
+        ...summary
+      });
+
+      await this.auditService.record(context.authorId, 'ai_task_succeeded', 'ai_task', task.id, {
+        tool: context.tool,
+        scope: 'role_profile',
+        ...summary
+      }, context.workId);
+
+      return { skipped: false };
+    });
+  }
+
   /** 标记任务失败：锁任务，仅 running/queued 可转 failed（终态跳过，幂等） */
   private async markFailed(taskId: string, err: unknown): Promise<void> {
     const message = err instanceof Error ? err.message : String(err);
-    const retryable =
-      err instanceof AiModelError || err instanceof PlotModelError ? err.retryable : true;
-    const code =
-      err instanceof AiModelError || err instanceof PlotModelError ? err.code : 'UNKNOWN';
+    const isModel = err instanceof AiModelError || err instanceof PlotModelError;
+    const isCollab = err instanceof CollabUpstreamError;
+    const retryable = isModel || isCollab
+      ? (err as { retryable: boolean }).retryable
+      : true;
+    const code = isModel || isCollab
+      ? (err as { code: string }).code
+      : 'UNKNOWN';
     const pendingCharacter: {
       context: CharacterTaskContext | null;
       error: Record<string, unknown> | null;

@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useMemo, useState, type JSX } from 'react';
 import type { CollabSettings, CollabRoleField, PutCollabSettingsRequest } from '@storyforge/contracts';
 import type { CollabClient } from './collab-client';
-import './collab-panel.css';
+import { collabErrorMessage } from './collab-state';
+import './collab.css';
 
 const FIELD_OPTIONS: { value: CollabRoleField; label: string; hint: string }[] = [
   { value: 'identity', label: '身份定位', hint: '身份' },
@@ -46,7 +47,7 @@ export function CollabSettingsForm({ workId, client, isTestCharacter, onSaved }:
       setEnabled(existing?.enabled ?? false);
       setError('');
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : '协同设置加载失败');
+      setError(collabErrorMessage(cause));
     } finally {
       setLoading(false);
     }
@@ -75,7 +76,7 @@ export function CollabSettingsForm({ workId, client, isTestCharacter, onSaved }:
       setSettings(saved);
       onSaved?.(saved);
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : '协同设置保存失败');
+      setError(collabErrorMessage(cause));
     } finally {
       setSaving(false);
     }

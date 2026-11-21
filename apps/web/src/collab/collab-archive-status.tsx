@@ -1,6 +1,6 @@
 import { type JSX } from 'react';
 import type { CollabArchiveStatus } from '@storyforge/contracts';
-import './collab-panel.css';
+import './collab.css';
 
 const STATUS_LABEL: Record<CollabArchiveStatus, string> = {
   pending: '待投递',

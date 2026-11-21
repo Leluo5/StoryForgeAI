@@ -2,7 +2,8 @@ import { useCallback, useEffect, useRef, useState, type JSX } from 'react';
 import type { CollabTaskDetail } from '@storyforge/contracts';
 import type { CollabClient } from './collab-client';
 import type { TaskEvent } from '../ai/ai-client';
-import './collab-panel.css';
+import { collabErrorMessage } from './collab-state';
+import './collab.css';
 
 const EVENT_LABEL: Record<string, string> = {
   queued: '已入队',
@@ -35,7 +36,7 @@ export function CollabTaskProgress({ workId, taskId, client, subscribe }: Props)
       setDetail(next);
       setError('');
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : '任务详情加载失败');
+      setError(collabErrorMessage(cause));
     } finally {
       setLoading(false);
     }

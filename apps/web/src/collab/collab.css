@@ -1,4 +1,4 @@
-/* F11 多平台 Agent 协同 · 面板样式 */
+/* F11 多平台 Agent 协同 · 面板样式（F2 §5.4 约定 collab.css） */
 .collab-panel {
   display: flex;
   flex-direction: column;

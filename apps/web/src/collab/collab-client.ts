@@ -76,9 +76,10 @@ export const collabClient: CollabClient = {
   createRoleProfileTask(workId, input, idempotencyKey) {
     const headers: Record<string, string> = {};
     if (idempotencyKey) headers['idempotency-key'] = idempotencyKey;
+    const init = json('POST', createRoleProfileTaskRequestSchema.parse(input));
     return apiRequest(`${root}/${part(workId)}/role-profile/tasks`,
       collabTaskCreateResultSchema,
-      { ...json('POST', createRoleProfileTaskRequestSchema.parse(input)), headers });
+      Object.keys(headers).length ? { ...init, headers } : init);
   },
   getTaskDetail(workId, taskId) {
     return apiRequest(`${root}/${part(workId)}/role-profile/tasks/${part(taskId)}`, collabTaskDetailSchema);

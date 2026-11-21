@@ -43,6 +43,10 @@ import { CharacterTextAnchorEntity } from './character-text-anchor.entity';
 import { CharacterArchiveScanEntity } from './character-archive-scan.entity';
 import { PlotNodeCharacterOwnerEntity } from './plot-node-character-owner.entity';
 import { CollabSettingEntity } from './collab-setting.entity';
+import { RoleProfileWritebackEntity } from './role-profile-writeback.entity';
+import { RoleProfileWritebackFieldEntity } from './role-profile-writeback-field.entity';
+import { AgentTaskCitationEntity } from './agent-task-citation.entity';
+import { AgentArchiveOutboxEntity } from './agent-archive-outbox.entity';
 import { AuthBase1736899200000 } from './migrations/1736899200000-auth-base';
 import { WritingBase1736985600000 } from './migrations/1736985600000-writing-base';
 import { RevisionBase1760000000000 } from './migrations/1760000000000-revision-base';
@@ -58,6 +62,8 @@ import { CharacterRelationTypeSeed1760500002000 } from './migrations/17605000020
 import { CharacterAnchors1760500003000 } from './migrations/1760500003000-character-anchors';
 import { PlotNodeCharacterOwners1760500004000 } from './migrations/1760500004000-plot-node-character-owners';
 import { CharacterAiTools1760500005000 } from './migrations/1760500005000-character-ai-tools';
+import { CollabBase1760700000000 } from './migrations/1760700000000-collab-base';
+import { AiTaskRoleProfileScope1760700001000 } from './migrations/1760700001000-ai-task-role-profile-scope';
 
 export function createDataSource(databaseUrl: string = env.DATABASE_URL): DataSource {
   return new DataSource({
@@ -105,7 +111,11 @@ export function createDataSource(databaseUrl: string = env.DATABASE_URL): DataSo
       CharacterTextAnchorEntity,
       CharacterArchiveScanEntity,
       PlotNodeCharacterOwnerEntity,
-      CollabSettingEntity
+      CollabSettingEntity,
+      RoleProfileWritebackEntity,
+      RoleProfileWritebackFieldEntity,
+      AgentTaskCitationEntity,
+      AgentArchiveOutboxEntity
     ],
     migrations: [
       AuthBase1736899200000,
@@ -123,7 +133,8 @@ export function createDataSource(databaseUrl: string = env.DATABASE_URL): DataSo
       CharacterAnchors1760500003000,
       PlotNodeCharacterOwners1760500004000,
       CharacterAiTools1760500005000,
-      CollabBase1760700000000
+      CollabBase1760700000000,
+      AiTaskRoleProfileScope1760700001000
     ],
     migrationsTableName: 'migrations',
     synchronize: false,

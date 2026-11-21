@@ -25,6 +25,7 @@ import { PlotGenerationDraftEntity } from '../database/plot-generation-draft.ent
 import { PlotTaskHandler } from '../plot/plot-task.handler';
 import { MockPlotModelProvider, PLOT_MODEL_PROVIDER } from '../plot/plot-model.provider';
 import { CharacterModule } from '../character/character.module';
+import { CollabModule } from '../collab/collab.module';
 
 /**
  * AI 创作基座模块（M3a）。
@@ -48,7 +49,8 @@ import { CharacterModule } from '../character/character.module';
     ]),
     AuthModule,
     AgentModule,
-    forwardRef(() => CharacterModule)
+    forwardRef(() => CharacterModule),
+    forwardRef(() => CollabModule)
   ],
   providers: [
     AuditService,
