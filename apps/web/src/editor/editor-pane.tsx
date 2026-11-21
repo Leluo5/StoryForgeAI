@@ -5,6 +5,7 @@ import {
   markdownToDocument,
   replaceDocumentOperations
 } from '@storyforge/editor-schema';
+import { Button } from '@storyforge/ui';
 import { useCallback, useEffect, useState } from 'react';
 import { MarkdownEditor } from './markdown-editor';
 import { ProseMirrorEditor } from './prosemirror-editor';
@@ -60,8 +61,10 @@ export function EditorPane({
 
   return <section aria-label="正文编辑器">
     <div role="group" aria-label="编辑模式">
-      <button type="button" aria-pressed={mode === 'rich'} onClick={showRich}>富文本</button>
-      <button type="button" aria-pressed={mode === 'markdown'} onClick={showMarkdown}>Markdown</button>
+      <Button variant={mode === 'rich' ? 'primary' : 'ghost'} size="sm"
+        aria-pressed={mode === 'rich'} onClick={showRich}>富文本</Button>
+      <Button variant={mode === 'markdown' ? 'primary' : 'ghost'} size="sm"
+        aria-pressed={mode === 'markdown'} onClick={showMarkdown}>Markdown</Button>
     </div>
     {mode === 'rich'
       ? <ProseMirrorEditor initialDocument={document} readOnly={readOnly} roleMarks={roleMarks}
