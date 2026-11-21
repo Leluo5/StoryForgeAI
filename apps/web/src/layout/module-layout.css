@@ -1,0 +1,16 @@
+/*
+ * 功能模块布局壳样式
+ * 内容区始终预留 64px 左侧安全边距（工具栏收起态宽度）。
+ * 工具栏展开为 fixed 浮层，覆盖在内容区左缘，不挤压内容；内容布局/尺寸/展示状态不变。
+ */
+
+.module-layout {
+  min-height: 100vh;
+  display: block;
+}
+
+.module-layout__content {
+  /* 预留收起态工具栏宽度，避免内容被遮挡；展开态为浮层覆盖，不改变此间距 */
+  margin-left: var(--sidenav-width-collapsed, 64px);
+  min-height: 100vh;
+}

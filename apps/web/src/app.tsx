@@ -3,6 +3,7 @@ import { BrowserRouter, Navigate, Route, Routes } from 'react-router-dom';
 import type { SessionResponse } from '@storyforge/contracts';
 import { AuthPage } from './auth/auth-page';
 import { getSession, loginOrRegister, logout } from './auth/auth-client';
+import { ModuleLayout } from './layout/module-layout';
 
 // 路由级懒加载：作品库与工作台（含 ProseMirror 编辑器、剧情画布）按需加载，
 // 未登录时只需下载登录页所需代码。
@@ -12,6 +13,8 @@ const ArkClawPage = lazy(() => import('./arkclaw/arkclaw-page').then((mod) => ({
 const KnowledgePage = lazy(() => import('./knowledge/knowledge-page').then((mod) => ({ default: mod.KnowledgePage })));
 const AgentsPage = lazy(() => import('./agent/agents-page').then((mod) => ({ default: mod.AgentsPage })));
 const WorkflowsPage = lazy(() => import('./agent/workflows-page').then((mod) => ({ default: mod.WorkflowsPage })));
+const ModelsPage = lazy(() => import('./agent/models-page').then((mod) => ({ default: mod.ModelsPage })));
+const AdminPage = lazy(() => import('./agent/admin-page').then((mod) => ({ default: mod.AdminPage })));
 
 export function App() {
   const [session, setSession] = useState<SessionResponse>();
@@ -29,11 +32,18 @@ export function App() {
     <Routes>
       <Route path="/" element={<Navigate to="/works" replace />} />
       <Route path="/login" element={<Navigate to="/works" replace />} />
-      <Route path="/works" element={<Suspense fallback={<p role="status">正在加载作品库</p>}><WorksPage /></Suspense>} />
-      <Route path="/knowledge" element={<Suspense fallback={<p role="status">正在加载知识库</p>}><KnowledgePage /></Suspense>} />
+      {/* 功能模块壳：左侧共享导航工具栏 + 右侧模块内容，六个模块共用同一布局 */}
+      <Route element={<ModuleLayout />}>
+        <Route path="/works" element={<Suspense fallback={<p role="status">正在加载作品库</p>}><WorksPage /></Suspense>} />
+        <Route path="/knowledge" element={<Suspense fallback={<p role="status">正在加载知识库</p>}><KnowledgePage /></Suspense>} />
+        <Route path="/agents" element={<Suspense fallback={<p role="status">正在加载智能体管理</p>}><AgentsPage /></Suspense>} />
+        <Route path="/workflows" element={<Suspense fallback={<p role="status">正在加载工作流管理</p>}><WorkflowsPage /></Suspense>} />
+        <Route path="/models" element={<Suspense fallback={<p role="status">正在加载模型</p>}><ModelsPage /></Suspense>} />
+        <Route path="/admin" element={<Suspense fallback={<p role="status">正在加载后台</p>}><AdminPage /></Suspense>} />
+      </Route>
+      {/* ArkClaw 验证页：main 演进功能，独立于模块壳 */}
       <Route path="/arkclaw" element={<Suspense fallback={<p role="status">正在加载 ArkClaw 验证页</p>}><ArkClawPage /></Suspense>} />
-      <Route path="/agents" element={<Suspense fallback={<p role="status">正在加载智能体管理</p>}><AgentsPage /></Suspense>} />
-      <Route path="/workflows" element={<Suspense fallback={<p role="status">正在加载工作流管理</p>}><WorkflowsPage /></Suspense>} />
+      {/* 工作台独立于模块壳：进入作品后全屏沉浸式编辑，不含左侧工具栏 */}
       <Route path="/works/:workId/write/:chapterId" element={<Suspense fallback={<p role="status">正在加载工作台</p>}><WorkbenchRoute /></Suspense>} />
       <Route path="*" element={<Navigate to="/works" replace />} />
     </Routes>

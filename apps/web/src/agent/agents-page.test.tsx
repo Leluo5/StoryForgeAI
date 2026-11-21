@@ -11,14 +11,14 @@ vi.mock('./agent-client', () => ({
 }));
 
 describe('AgentsPage', () => {
-  it('renders the header with title and back link', async () => {
+  it('renders the header with title and subtitle', async () => {
     render(<MemoryRouter initialEntries={['/agents']}><Routes>
       <Route path="/agents" element={<AgentsPage />} />
     </Routes></MemoryRouter>);
     expect(screen.getByRole('heading', { name: '智能体管理' })).toBeVisible();
     expect(screen.getByText('配置创作智能体与工具：模型、温度、令牌上限与工具绑定')).toBeVisible();
-    const back = screen.getByRole('link', { name: '返回作品库' });
-    expect(back).toHaveAttribute('href', '/works');
+    // 返回入口已收口到左侧共享导航工具栏，页面内不再渲染「返回作品库」
+    expect(screen.queryByRole('link', { name: '返回作品库' })).toBeNull();
   });
 
   it('mounts the AgentPanel beneath the header', async () => {

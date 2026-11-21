@@ -46,23 +46,14 @@ describe('WorksPage', () => {
     expect(createWork).toHaveBeenCalledWith({ title: '星河', description: '' });
   });
 
-  it('renders the knowledge base entry link in the header toolbar', async () => {
+  it('keeps the create button and does not render module entry links in the header', async () => {
     renderPage();
     await screen.findByText('既有作品');
-    const entry = screen.getByRole('link', { name: '知识库' });
-    expect(entry).toBeVisible();
-    expect(entry).toHaveAttribute('href', '/knowledge');
-  });
-
-  it('renders the agent and workflow management entry links beside the knowledge base', async () => {
-    renderPage();
-    await screen.findByText('既有作品');
-    const agents = screen.getByRole('link', { name: '智能体管理' });
-    expect(agents).toBeVisible();
-    expect(agents).toHaveAttribute('href', '/agents');
-    const workflows = screen.getByRole('link', { name: '工作流管理' });
-    expect(workflows).toBeVisible();
-    expect(workflows).toHaveAttribute('href', '/workflows');
+    // 功能入口已收口到左侧共享导航工具栏，页头工具区只保留搜索 + 新建作品
+    expect(screen.getByRole('button', { name: '新建作品' })).toBeVisible();
+    expect(screen.queryByRole('link', { name: '知识库' })).toBeNull();
+    expect(screen.queryByRole('link', { name: '智能体管理' })).toBeNull();
+    expect(screen.queryByRole('link', { name: '工作流管理' })).toBeNull();
   });
 
   it('archives only after native confirmation', async () => {

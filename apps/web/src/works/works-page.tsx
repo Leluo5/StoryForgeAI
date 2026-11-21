@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState, type FormEvent } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
+import { useNavigate } from 'react-router-dom';
 import type { Work } from '@storyforge/contracts';
 import { Badge, Button, Card, Input, Modal, Spinner, Textarea } from '@storyforge/ui';
 import { createWork, getTree, listWorks, updateWork } from './writing-client';
@@ -112,9 +112,6 @@ export function WorksPage() {
             />
           </form>
           <Button variant="ghost" onClick={() => navigate('/arkclaw')}>ArkClaw 验证</Button>
-          <Link to="/knowledge"><Button variant="secondary">知识库</Button></Link>
-          <Link to="/agents"><Button variant="secondary">智能体管理</Button></Link>
-          <Link to="/workflows"><Button variant="secondary">工作流管理</Button></Link>
           <Button variant="primary" onClick={openCreate}>新建作品</Button>
         </div>
       </div>

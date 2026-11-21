@@ -1,0 +1,101 @@
+/*
+ * 共享左侧导航工具栏样式
+ * 收起：64px 窄条（仅图标），fixed 固定于左缘，不占文档流。
+ * 展开：224px 浮层覆盖在内容区左缘，宽度平滑过渡；右侧内容区由布局壳预留 64px 安全边距，
+ * 展开态是覆盖层，不挤压内容，内容布局/尺寸不变。
+ */
+
+.side-nav {
+  position: fixed;
+  top: 0;
+  bottom: 0;
+  left: 0;
+  z-index: 50;
+  width: var(--sidenav-width-collapsed, 64px);
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  background: var(--bg-secondary, #ffffff);
+  border-right: 1px solid var(--border-color, #e2e8f0);
+  transition: width 0.28s cubic-bezier(0.4, 0, 0.2, 1);
+  overflow: hidden;
+}
+
+.side-nav--expanded {
+  width: var(--sidenav-width-expanded, 224px);
+  box-shadow: 0 0 24px rgba(0, 0, 0, 0.12);
+}
+
+.side-nav__list {
+  flex: 1 1 auto;
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-1, 4px);
+  padding: var(--sp-4, 16px) var(--sp-2, 8px);
+  overflow-y: auto;
+}
+
+.side-nav__item {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3, 12px);
+  padding: var(--sp-3, 12px) var(--sp-3, 12px);
+  border-radius: var(--radius-md, 8px);
+  color: var(--text-secondary, #475569);
+  text-decoration: none;
+  font: var(--fw-medium, 500) var(--fs-body, 14px) / 1.4 var(--font-sans, sans-serif);
+  white-space: nowrap;
+  transition: background 0.18s ease, color 0.18s ease;
+}
+
+.side-nav__item:hover {
+  background: var(--bg-hover, rgba(0, 0, 0, 0.04));
+  color: var(--text-primary, #1a1a2e);
+}
+
+.side-nav__item--active {
+  background: var(--brand-soft, rgba(88, 101, 242, 0.12));
+  color: var(--brand-600, #5865f2);
+}
+
+.side-nav__icon {
+  flex: 0 0 auto;
+  width: 20px;
+  height: 20px;
+}
+
+/* 名称默认隐藏（收起态），展开后淡入 */
+.side-nav__label {
+  opacity: 0;
+  transform: translateX(-6px);
+  transition: opacity 0.18s ease, transform 0.18s ease;
+  pointer-events: none;
+}
+
+.side-nav--expanded .side-nav__label {
+  opacity: 1;
+  transform: translateX(0);
+  pointer-events: auto;
+}
+
+.side-nav__toggle {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3, 12px);
+  margin: var(--sp-2, 8px);
+  padding: var(--sp-3, 12px);
+  border: none;
+  border-radius: var(--radius-md, 8px);
+  background: transparent;
+  color: var(--text-secondary, #475569);
+  cursor: pointer;
+  font: var(--fw-medium, 500) var(--fs-body, 14px) / 1.4 var(--font-sans, sans-serif);
+  white-space: nowrap;
+  transition: background 0.18s ease, color 0.18s ease;
+}
+
+.side-nav__toggle:hover {
+  background: var(--bg-hover, rgba(0, 0, 0, 0.04));
+  color: var(--text-primary, #1a1a2e);
+}
