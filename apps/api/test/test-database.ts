@@ -5,6 +5,7 @@ import type { DataSource } from 'typeorm';
 config({ path: resolve(__dirname, '../../../.env') });
 
 export const DEFAULT_TEST_DATABASE_URL = 'postgresql://storyforge:storyforge@127.0.0.1:5433/storyforge_test';
+export const TEST_DATABASE_ADVISORY_LOCK_KEY = [0x53544f52, 0x54455354] as const;
 
 export function assertTestDatabaseUrl(value: string): void {
   const url = new URL(value);
