@@ -1,18 +1,103 @@
-.workbench { min-height: 100vh; background: var(--bg-primary); color: var(--text-primary); }
+.workbench { min-height: 100vh; display: flex; flex-direction: column; background: var(--bg-primary); color: var(--text-primary); }
 .workbench-header {
-  min-height: 64px; padding: var(--sp-2) var(--sp-4); display: flex; align-items: center;
-  flex-wrap: wrap; gap: var(--sp-2); background: var(--bg-secondary); border-bottom: 1px solid var(--border-color);
+  padding: var(--sp-2) var(--sp-4); display: flex; flex-direction: column; gap: var(--sp-2);
+  background: var(--bg-secondary); border-bottom: 1px solid var(--border-color);
+}
+/* 页头行（两行结构）：第一行作品名 + 已同步；第二行数据动作 + 功能区 + 返回作品库 */
+.workbench-header-row {
+  display: flex; align-items: center; gap: var(--sp-3); flex-wrap: wrap;
 }
 .workbench-header h1 { margin: 0; font-size: var(--fs-h2); font-weight: var(--fw-semibold); }
+/* 已同步 / 保存状态：小字、淡灰色，紧跟作品名左侧 */
+.workbench-header .save-status {
+  font-size: var(--fs-small); color: var(--text-tertiary);
+}
+/* 创作功能入口组：与作品库「新建作品」同款 primary 按钮，横向排列。
+   入口组以 margin-left:auto 推到右侧，使「作品名左对齐、其余功能按钮（含返回作品库）统一右对齐」，
+   最后一个「返回作品库」随之贴到 header 最右边缘。
+   用 .workbench-header-row 前缀提高特异性，覆盖全局 [role='group'] { margin:0; padding-left } 的干扰。 */
+.workbench-header-row .workbench-feature-entries {
+  display: inline-flex; align-items: center; gap: var(--sp-2); margin-left: auto; padding: 0;
+}
+/* 返回作品库：贴第一行最右（入口组以 auto 外边距已把本行右侧内容推到最右，返回作品库随之贴边） */
+.workbench-header-row > .sf-btn:last-child { margin-left: 0; }
+/* 第二行：左侧数据动作（接管写入 / 导出恢复数据 / 打开章节导航 / 打开章节信息）→ 中间空白 → 功能区 + 返回作品库。
+   与第一行同为 .workbench-header-row（flex + wrap），保证按钮横向排列、响应式换行一致。 */
+.workbench-header-actions { display: flex; align-items: center; gap: var(--sp-2); flex-wrap: wrap; }
+/* 返回作品库：使用设计令牌强调色 --btn-accent-bg（琥珀金），语义为「离开当前作品」，与其余 ghost 按钮区分 */
+.sf-btn.btn-accent {
+  background: var(--btn-accent-bg); border: 1px solid transparent; color: var(--btn-accent-text);
+}
+.sf-btn.btn-accent:hover:not(:disabled) { background: var(--btn-accent-bg-hover); color: var(--btn-accent-text); }
+.sf-btn.btn-accent:active:not(:disabled) { background: var(--btn-accent-bg-active); }
+/* 第三行：富文本 / Markdown 编辑模式切换，正文编辑器 portal 到此容器，右对齐 */
+.workbench-editor-mode { display: flex; align-items: center; justify-content: flex-end; min-height: 0; }
+.workbench-editor-mode:empty { display: none; }
+.workbench-editor-mode .editor-mode-controls { display: inline-flex; align-items: center; gap: var(--sp-2); }
 .workbench-grid {
   display: grid; grid-template-columns: var(--left-width) minmax(0, 1fr) var(--right-width);
-  height: calc(100vh - 64px); min-height: 480px; overflow: hidden;
+  flex: 1; min-height: 480px; overflow: hidden;
 }
 .workbench-left, .workbench-right { min-width: 0; padding: var(--sp-3); overflow: auto; background: var(--bg-secondary); }
 .workbench-left { border-right: 1px solid var(--border-color); }
+/* 需求4：章节导航栏使用蓝灰底色 --nav-bg 与正文白底区分；overflow-x 保持隐藏以去掉滑动条，
+   纵向滚动改由内部滚动条承担（body 溢出时隐藏，见下方 scrollbar 规则） */
+.workbench-left { background: var(--nav-bg); overflow-x: hidden; overflow-y: auto; }
+/* 需求4：去掉导航栏滑动条 —— 隐藏纵向滚动条，但保留可滚动能力（内容超出仍可滚） */
+.workbench-left { scrollbar-width: none; }
+.workbench-left::-webkit-scrollbar { display: none; }
+/* 需求9：角色版图/剧情树/创作工具时隐藏左侧章节导航栏，彻底移除（配合 grid 列宽 0，消除 padding 残留窄缝） */
+.workbench-left.is-hidden { display: none; }
+/* 收起态（is-collapsed）：--left-width 44px 窄轨，清左右 padding 让按钮占满，仅显示图标、垂直居中 */
+.workbench-left.is-collapsed { padding: var(--sp-3) 0; }
+.workbench-left.is-collapsed .panel-collapse-toggle { justify-content: center; padding: 6px 0; margin-bottom: 0; }
+.workbench-left.is-collapsed .panel-collapse-toggle__label { display: none; }
+/* 需求7：卷名 / 章节名超出显示范围时渐隐截断，悬停 title 属性显示完整文本（见 chapter-tree 的 title={...}）
+   用 mask 做渐隐（保留文字真实颜色与对比度），mask 不支持时回退到普通省略号 */
+@supports (-webkit-mask-image: linear-gradient(#000, #000)) {
+  .workbench-left .volume-row .fade-truncate, .workbench-left [role='treeitem'] .fade-truncate {
+    display: block; flex: 1; min-width: 0; overflow: hidden; white-space: nowrap;
+    -webkit-mask-image: linear-gradient(90deg, #000 0, #000 78%, transparent 100%);
+    mask-image: linear-gradient(90deg, #000 0, #000 78%, transparent 100%);
+  }
+}
+/* 需求6：新建章节加号按钮，右对齐贴卷行末尾 */
+.workbench-left .tree-add { margin-left: auto; }
+/* 需求6：右键菜单 —— 绝对定位在视口内（left/top 由组件按坐标计算，避免越界） */
+.workbench-left .tree-menu {
+  position: fixed; z-index: 40; min-width: 132px; padding: var(--sp-1);
+  display: flex; flex-direction: column; gap: 2px;
+  background: var(--bg-primary); border: 1px solid var(--border-color); border-radius: var(--radius-md);
+  box-shadow: 0 8px 24px rgb(15 23 42 / 18%);
+}
+.workbench-left .tree-menu button {
+  display: block; width: 100%; padding: var(--sp-2); text-align: left;
+  background: transparent; border: 0; border-radius: var(--radius-sm);
+  color: var(--text-primary); font: inherit; font-size: var(--fs-body); cursor: pointer;
+}
+.workbench-left .tree-menu button:hover:not(:disabled) { background: var(--bg-hover); }
+.workbench-left .tree-menu button:disabled { color: var(--text-tertiary); cursor: not-allowed; }
+/* 需求5：折叠 / 展开按钮，与共享导航工具栏 .side-nav__toggle 同款样式 */
+.panel-collapse-toggle {
+  display: flex; align-items: center; gap: 6px; width: 100%;
+  padding: 5px 10px; background: transparent; border: 1px solid transparent; border-radius: 6px;
+  color: var(--text-secondary); font-size: var(--fs-small); cursor: pointer;
+  margin-bottom: var(--sp-2);
+}
+.panel-collapse-toggle:hover { background: var(--bg-hover); color: var(--text-primary); }
+.panel-collapse-toggle:focus-visible { box-shadow: 0 0 0 2px var(--brand-100); color: var(--text-primary); }
+.panel-collapse-toggle svg { flex: none; }
+.panel-collapse-toggle__label { flex: 1; text-align: left; }
+/* 需求8：左侧栏宽度拖动条 —— 仅保留拖动条本身，删除「左侧栏宽度」文字 */
+.workbench-left #left-width {
+  display: block; width: 100%; margin: 0 0 var(--sp-2);
+  accent-color: var(--brand-500); cursor: ew-resize;
+}
 .workbench-right { border-left: 1px solid var(--border-color); }
 .workbench-center { min-width: 0; overflow: auto; padding: var(--sp-5); }
 .workbench-center > section { width: min(100%, 720px); margin: 0 auto; }
+/* 需求3：富文本 / Markdown 切换按钮移出后，正文文本框填满中央区可用宽度 */
+.workbench-center > section[aria-label='正文编辑器'] { width: 100%; }
 /* 中央页签把正文与剧情包在普通容器里，保持正文宽度约束；剧情画布独占整宽 */
 .workbench-center > div > section { width: min(100%, 720px); margin: 0 auto; }
 .workbench-center > div > .plot-workspace { width: 100%; margin: 0; }
@@ -35,11 +120,9 @@
 [role='treeitem'][aria-selected='true'] > a { color: var(--brand-600); background: var(--brand-100); border-radius: var(--radius-md); }
 /* 深色主题下 brand-600 在 brand-100 上对比度不足，改用浅色强调 */
 [data-theme='dark'] [role='treeitem'][aria-selected='true'] > a { color: var(--brand-400); }
-.volume-row { display: flex; flex-wrap: wrap; align-items: center; gap: var(--sp-1); margin-top: var(--sp-3); }
+.volume-row { display: flex; align-items: center; gap: var(--sp-1); margin-top: var(--sp-3); min-width: 0; }
 .tree-actions { margin: var(--sp-3) 0; }
 .context-body { display: flex; flex-direction: column; gap: var(--sp-3); }
-/* 中央页签容器：正文/剧情/角色 三页签，顶部对齐 */
-.center-tabs { margin-bottom: var(--sp-4); }
 .workbench-dialog > .sf-btn { margin-bottom: var(--sp-3); }
 .panel-trigger { display: none; }
 .workbench-dialog {
@@ -51,13 +134,16 @@
 .right-dialog { margin: 0 0 0 auto; }
 @media (max-width: 1023px) {
   .workbench-grid { grid-template-columns: var(--left-width) minmax(0, 1fr); }
+  /* 需求9：窄屏下左侧栏隐藏（角色版图/剧情树/创作工具）时，display:none 的 left 不占 grid cell，
+     center 会落到列1（--left-width:0）被 padding 撑成窄条。改单列让中央区占满整行。 */
+  .workbench-grid:has(.workbench-left.is-hidden) { grid-template-columns: minmax(0, 1fr); }
   .workbench-right { display: none; }
   .right-trigger { display: inline-flex; }
 }
 @media (max-width: 767px) {
   .workbench-header { padding: var(--sp-2); }
   .workbench-header h1 { width: 100%; font-size: var(--fs-h3); }
-  .workbench-grid { grid-template-columns: minmax(0, 1fr); height: calc(100vh - 112px); }
+  .workbench-grid { grid-template-columns: minmax(0, 1fr); }
   .workbench-left { display: none; }
   .workbench-center { padding: var(--sp-3); }
   .ProseMirror { padding: var(--sp-4); }

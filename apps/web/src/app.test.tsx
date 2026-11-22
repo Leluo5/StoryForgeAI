@@ -6,7 +6,17 @@ import { getSession } from './auth/auth-client';
 vi.mock('./auth/auth-client', () => ({ getSession: vi.fn(), login: vi.fn(), loginOrRegister: vi.fn(), logout: vi.fn() }));
 vi.mock('./works/works-page', () => ({ WorksPage: () => <p>作品库页面</p> }));
 vi.mock('./arkclaw/arkclaw-page', () => ({ ArkClawPage: () => <p>ArkClaw 验证页面</p> }));
-
+// 通知中心与未读数不依赖工作台，但依赖外部存储/网络：测试中打桩，避免 jsdom 环境报错
+vi.mock('./revision/collab-client', () => ({ unreadCount: vi.fn(async () => ({ unread: 0 })) }));
+vi.mock('./revision/notification-center', () => ({ NotificationCenter: () => <p>通知中心内容</p> }));
+// 设计令牌读取主题（initialTheme/applyTheme）依赖 matchMedia：jsdom 缺失，需打桩
+beforeAll(() => {
+  window.matchMedia = (media: string) => ({
+    matches: false, media, onchange: null,
+    addEventListener: () => undefined, removeEventListener: () => undefined,
+    addListener: () => undefined, removeListener: () => undefined, dispatchEvent: () => false
+  }) as unknown as MediaQueryList;
+});
 beforeEach(() => {
   window.history.pushState({}, '', '/works');
   vi.mocked(getSession).mockReset();

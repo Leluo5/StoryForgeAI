@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState, type FormEvent } from 'react';
 import { useNavigate } from 'react-router-dom';
 import type { Work } from '@storyforge/contracts';
-import { Badge, Button, Card, Input, Modal, Spinner, Textarea } from '@storyforge/ui';
+import { Button, Card, Input, Modal, Spinner, Textarea } from '@storyforge/ui';
 import { createWork, getTree, listWorks, updateWork } from './writing-client';
 import './works-page.css';
 
@@ -9,6 +9,17 @@ function formatDate(value: Work['created_at']): string {
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return '';
   return date.toLocaleDateString('zh-CN', { year: 'numeric', month: 'short', day: 'numeric' });
+}
+
+/**
+ * 标题首字 → 品牌调色板（6 色）的确定性映射。
+ * 同一作品在任何渲染下封面颜色恒定，不依赖后端字段。
+ */
+function hueForTitle(title: string): number {
+  const first = [...title.trim()][0];
+  if (!first) return 0;
+  const code = first.codePointAt(0) ?? 0;
+  return code % 6;
 }
 
 export function WorksPage() {
@@ -129,46 +140,54 @@ export function WorksPage() {
           ) : works.map((work) => (
             <li key={work.id}>
               <Card
-                className="works-card"
+                className={['works-card', work.status !== 'active' ? 'works-card--archived' : ''].filter(Boolean).join(' ')}
                 interactive={work.status === 'active'}
+                padded={false}
                 onClick={() => { if (work.status === 'active') void openWork(work); }}
-                header={
-                  <div className="works-card__head">
-                    <h2 className="works-card__title">{work.title}</h2>
-                    <Badge variant={work.status === 'active' ? 'brand' : 'default'}>
-                      {work.status === 'active' ? '进行中' : '已归档'}
-                    </Badge>
-                  </div>
-                }
               >
-                <p className="works-card__desc">{work.description || '暂无简介'}</p>
-                <div className="works-card__meta">
-                  <span className="works-card__date">创建于 {formatDate(work.created_at)}</span>
+                <div
+                  className="works-card__cover"
+                  data-hue={hueForTitle(work.title)}
+                  aria-hidden="true"
+                >
+                  <div className="works-card__cover-inner">
+                    <span className="works-card__eyebrow">
+                      {work.status === 'active' ? '创作中' : '已完结'}
+                    </span>
+                    <h2 className="works-card__title">{work.title}</h2>
+                  </div>
                 </div>
-                <div className="works-card__footer">
-                  <Button
-                    variant="primary"
-                    size="sm"
-                    disabled={openingId === work.id || work.status !== 'active'}
-                    onClick={(event) => {
-                      event.stopPropagation();
-                      void openWork(work);
-                    }}
-                  >
-                    {openingId === work.id ? '进入中…' : '进入工作台'}
-                  </Button>
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    aria-label={`归档${work.title}`}
-                    disabled={archivingId === work.id}
-                    onClick={(event) => {
-                      event.stopPropagation();
-                      void archive(work);
-                    }}
-                  >
-                    {archivingId === work.id ? '归档中' : '归档'}
-                  </Button>
+                <div className="works-card__body">
+                  <p className="works-card__desc">{work.description || '暂无简介'}</p>
+                  <div className="works-card__meta">
+                    <span className="works-card__date">创建于 {formatDate(work.created_at)}</span>
+                    <span className="works-card__words">{work.word_count ?? 0} 字</span>
+                  </div>
+                  <div className="works-card__footer">
+                    <Button
+                      variant="primary"
+                      size="sm"
+                      disabled={openingId === work.id || work.status !== 'active'}
+                      onClick={(event) => {
+                        event.stopPropagation();
+                        void openWork(work);
+                      }}
+                    >
+                      {openingId === work.id ? '进入中…' : '进入工作台'}
+                    </Button>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      aria-label={`归档${work.title}`}
+                      disabled={archivingId === work.id}
+                      onClick={(event) => {
+                        event.stopPropagation();
+                        void archive(work);
+                      }}
+                    >
+                      {archivingId === work.id ? '归档中' : '归档'}
+                    </Button>
+                  </div>
                 </div>
               </Card>
             </li>

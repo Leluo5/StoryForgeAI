@@ -1,6 +1,5 @@
 import { useCallback, useEffect, useRef, useState, type CSSProperties, type JSX } from 'react';
-import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom';
-import { applyTheme, initialTheme, type Theme } from '@storyforge/design-tokens';
+import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { Button, Tabs } from '@storyforge/ui';
 import type { SaveChangeRequest, TreeResponse } from '@storyforge/contracts';
 import { ConflictDialog } from '../editor/conflict-dialog';
@@ -11,15 +10,16 @@ import {
   createChapter, createVolume, getChapter, getTree, renameChapter, renameVolume,
   reorderChapters, reorderVolumes, saveChange
 } from '../works/writing-client';
+import { ApiError } from '../api/client';
 import { ChapterTree, type TreeAction } from './chapter-tree';
+import { PanelCollapseToggle } from './panel-collapse-toggle';
+import { EditorModeSlotContext } from '../editor/editor-mode-slot';
 import { chapterUrl } from './chapter-url';
 import { RevisionPanel } from '../revision/revision-panel';
 import { VersionPanel } from '../revision/version-panel';
 import { CommentPanel } from '../revision/comment-panel';
 import { TodoPanel } from '../revision/todo-panel';
 import { AiTaskPanel } from '../ai/ai-task-panel';
-import { NotificationCenter } from '../revision/notification-center';
-import { unreadCount } from '../revision/collab-client';
 import { PlotWorkspace, PlotStoreProvider } from '../plot/plot-workspace';
 import { PlotInspector } from '../plot/plot-inspector';
 import { PlotDerivationPanel } from '../plot/plot-derivation-panel';
@@ -85,17 +85,14 @@ export function WorkbenchPage({ client = defaultClient }: Props) {
   const [searchParams, setSearchParams] = useSearchParams();
   const [tree, setTree] = useState<TreeResponse>();
   const [error, setError] = useState('');
-  const [theme, setTheme] = useState<Theme>(initialTheme);
   const [panels, setPanels] = useState<PanelState>(() => readPanelState(workId));
   const [clientId] = useState(() => crypto.randomUUID());
   const [exporting, setExporting] = useState(false);
+  // 页头「编辑模式切换」挂载点：state 承载，供 EditorPane 通过 context 拿到容器后 portal 富文本/Markdown 按钮
+  const [modeSlotEl, setModeSlotEl] = useState<HTMLDivElement | null>(null);
   const leftDialog = useRef<HTMLDialogElement>(null);
   const rightDialog = useRef<HTMLDialogElement>(null);
-  const noticeDialog = useRef<HTMLDialogElement>(null);
   const returnFocus = useRef<HTMLElement | null>(null);
-  const [noticeUnread, setNoticeUnread] = useState(0);
-  // 打开通知中心时递增 key，强制 NotificationCenter 重新挂载（其内部 useEffect 重新拉取最新数据）
-  const [noticeOpenKey, setNoticeOpenKey] = useState(0);
   // 面板宽度拖动高频触发 onChange：用 rAF 把 setPanels 合并到每帧一次，并把 localStorage 写入移出 setState updater 且防抖，
   // 否则每次拖动都会同步阻塞主线程（实测约 12.6ms/次，超过 60fps 一帧预算）导致布局掉帧闪烁。
   const latestPanels = useRef(panels);
@@ -111,7 +108,12 @@ export function WorkbenchPage({ client = defaultClient }: Props) {
 
   const loadTree = useCallback(async () => {
     try { setTree(await client.getTree(workId)); setError(''); }
-    catch (cause) { setError(cause instanceof Error ? cause.message : '作品结构加载失败'); }
+    catch (cause) {
+      // 未在作品库选择作品（或作品已被删除）直接进入工作台时，workId 无效返回 404，
+      // 默认回到作品库，而不是停留在报错的工作台页面。
+      if (cause instanceof ApiError && cause.status === 404) { navigate('/works', { replace: true }); return; }
+      setError(cause instanceof Error ? cause.message : '作品结构加载失败');
+    }
   }, [client, workId]);
   useEffect(() => { void loadTree(); }, [loadTree]);
 
@@ -139,24 +141,19 @@ export function WorkbenchPage({ client = defaultClient }: Props) {
   }, [workId, chapterId]);
   useEffect(() => { void loadRoleMarks(); }, [loadRoleMarks]);
 
-  // 通知未读数（header 铃铛角标）；通知中心打开时由 NotificationCenter 自身刷新，这里仅作入口角标
-  useEffect(() => {
-    let active = true;
-    void unreadCount().then((count) => { if (active) setNoticeUnread(count.unread); }).catch(() => {});
-    return () => { active = false; };
-  }, []);
-
   // 合法右侧面板：chapter（章节信息）/ revision（修订）/ version（版本）/ comment（评论）/ todo（待办）/ ai（AI 创作）/ plot（剧情）/ role（角色版图）
   const PANELS = ['chapter', 'revision', 'version', 'comment', 'todo', 'ai', 'plot', 'role'];
   const currentPanel = PANELS.includes(searchParams.get('panel') ?? '') ? (searchParams.get('panel') as string) : 'chapter';
-  // 中央页签：正文 / 剧情 / 角色版图；非法深链参数就地归一化
-  const currentTab = searchParams.get('tab') === 'plot' ? 'plot' : searchParams.get('tab') === 'roles' ? 'roles' : 'manuscript';
+  // 中央页签：写作 / 剧情 / 角色版图 / 创作工具；非法深链参数就地归一化
+  const currentTab = searchParams.get('tab') === 'plot' ? 'plot'
+    : searchParams.get('tab') === 'roles' ? 'roles'
+      : searchParams.get('tab') === 'tools' ? 'tools' : 'manuscript';
   // 角色深链：?tab=roles&panel=role&characterId=...；画布/列表打开详情与成长线跳转都写这里
   const currentCharacterId = searchParams.get('characterId');
   const characterChapters = tree?.chapters.map((chapter) => ({ id: chapter.id, title: chapter.title }));
   useEffect(() => {
     const next = new URLSearchParams(searchParams);
-    if (next.get('tab') !== 'manuscript' && next.get('tab') !== 'plot' && next.get('tab') !== 'roles') next.set('tab', 'manuscript');
+    if (!['manuscript', 'plot', 'roles', 'tools'].includes(next.get('tab') ?? '')) next.set('tab', 'manuscript');
     if (!PANELS.includes(next.get('panel') ?? '')) {
       if (next.get('tab') === 'plot') next.set('panel', 'plot');
       else if (next.get('tab') === 'roles') next.set('panel', 'role');
@@ -268,8 +265,8 @@ export function WorkbenchPage({ client = defaultClient }: Props) {
     next.set('panel', panel);
     setSearchParams(next);
   }
-  // 切换中央页签：进入剧情/角色时同步打开对应右侧面板；回到正文时若面板停留在剧情/角色则回到章节信息
-  function switchTab(tab: 'manuscript' | 'plot' | 'roles'): void {
+  // 切换中央页签：进入剧情/角色时同步打开对应右侧面板；回到写作时若面板停留在剧情/角色则回到章节信息
+  function switchTab(tab: 'manuscript' | 'plot' | 'roles' | 'tools'): void {
     const next = new URLSearchParams(searchParams);
     next.set('tab', tab);
     if (tab === 'plot') next.set('panel', 'plot');
@@ -354,62 +351,68 @@ export function WorkbenchPage({ client = defaultClient }: Props) {
     }
     return <div className="context-body">{tabs}{body}</div>;
   }
+  // 需求9：访问角色版图 / 剧情树 / 创作工具（独立中央视图）时，自动隐藏写作工作台左侧章节导航栏，
+  // 让这些功能获得整宽展示空间；回到写作页签时恢复。复用 leftCollapsed 的 0px 宽度机制，不改 DOM。
+  const leftNavHidden = currentTab === 'plot' || currentTab === 'roles' || currentTab === 'tools';
+  // 列宽：页签隐藏（角色版图/剧情树/创作工具）→ 0px + display:none 彻底移除；
+  // 手动收起（leftCollapsed）→ 保留 44px 窄轨放展开按钮（0px 会把按钮裁剪掉，无法再展开）；
+  // 展开态 → 用户拖动的实际宽度
   const style = {
-    '--left-width': panels.leftCollapsed ? '0px' : `${panels.leftWidth}px`,
+    '--left-width': leftNavHidden ? '0px' : panels.leftCollapsed ? '44px' : `${panels.leftWidth}px`,
     '--right-width': panels.rightCollapsed ? '0px' : `${panels.rightWidth}px`
   } as CSSProperties;
 
-  return <PlotStoreProvider workId={workId} enabled={currentTab === 'plot' || currentPanel === 'plot'}
+  return <EditorModeSlotContext.Provider value={modeSlotEl}>
+  <PlotStoreProvider workId={workId} enabled={currentTab === 'plot' || currentPanel === 'plot'}
     client={client.plot ?? plotClient}>
     <div className="workbench">
     <header className="workbench-header">
-      <Link to="/works">返回作品库</Link>
-      <Button variant="ghost" size="sm" className="panel-trigger left-trigger" onClick={() => openDialog(leftDialog.current)}>打开章节导航</Button>
-      <h1>{tree?.work.title ?? '正在加载作品'}</h1>
-      <SaveStatusView status={writer.status} onRetry={() => void writer.flush()} onTakeover={() => void writer.takeover()}
-        onRestore={() => {
-          void writer.restoreFromServer().catch((cause) => {
-            setError(cause instanceof Error ? cause.message : '服务端恢复失败');
-          });
-        }} />
-      <Button variant="ghost" size="sm" disabled={exporting} onClick={() => void downloadRecovery()}>{exporting ? '导出中' : '导出恢复数据'}</Button>
-      <Button variant="ghost" size="sm" onClick={() => {
-        const next = theme === 'light' ? 'dark' : 'light'; setTheme(next); applyTheme(next);
-      }}>{theme === 'light' ? '切换深色主题' : '切换浅色主题'}</Button>
-      <Button variant="ghost" size="sm" aria-label={`通知（${noticeUnread} 条未读）`} onClick={() => {
-        // 每次打开刷新角标，并强制通知中心重新拉取最新通知
-        void unreadCount().then((count) => setNoticeUnread(count.unread)).catch(() => {});
-        setNoticeOpenKey((key) => key + 1);
-        openDialog(noticeDialog.current);
-      }}>通知{noticeUnread > 0 ? `(${noticeUnread})` : ''}</Button>
-      <Button variant="ghost" size="sm" className="panel-trigger right-trigger" onClick={() => openDialog(rightDialog.current)}>打开{currentPanel === 'revision' ? '修订' : currentPanel === 'version' ? '版本' : currentPanel === 'comment' ? '评论' : currentPanel === 'todo' ? '待办' : currentPanel === 'ai' ? 'AI 创作' : currentPanel === 'plot' ? '剧情' : '章节信息'}</Button>
+      {/* 第一行：最左作品名称 + 保存状态（小字淡灰，紧跟），占满整宽 */}
+      <div className="workbench-header-row">
+        <h1>{tree?.work.title ?? '正在加载作品'}</h1>
+        <SaveStatusView status={writer.status} onRetry={() => void writer.flush()} onTakeover={() => void writer.takeover()}
+          onRestore={() => {
+            void writer.restoreFromServer().catch((cause) => {
+              setError(cause instanceof Error ? cause.message : '服务端恢复失败');
+            });
+          }} />
+      </div>
+      {/* 第二行：左侧数据动作（接管写入 / 导出恢复数据 / 打开章节导航 / 打开章节信息）→ 中间空白 →
+          功能区（写作 / 角色版图 / 剧情树 / 创作工具）+ 返回作品库（强调色）。所有按钮统一 ghost 视觉，
+          仅返回作品库用 --btn-accent-bg 强调，语义为「离开当前作品」。 */}
+      <div className="workbench-header-row workbench-header-actions">
+        {writer.readOnly && <Button variant="ghost" size="sm" onClick={() => void writer.takeover()}>接管写入</Button>}
+        <Button variant="ghost" size="sm" disabled={exporting} onClick={() => void downloadRecovery()}>{exporting ? '导出中' : '导出恢复数据'}</Button>
+        <Button variant="ghost" size="sm" className="panel-trigger left-trigger" onClick={() => openDialog(leftDialog.current)}>打开章节导航</Button>
+        <Button variant="ghost" size="sm" className="panel-trigger right-trigger" onClick={() => openDialog(rightDialog.current)}>打开{currentPanel === 'revision' ? '修订' : currentPanel === 'version' ? '版本' : currentPanel === 'comment' ? '评论' : currentPanel === 'todo' ? '待办' : currentPanel === 'ai' ? 'AI 创作' : currentPanel === 'plot' ? '剧情' : '章节信息'}</Button>
+        {/* 功能区入口组：auto 外边距推到右侧，返回作品库随之贴到 header 最右边缘 */}
+        <div className="workbench-feature-entries" role="group" aria-label="创作功能入口">
+          <Button variant="primary" size="sm" onClick={() => switchTab('manuscript')}>写作</Button>
+          <Button variant="primary" size="sm" onClick={() => switchTab('roles')}>角色版图</Button>
+          <Button variant="primary" size="sm" onClick={() => switchTab('plot')}>剧情树</Button>
+          <Button variant="primary" size="sm" onClick={() => switchTab('tools')}>创作工具</Button>
+        </div>
+        <Button variant="ghost" size="sm" className="btn-accent" onClick={() => navigate('/works')}>返回作品库</Button>
+      </div>
+      {/* 第三行：富文本 / Markdown 编辑模式切换。正文编辑器通过 portal 把切换按钮挂到此容器（右对齐），
+          模式状态仍留在 EditorPane 内；正文文本框填满剩余空间 */}
+      <div className="workbench-editor-mode" aria-label="编辑模式切换"
+        ref={(node) => { setModeSlotEl(node); }} />
     </header>
     {error && <p role="alert">{error}</p>}
     <div className="workbench-grid" style={style}>
-      <aside className="workbench-left" aria-label="章节导航栏">
-        <Button variant="ghost" size="sm" block onClick={() => updatePanels({ leftCollapsed: !panels.leftCollapsed })}>
-          {panels.leftCollapsed ? '展开左侧栏' : '折叠左侧栏'}
-        </Button>
+      {/* 需求9：角色版图/剧情树/创作工具时隐藏左侧章节导航栏（grid 列宽 0 + display:none 彻底移除，避免 padding 残留窄缝） */}
+      <aside className={`workbench-left${leftNavHidden ? ' is-hidden' : ''}${panels.leftCollapsed ? ' is-collapsed' : ''}`} aria-label="章节导航栏">
+        {/* 折叠/展开按钮：与左侧共享导航工具栏的「展开/收起」同款样式（图标 + 文字 + 悬停底） */}
+        <PanelCollapseToggle collapsed={panels.leftCollapsed} onToggle={() => updatePanels({ leftCollapsed: !panels.leftCollapsed })} />
         {!panels.leftCollapsed && <>
-          <label htmlFor="left-width">左侧栏宽度</label>
+          {/* 宽度拖动条：仅保留拖动条本身，删除「左侧栏宽度」文字（需求8）；固定宽度由拖动决定（需求7） */}
           <input id="left-width" aria-label="左侧栏宽度" type="range" min="200" max="400" step="8"
             value={panels.leftWidth} onChange={(event) => updatePanels({ leftWidth: Number(event.target.value) })} />
           {navigation}
         </>}
       </aside>
       <main className="workbench-center" aria-label="正文工作区">
-        <div className="center-tabs">
-          <Tabs
-            label="中央工作区页签"
-            items={[
-              { key: 'manuscript', label: '正文' },
-              { key: 'plot', label: '剧情' },
-              { key: 'roles', label: '角色版图' },
-            ]}
-            activeKey={currentTab}
-            onChange={(key) => switchTab(key as 'manuscript' | 'plot' | 'roles')}
-          />
-        </div>
         {/* 用 hidden 而不是卸载：切页签不能丢掉正文编辑器的未保存状态；角色版图未来也保持挂载以保留筛选状态 */}
         <div hidden={currentTab !== 'manuscript'}>
           <EditorPane initialDocument={writer.document} readOnly={writer.readOnly}
@@ -434,6 +437,12 @@ export function WorkbenchPage({ client = defaultClient }: Props) {
             chapters={characterChapters}
           />
         </div>
+        {/* 创作工具独立中央视图：由 header「创作工具」按钮进入（tools 页签），独立展示 AI 创作面板 */}
+        <div hidden={currentTab !== 'tools'}>
+          <section role="tabpanel" aria-label="创作工具">
+            <AiTaskPanel workId={workId} chapterId={chapterId} />
+          </section>
+        </div>
       </main>
       <aside className="workbench-right" aria-label="章节上下文栏">
         <Button variant="ghost" size="sm" block onClick={() => updatePanels({ rightCollapsed: !panels.rightCollapsed })}>
@@ -452,13 +461,9 @@ export function WorkbenchPage({ client = defaultClient }: Props) {
       <Button variant="ghost" size="sm" block onClick={() => rightDialog.current?.close()}>关闭右侧面板</Button>
       {context('dialog')}
     </dialog>
-    <dialog ref={noticeDialog} className="workbench-dialog notice-dialog" aria-labelledby="notice-dialog-title" onClose={restoreDialogFocus}>
-      <h2 id="notice-dialog-title">通知中心</h2>
-      <Button variant="ghost" size="sm" block onClick={() => noticeDialog.current?.close()}>关闭通知</Button>
-      <NotificationCenter key={noticeOpenKey} />
-    </dialog>
     <ConflictDialog conflict={writer.conflict} onResolve={writer.resolveConflict}
       onRestore={writer.restoreFromServer} onExport={writer.exportRecovery} />
   </div>
-  </PlotStoreProvider>;
+  </PlotStoreProvider>
+  </EditorModeSlotContext.Provider>;
 }

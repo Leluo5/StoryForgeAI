@@ -1,3 +1,4 @@
+import { createPortal } from 'react-dom';
 import type { ProseMirrorNode } from '@storyforge/contracts';
 import {
   canonicalizeContent,
@@ -7,6 +8,7 @@ import {
 } from '@storyforge/editor-schema';
 import { Button } from '@storyforge/ui';
 import { useCallback, useEffect, useState } from 'react';
+import { useEditorModeSlot } from './editor-mode-slot';
 import { MarkdownEditor } from './markdown-editor';
 import { ProseMirrorEditor } from './prosemirror-editor';
 import type { ChapterRoleMarkNotice, RoleMark } from './role-marks';
@@ -24,6 +26,7 @@ export interface EditorPaneProps {
 export function EditorPane({
   initialDocument, readOnly, onDocument, onMarkdownDraft, roleMarks, chapterMarks, onDismissMark
 }: EditorPaneProps) {
+  const modeSlot = useEditorModeSlot();
   const [document, setDocument] = useState(initialDocument);
   const [mode, setMode] = useState<'rich' | 'markdown'>('rich');
   const [source, setSource] = useState('');
@@ -59,13 +62,15 @@ export function EditorPane({
     void onMarkdownDraft(next).catch((cause) => setError(cause instanceof Error ? cause.message : 'Markdown 草稿保存失败'));
   }
 
+  const modeControl = <div role="group" aria-label="编辑模式" className="editor-mode-controls">
+    <Button variant={mode === 'rich' ? 'primary' : 'ghost'} size="sm"
+      aria-pressed={mode === 'rich'} onClick={showRich}>富文本</Button>
+    <Button variant={mode === 'markdown' ? 'primary' : 'ghost'} size="sm"
+      aria-pressed={mode === 'markdown'} onClick={showMarkdown}>Markdown</Button>
+  </div>;
+
   return <section aria-label="正文编辑器">
-    <div role="group" aria-label="编辑模式">
-      <Button variant={mode === 'rich' ? 'primary' : 'ghost'} size="sm"
-        aria-pressed={mode === 'rich'} onClick={showRich}>富文本</Button>
-      <Button variant={mode === 'markdown' ? 'primary' : 'ghost'} size="sm"
-        aria-pressed={mode === 'markdown'} onClick={showMarkdown}>Markdown</Button>
-    </div>
+    {modeSlot ? createPortal(modeControl, modeSlot) : modeControl}
     {mode === 'rich'
       ? <ProseMirrorEditor initialDocument={document} readOnly={readOnly} roleMarks={roleMarks}
           chapterMarks={chapterMarks} onDismissMark={onDismissMark} onDocument={(operations, next) => {

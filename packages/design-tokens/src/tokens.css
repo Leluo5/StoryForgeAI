@@ -23,6 +23,10 @@
   --btn-primary-bg: var(--brand-500); --btn-primary-bg-hover: var(--brand-600); --btn-primary-bg-active: var(--brand-700); --btn-primary-text: #FFFFFF;
   --btn-secondary-bg: var(--bg-secondary); --btn-secondary-bg-hover: var(--bg-hover); --btn-secondary-text: var(--text-primary); --btn-secondary-border: var(--border-color);
   --btn-danger-bg: var(--danger-500); --btn-danger-bg-hover: #DC2626; --btn-danger-text: #FFFFFF;
+  /* 强调色（离开类动作，如「返回作品库」）：琥珀金，与品牌靛蓝互补且语义为「退出」 */
+  --btn-accent-bg: #B45309; --btn-accent-bg-hover: #92400E; --btn-accent-bg-active: #7C2D12; --btn-accent-text: #FFFFFF;
+  /* 工作台章节导航栏底色：复用蓝灰 --bg-hover，弱对比区分正文白底 */
+  --nav-bg: var(--bg-hover);
   --btn-ghost-text: var(--text-secondary); --btn-ghost-text-hover: var(--text-primary); --btn-ghost-bg-hover: var(--bg-hover);
   --btn-disabled-bg: var(--bg-hover); --btn-disabled-text: var(--text-tertiary);
   --input-bg: var(--bg-secondary); --input-bg-focus: var(--bg-secondary); --input-border: var(--border-color); --input-border-focus: var(--brand-500); --input-placeholder: var(--text-tertiary);
@@ -51,6 +55,8 @@
   --btn-primary-bg: var(--brand-500); --btn-primary-bg-hover: var(--brand-600); --btn-primary-bg-active: var(--brand-700); --btn-primary-text: #FFFFFF;
   --btn-secondary-bg: var(--bg-secondary); --btn-secondary-bg-hover: var(--bg-hover); --btn-secondary-text: var(--text-primary); --btn-secondary-border: var(--border-color);
   --btn-danger-bg: var(--danger-500); --btn-danger-bg-hover: #B91C1C; --btn-danger-text: #FFFFFF;
+  --btn-accent-bg: #FBBF24; --btn-accent-bg-hover: #F59E0B; --btn-accent-bg-active: #D97706; --btn-accent-text: #1C1005;
+  --nav-bg: #172033;
   --btn-ghost-text: var(--text-secondary); --btn-ghost-text-hover: var(--text-primary); --btn-ghost-bg-hover: var(--bg-hover);
   --btn-disabled-bg: var(--bg-hover); --btn-disabled-text: var(--text-tertiary);
   --input-bg: var(--bg-tertiary); --input-bg-focus: var(--bg-tertiary); --input-border: var(--border-color); --input-border-focus: var(--brand-500); --input-placeholder: var(--text-tertiary);

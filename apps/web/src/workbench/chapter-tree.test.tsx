@@ -1,4 +1,4 @@
-import { render, screen } from '@testing-library/react';
+import { fireEvent, render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { MemoryRouter } from 'react-router-dom';
 import { describe, expect, it, vi } from 'vitest';
@@ -41,5 +41,32 @@ describe('ChapterTree', () => {
     await userEvent.click(screen.getByRole('button', { name: '在第一卷新建章节' }));
     expect(action).toHaveBeenCalledWith({ type: 'create_chapter', volumeId, title: '新章节' });
     expect(open).toHaveBeenCalledWith(secondId);
+  });
+
+  it('moves rename and reorder actions into a context menu and keeps only a plus button', async () => {
+    const action = vi.fn().mockResolvedValue(undefined);
+    vi.spyOn(window, 'prompt').mockReturnValue('新名');
+    render(<MemoryRouter><ChapterTree tree={tree} currentChapterId={firstId} onOpen={vi.fn()} onAction={action} /></MemoryRouter>);
+    // 行内重命名 / 上移 / 下移按钮已移除，只保留加号新建章节
+    expect(screen.queryByRole('button', { name: '重命名第一章' })).toBeNull();
+    expect(screen.queryByRole('button', { name: '上移第一章' })).toBeNull();
+    expect(screen.queryByRole('button', { name: '下移第一章' })).toBeNull();
+    expect(screen.getByRole('button', { name: '在第一卷新建章节' })).toBeInTheDocument();
+    // 右键章节后菜单提供重命名与上移 / 下移
+    fireEvent.contextMenu(screen.getByRole('link', { name: '第二章' }));
+    expect(await screen.findByRole('menu')).toBeVisible();
+    expect(screen.getByRole('menuitem', { name: '重命名章节' })).toBeInTheDocument();
+    expect(screen.getByRole('menuitem', { name: '上移' })).toBeInTheDocument();
+    // 末位章节的下移禁用
+    expect(screen.getByRole('menuitem', { name: '下移' })).toBeDisabled();
+    await userEvent.click(screen.getByRole('menuitem', { name: '重命名章节' }));
+    expect(action).toHaveBeenCalledWith({ type: 'rename_chapter', chapterId: secondId, title: '新名' });
+  });
+
+  it('keeps long volume and chapter titles truncated and exposes them via title', () => {
+    const longTitle = '这是一个超过导航栏显示宽度的很长很长的卷名称';
+    render(<MemoryRouter><ChapterTree tree={{ ...tree, volumes: [{ id: volumeId, work_id: workId, title: longTitle, position: 0 }] }}
+      currentChapterId={firstId} onOpen={vi.fn()} onAction={vi.fn()} /></MemoryRouter>);
+    expect(screen.getByText(longTitle)).toHaveAttribute('title', longTitle);
   });
 });

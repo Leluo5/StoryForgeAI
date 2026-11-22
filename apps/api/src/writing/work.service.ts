@@ -9,16 +9,31 @@ import { VolumeEntity } from '../database/volume.entity';
 import { ChapterEntity } from '../database/chapter.entity';
 import { seedCharacterRelationTypes } from '../database/character-relation-type.seed';
 
-export function toWork(work: WorkEntity): Work {
+export function toWork(work: WorkEntity, wordCount = 0): Work {
   return {
     id: work.id,
     author_id: work.author_id,
     title: work.title,
     description: work.description,
     status: work.status,
+    word_count: wordCount,
     created_at: work.created_at.toISOString(),
     updated_at: work.updated_at.toISOString()
   };
+}
+
+/** 递归统计 ProseMirror 文档中 text 节点的非空白字数。 */
+export function countDocumentCharacters(node: unknown): number {
+  if (node == null || typeof node !== 'object') return 0;
+  const record = node as Record<string, unknown>;
+  let count = 0;
+  if (typeof record.text === 'string') {
+    count += record.text.replace(/\s/g, '').length;
+  }
+  if (Array.isArray(record.content)) {
+    for (const child of record.content) count += countDocumentCharacters(child);
+  }
+  return count;
 }
 
 @Injectable()
@@ -60,7 +75,19 @@ export class WorkService {
       .where('work.author_id = :authorId', { authorId });
     if (query.trim()) builder.andWhere('work.title ILIKE :query', { query: `%${query.trim()}%` });
     const works = await builder.orderBy('work.updated_at', 'DESC').getMany();
-    return works.map(toWork);
+    if (works.length === 0) return [];
+    // 批量取当前作者所有章节的 document，按 work_id 汇总非空白字数
+    const rows = await this.dataSource.getRepository(ChapterEntity)
+      .createQueryBuilder('chapter')
+      .select('chapter.work_id', 'work_id')
+      .addSelect('chapter.document', 'document')
+      .where('chapter.work_id IN (:...ids)', { ids: works.map((work) => work.id) })
+      .getRawMany<{ work_id: string; document: unknown }>();
+    const totals = new Map<string, number>();
+    for (const row of rows) {
+      totals.set(row.work_id, (totals.get(row.work_id) ?? 0) + countDocumentCharacters(row.document));
+    }
+    return works.map((work) => toWork(work, totals.get(work.id) ?? 0));
   }
 
   async update(authorId: string, workId: string, input: UpdateWorkRequest): Promise<Work> {

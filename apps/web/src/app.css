@@ -8,3 +8,28 @@
   min-height: 28px; padding: var(--sp-1) var(--sp-2); color: var(--text-primary);
   background: var(--bg-tertiary); border: 1px solid var(--border-color); border-radius: var(--radius-md);
 }
+/* 纯图标按钮（主题切换 / 通知）：与用户栏其他按钮同尺寸，去文字、留图标，悬停/点击/禁用交互复用按钮态 */
+.app-session .app-icon-button {
+  position: relative; display: inline-flex; align-items: center; justify-content: center;
+  width: 28px; height: 28px; padding: 0; cursor: pointer;
+}
+.app-session .app-icon-button:disabled { opacity: 0.5; cursor: not-allowed; }
+/* 通知未读角标：铃铛右上角红色圆点 + 未读数 */
+.app-notice-badge {
+  position: absolute; top: -5px; right: -5px; min-width: 16px; height: 16px; padding: 0 4px;
+  display: inline-flex; align-items: center; justify-content: center;
+  color: #fff; background: var(--danger-600, #dc2626); border-radius: 999px;
+  font-size: 10px; line-height: 1; font-weight: var(--fw-semibold, 600);
+}
+/* 全局通知中心弹窗：顶部固定，窄卡片，复用设计令牌 */
+.app-notice-dialog {
+  width: min(92vw, 440px); max-height: 80dvh; margin: auto; padding: var(--sp-4);
+  color: var(--text-primary); background: var(--bg-secondary); border: 1px solid var(--border-color);
+  border-radius: var(--radius-md);
+}
+.app-notice-dialog::backdrop { background: rgb(15 23 42 / 55%); }
+.app-notice-head {
+  display: flex; align-items: center; justify-content: space-between; gap: var(--sp-2);
+  margin-bottom: var(--sp-3);
+}
+.app-notice-head h2 { margin: 0; font-size: var(--fs-h3); }

@@ -1,6 +1,6 @@
 /*
- * 作品库页样式
- * 工具栏（搜索 + 新建）+ 卡片网格 + 新建表单。
+ * 作品库页样式 —— 方案 A「书封极简」
+ * 顶部 16:9 书封色块（标题首字 hash → 品牌调色板），正文只留简介 + 一行元信息。
  * 颜色全部取自 design-tokens CSS 变量，禁止散落字面量。
  */
 
@@ -54,27 +54,81 @@
   gap: var(--sp-5, 24px);
 }
 
-.works-card__head {
+/* 卡片容器：Card 组件关闭默认内边距，封面满幅 */
+.works-card {
   display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: var(--sp-3, 12px);
+  flex-direction: column;
+  height: 100%;
+  overflow: hidden;
+}
+
+/* 书封：16:9 色块，标题印在封面上 */
+.works-card__cover {
+  position: relative;
+  aspect-ratio: 16 / 9;
+  display: flex;
+  align-items: flex-end;
+  padding: var(--sp-4, 16px);
+  background: var(--brand-500, #4f46e5);
+  /* 封底压色：借主题内阴影变量，深浅主题各自成立，不引入字面颜色 */
+  box-shadow: inset 0 calc(var(--sp-6, 32px) * -1) var(--sp-5, 24px) var(--accent-glow, rgb(79 70 229 / 20%));
+}
+
+/* 品牌调色板：靛蓝 / 辅助紫 / 品红 / 青 / 翠 —— 全部由令牌提供 */
+.works-card__cover[data-hue="0"] { background: var(--brand-500, #4f46e5); }
+.works-card__cover[data-hue="1"] { background: var(--accent-500, #7c3aed); }
+.works-card__cover[data-hue="2"] { background: var(--violet-500, #7c3aed); }
+.works-card__cover[data-hue="3"] { background: var(--magenta-500, #db2777); }
+.works-card__cover[data-hue="4"] { background: var(--cyan-500, #0891b2); }
+.works-card__cover[data-hue="5"] { background: var(--emerald-500, #059669); }
+
+/* 归档：书封降为灰阶，仅保留极弱的品牌余晖 */
+.works-card--archived .works-card__cover {
+  background: var(--bg-hover, #eef2f7);
+}
+.works-card--archived .works-card__cover .works-card__title { color: var(--text-secondary, #475569); }
+.works-card--archived .works-card__cover .works-card__eyebrow { color: var(--text-tertiary, #94a3b8); }
+.works-card--archived .works-card__desc { color: var(--text-tertiary, #94a3b8); }
+.works-card--archived .works-card__date { color: var(--text-tertiary, #94a3b8); }
+
+/* 封面上层内容：eyebrow + 标题，压在封底之上 */
+.works-card__cover-inner {
+  position: relative;
+  z-index: 1;
+  min-width: 0;
+}
+
+.works-card__eyebrow {
+  display: block;
+  font: var(--fw-medium, 500) var(--fs-caption, 12px) / 1 var(--font-sans, sans-serif);
+  color: var(--btn-primary-text, #ffffff);
+  letter-spacing: 0.5px;
+  margin-bottom: var(--sp-2, 8px);
 }
 
 .works-card__title {
-  font: var(--fw-semibold, 600) var(--fs-h2, 20px) / 1.35 var(--font-sans, sans-serif);
-  color: var(--text-primary, #1a1a2e);
   margin: 0;
+  color: var(--btn-primary-text, #ffffff);
+  font: var(--fw-bold, 700) var(--fs-h2, 20px) / 1.25 var(--font-sans, sans-serif);
+  letter-spacing: 0.5px;
   display: -webkit-box;
   -webkit-line-clamp: 2;
   -webkit-box-orient: vertical;
   overflow: hidden;
 }
 
+/* 卡片正文区 */
+.works-card__body {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  padding: var(--sp-4, 16px) var(--sp-4, 16px) var(--sp-3, 12px);
+}
+
 .works-card__desc {
   font: var(--fw-regular, 400) var(--fs-body, 14px) / 1.6 var(--font-sans, sans-serif);
   color: var(--text-secondary, #475569);
-  margin: var(--sp-2, 8px) 0 0;
+  margin: 0;
   display: -webkit-box;
   -webkit-line-clamp: 3;
   -webkit-box-orient: vertical;
@@ -82,16 +136,25 @@
 }
 
 .works-card__meta {
+  margin-top: auto;
+  padding-top: var(--sp-3, 12px);
   display: flex;
   align-items: center;
   justify-content: space-between;
-  margin-top: var(--sp-3, 12px);
-  gap: var(--sp-3, 12px);
+  gap: var(--sp-2, 8px);
+  border-top: 1px solid var(--border-light, #f1f5f9);
+  font: var(--fw-regular, 400) var(--fs-caption, 12px) / 1 var(--font-sans, sans-serif);
+  color: var(--text-tertiary, #94a3b8);
 }
 
 .works-card__date {
-  font: var(--fw-regular, 400) var(--fs-small, 12px) / 1.5 var(--font-sans, sans-serif);
+  font: var(--fw-regular, 400) var(--fs-caption, 12px) / 1 var(--font-sans, sans-serif);
   color: var(--text-tertiary, #94a3b8);
+}
+
+.works-card__words {
+  font: var(--fw-medium, 500) var(--fs-caption, 12px) / 1 var(--font-sans, sans-serif);
+  color: var(--text-secondary, #475569);
 }
 
 .works-card__footer {

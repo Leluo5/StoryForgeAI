@@ -56,6 +56,16 @@ describe('WorksPage', () => {
     expect(screen.queryByRole('link', { name: '工作流管理' })).toBeNull();
   });
 
+  // 三个创作功能入口仅在写作工作台渲染；作品库页面（及其他模块页）不得展示。
+  it('does not render the workbench-only feature entries on the works page', async () => {
+    renderPage();
+    await screen.findByText('既有作品');
+    expect(screen.queryByRole('group', { name: '创作功能入口' })).toBeNull();
+    expect(screen.queryByRole('button', { name: '角色版图' })).toBeNull();
+    expect(screen.queryByRole('button', { name: '剧情树' })).toBeNull();
+    expect(screen.queryByRole('button', { name: '创作工具' })).toBeNull();
+  });
+
   it('archives only after native confirmation', async () => {
     vi.mocked(updateWork).mockResolvedValue({ ...work, status: 'archived' });
     const confirm = vi.spyOn(window, 'confirm').mockReturnValue(true);
