@@ -206,4 +206,8 @@
 @media (min-width: 1024px) {
   /* 桌面视图下左侧/右侧面板常驻侧栏，对应 dialog 隐藏；通知中心无常驻面板，保留显示 */
   .left-dialog, .right-dialog { display: none; }
+  /* 需求9：角色版图/剧情树/创作工具时左侧章节导航栏 display:none，不占 grid cell；
+     但 grid-template-columns 仍保留 3 条轨道，center 会落入第 1 条 0 宽轨道被 padding 撑成窄条。
+     改为 center + right 两列，让中央区占满剩余宽度（窄屏单列覆盖见上方 max-width:1023px）。 */
+  .workbench-grid:has(.workbench-left.is-hidden) { grid-template-columns: minmax(0, 1fr) var(--right-width); }
 }
