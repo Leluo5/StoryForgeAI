@@ -65,8 +65,9 @@ class CozeClient:
                 succeeded += 1
                 _add_items(bot_result.get("bots", []), "bot")
             else:
-                errors.append(f"智能体: {bot_result.get('error')}")
-                _logger.warning(f"[get_all_resources] bots failed: {bot_result.get('error')}")
+                bot_error = bot_result.get("error")
+                errors.append(f"智能体: {bot_error}")
+                _logger.warning(f"[get_all_resources] bots failed: {bot_error}")
         except Exception as e:
             errors.append(f"智能体: {e}")
             _logger.warning(f"[get_all_resources] bots error: {e}")
@@ -78,8 +79,9 @@ class CozeClient:
                 succeeded += 1
                 _add_items(wf_result.get("items", []), "workflow")
             else:
-                errors.append(f"工作流: {wf_result.get('error')}")
-                _logger.warning(f"[get_all_resources] workflows failed: {wf_result.get('error')}")
+                wf_error = wf_result.get("error")
+                errors.append(f"工作流: {wf_error}")
+                _logger.warning(f"[get_all_resources] workflows failed: {wf_error}")
         except Exception as e:
             errors.append(f"工作流: {e}")
             _logger.warning(f"[get_all_resources] workflows error: {e}")
@@ -87,7 +89,12 @@ class CozeClient:
         # 两个来源都失败（如 PAT 无效/无权限）→ 返回失败与具体原因，
         # 避免误报 success:True,total:0 让用户分不清「PAT 错误」与「空间为空」。
         if succeeded == 0:
-            return {"success": False, "error": "; ".join(errors) or "无法连接 Coze", "bots": [], "total": 0}
+            return {
+                "success": False,
+                "error": "; ".join(errors) or "无法连接 Coze",
+                "bots": [],
+                "total": 0,
+            }
 
         _logger.info(f"[get_all_resources] total: {len(all_items)} items")
         return {"success": True, "bots": all_items, "total": len(all_items)}

@@ -1,0 +1,47 @@
+/*
+ * 模型管理占位页样式
+ * 页头（标题 + 副标题）+ 占位内容区。颜色全部取自 design-tokens CSS 变量。
+ */
+
+.models-page {
+  min-height: 100vh;
+  background: var(--bg-primary, #f0f2f5);
+  padding: var(--sp-6, 32px) var(--sp-7, 48px);
+  max-width: 1080px;
+  margin: 0 auto;
+}
+
+.models-page__header {
+  margin-bottom: var(--sp-5, 24px);
+}
+
+.models-page__title {
+  font: var(--fw-bold, 700) var(--fs-display, 32px) / 1.25 var(--font-sans, sans-serif);
+  color: var(--text-primary, #1a1a2e);
+  margin: 0;
+}
+
+.models-page__subtitle {
+  font: var(--fw-regular, 400) var(--fs-body, 14px) / 1.6 var(--font-sans, sans-serif);
+  color: var(--text-secondary, #475569);
+  margin: var(--sp-1, 4px) 0 0;
+}
+
+.models-page__body {
+  background: var(--bg-secondary, #ffffff);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-lg, 12px);
+  padding: var(--sp-5, 24px);
+}
+
+.models-page__placeholder {
+  margin: 0;
+  color: var(--text-secondary, #475569);
+  font: var(--fw-regular, 400) var(--fs-body, 14px) / 1.6 var(--font-sans, sans-serif);
+}
+
+@media (max-width: 767px) {
+  .models-page {
+    padding: var(--sp-5, 24px) var(--sp-4, 16px);
+  }
+}

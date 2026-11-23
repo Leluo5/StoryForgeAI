@@ -46,6 +46,26 @@ describe('WorksPage', () => {
     expect(createWork).toHaveBeenCalledWith({ title: '星河', description: '' });
   });
 
+  it('keeps the create button and does not render module entry links in the header', async () => {
+    renderPage();
+    await screen.findByText('既有作品');
+    // 功能入口已收口到左侧共享导航工具栏，页头工具区只保留搜索 + 新建作品
+    expect(screen.getByRole('button', { name: '新建作品' })).toBeVisible();
+    expect(screen.queryByRole('link', { name: '知识库' })).toBeNull();
+    expect(screen.queryByRole('link', { name: '智能体管理' })).toBeNull();
+    expect(screen.queryByRole('link', { name: '工作流管理' })).toBeNull();
+  });
+
+  // 三个创作功能入口仅在写作工作台渲染；作品库页面（及其他模块页）不得展示。
+  it('does not render the workbench-only feature entries on the works page', async () => {
+    renderPage();
+    await screen.findByText('既有作品');
+    expect(screen.queryByRole('group', { name: '创作功能入口' })).toBeNull();
+    expect(screen.queryByRole('button', { name: '角色版图' })).toBeNull();
+    expect(screen.queryByRole('button', { name: '剧情树' })).toBeNull();
+    expect(screen.queryByRole('button', { name: '创作工具' })).toBeNull();
+  });
+
   it('archives only after native confirmation', async () => {
     vi.mocked(updateWork).mockResolvedValue({ ...work, status: 'archived' });
     const confirm = vi.spyOn(window, 'confirm').mockReturnValue(true);

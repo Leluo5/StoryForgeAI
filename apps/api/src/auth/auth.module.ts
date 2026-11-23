@@ -1,6 +1,7 @@
 import { Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { AuthorEntity } from '../database/author.entity';
+import { NotificationEntity } from '../database/notification.entity';
 import { SessionEntity } from '../database/session.entity';
 import { AuthController } from './auth.controller';
 import { AuthService } from './auth.service';
@@ -9,7 +10,7 @@ import { PasswordService } from './password.service';
 import { SessionGuard } from './session.guard';
 
 @Module({
-  imports: [TypeOrmModule.forFeature([AuthorEntity, SessionEntity])],
+  imports: [TypeOrmModule.forFeature([AuthorEntity, SessionEntity, NotificationEntity])],
   controllers: [AuthController],
   providers: [AuthService, CsrfGuard, PasswordService, SessionGuard],
   exports: [AuthService, CsrfGuard, PasswordService, SessionGuard]

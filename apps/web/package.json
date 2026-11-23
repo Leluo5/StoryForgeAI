@@ -15,6 +15,7 @@
     "@storyforge/contracts": "workspace:*",
     "@storyforge/design-tokens": "workspace:*",
     "@storyforge/editor-schema": "workspace:*",
+    "@storyforge/ui": "workspace:*",
     "idb": "^8.0.4",
     "prosemirror-commands": "^1.7.2",
     "prosemirror-history": "^1.5.1",

@@ -33,6 +33,8 @@ export const workSchema = z.object({
   title: z.string().min(1).max(120),
   description: z.string().max(2000),
   status: z.enum(['active', 'archived']),
+  /** 全作品正文字数（不含空白）。可选：旧接口/旧缓存可能缺失，前端用 0 兜底。 */
+  word_count: z.number().int().nonnegative().optional(),
   created_at: timestamp,
   updated_at: timestamp
 });
@@ -49,7 +51,9 @@ export const chapterSummarySchema = z.object({
   title: z.string().min(1).max(200),
   position: z.number().int().nonnegative(),
   version: z.number().int().nonnegative(),
-  content_hash: contentHash
+  content_hash: contentHash,
+  /** 本章正文非空白字数。旧接口/旧缓存可能缺失，前端用 0 兜底。 */
+  word_count: z.number().int().nonnegative().optional()
 });
 export const chapterSchema = chapterSummarySchema.extend({ document: proseMirrorDocumentSchema });
 export const createWorkRequestSchema = z.object({

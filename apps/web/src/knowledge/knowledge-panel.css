@@ -1,0 +1,82 @@
+/* ── 知识库面板 ── */
+.kb-panel h2 { margin: 0 0 var(--sp-3); font-size: var(--fs-h3); font-weight: var(--fw-semibold); }
+.kb-panel h4 { margin: var(--sp-3) 0 var(--sp-1); font-size: var(--fs-body-lg); font-weight: var(--fw-semibold); }
+.kb-panel h5 { margin: var(--sp-2) 0 var(--sp-1); font-size: var(--fs-body); font-weight: var(--fw-semibold); }
+
+.kb-error { margin: var(--sp-2) 0; color: var(--danger-600, #b91c1c); font-size: var(--fs-body-sm); }
+.kb-notice { margin: var(--sp-2) 0; color: var(--success-700, #047857); font-size: var(--fs-body-sm); }
+.kb-warning { margin: var(--sp-1) 0; color: var(--warning-700, #92400e); font-size: var(--fs-body-sm); }
+.kb-empty { color: var(--text-secondary); font-size: var(--fs-body-sm); }
+
+/* ── 页签 ── */
+.kb-tabs { display: flex; gap: var(--sp-1); margin-bottom: var(--sp-3); border-bottom: 1px solid var(--border-color); }
+.kb-tab-btn {
+  padding: var(--sp-1) var(--sp-2); color: var(--text-secondary);
+  background: transparent; border: none; border-bottom: 2px solid transparent;
+  font: inherit; font-size: var(--fs-body-sm); cursor: pointer;
+}
+.kb-tab-active { color: var(--text-primary); border-bottom-color: var(--brand-600, #4f46e5); font-weight: var(--fw-semibold); }
+
+/* ── 表单通用 ── */
+.kb-tab { display: flex; flex-direction: column; gap: var(--sp-2); }
+.kb-tab label { font-size: var(--fs-body-sm); color: var(--text-secondary); }
+.kb-tab input[type='text'],
+.kb-tab textarea,
+.kb-tab select {
+  width: 100%; padding: var(--sp-1) var(--sp-2);
+  color: var(--text-primary); background: var(--bg-tertiary);
+  border: 1px solid var(--border-color); border-radius: var(--radius-md);
+  font: inherit; font-size: var(--fs-body-sm);
+}
+.kb-tab textarea { resize: vertical; }
+.kb-tab input[type='file'] { font-size: var(--fs-body-sm); color: var(--text-secondary); }
+
+.kb-field-row { display: flex; gap: var(--sp-2); align-items: center; flex-wrap: wrap; }
+.kb-field-row select { flex: 1 1 auto; }
+
+.kb-actions { display: flex; gap: var(--sp-2); margin-top: var(--sp-1); }
+.kb-actions button {
+  min-height: 28px; padding: var(--sp-1) var(--sp-2);
+  color: var(--text-primary); background: var(--bg-tertiary);
+  border: 1px solid var(--border-color); border-radius: var(--radius-md);
+  font: inherit; font-size: var(--fs-body-sm);
+}
+.kb-actions button:disabled { opacity: 0.5; cursor: not-allowed; }
+
+/* ── 预览 ── */
+.kb-preview { padding: var(--sp-2); border: 1px solid var(--border-color); border-radius: var(--radius-md); }
+.kb-structured { display: flex; flex-direction: column; gap: var(--sp-1); }
+
+/* ── 检索列表 ── */
+.kb-list { display: flex; flex-direction: column; gap: var(--sp-2); }
+.kb-card { padding: var(--sp-2); border: 1px solid var(--border-color); border-radius: var(--radius-md); }
+.kb-card-main {
+  display: flex; align-items: center; gap: var(--sp-2); width: 100%;
+  padding: 0; background: transparent; border: none;
+  font: inherit; text-align: left; cursor: pointer;
+}
+.kb-card-title { font-weight: var(--fw-semibold); color: var(--text-primary); }
+.kb-meta { margin: var(--sp-1) 0 0; font-size: var(--fs-body-sm); color: var(--text-secondary); }
+.kb-type-tag { padding: 0 var(--sp-1); border-radius: var(--radius-sm); font-size: var(--fs-body-sm); background: var(--bg-tertiary); color: var(--text-secondary); }
+
+.kb-pager { display: flex; align-items: center; gap: var(--sp-2); font-size: var(--fs-body-sm); color: var(--text-secondary); }
+.kb-pager button {
+  min-height: 24px; padding: 0 var(--sp-2); color: var(--text-primary);
+  background: var(--bg-tertiary); border: 1px solid var(--border-color); border-radius: var(--radius-md);
+  font: inherit; font-size: var(--fs-body-sm);
+}
+
+/* ── 详情 ── */
+.kb-detail-actions { display: flex; gap: var(--sp-2); margin: var(--sp-2) 0; }
+.kb-detail-actions button {
+  min-height: 26px; padding: 0 var(--sp-2); color: var(--text-primary);
+  background: var(--bg-tertiary); border: 1px solid var(--border-color); border-radius: var(--radius-md);
+  font: inherit; font-size: var(--fs-body-sm);
+}
+.kb-detail-actions button:disabled { opacity: 0.5; cursor: not-allowed; }
+.kb-structured-view summary,
+.kb-tab details summary { font-size: var(--fs-body-sm); color: var(--text-secondary); cursor: pointer; }
+.kb-structured-view pre,
+.kb-tab details pre { margin: var(--sp-1) 0 0; padding: var(--sp-2); background: var(--bg-tertiary); border-radius: var(--radius-md); font-size: var(--fs-body-sm); white-space: pre-wrap; word-break: break-word; }
+
+.kb-md-item { font-size: var(--fs-body-sm); color: var(--text-secondary); margin: var(--sp-1) 0; }

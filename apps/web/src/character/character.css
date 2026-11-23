@@ -356,6 +356,12 @@
   height: calc(100% - 44px);
 }
 
+/* 非当前页签时角色面板必须隐藏：.roles-tab-panel 的 display:flex 会覆盖 hidden 属性的默认 display:none，
+   导致未激活的角色面板仍参与布局、grid 被判定可见。用更高特异性强制隐藏。 */
+.workbench-center > div.roles-tab-panel[hidden] {
+  display: none;
+}
+
 .workbench-center > div.roles-tab-panel > section.character-workspace {
   flex: 1;
   height: 100%;

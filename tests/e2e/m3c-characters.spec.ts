@@ -122,7 +122,7 @@ test('keeps the manuscript mounted and its save status when switching to the rol
   await expect(editor).toBeVisible();
   await expect(page.getByRole('status').filter({ hasText: '已同步' })).toBeVisible();
 
-  await page.getByRole('tablist', { name: '中央工作区页签' }).getByRole('tab', { name: '角色版图' }).click();
+  await page.getByRole('group', { name: '创作功能入口' }).getByRole('button', { name: '角色版图' }).click();
   await expect(page).toHaveURL(/tab=roles/);
   await expect(page.getByRole('toolbar', { name: '角色版图工具栏' })).toBeVisible();
 
@@ -131,7 +131,7 @@ test('keeps the manuscript mounted and its save status when switching to the rol
   await expect(editor).toBeHidden();
   await expect(page.getByRole('status').filter({ hasText: '已同步' })).toBeVisible();
 
-  await page.getByRole('tablist', { name: '中央工作区页签' }).getByRole('tab', { name: '正文' }).click();
+  await page.getByRole('group', { name: '创作功能入口' }).getByRole('button', { name: '写作' }).click();
   await expect(editor).toBeVisible();
   await expect(page.getByRole('status').filter({ hasText: '已同步' })).toBeVisible();
 });

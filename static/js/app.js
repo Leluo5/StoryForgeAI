@@ -1329,11 +1329,11 @@
         const list = document.getElementById('admin-agents-list');
         if (!list) return;
         if (agents.length === 0) {
-            list.innerHTML = '<p style="color:var(--text-tertiary);text-align:center;padding:40px;">暂无已导入的智能体，请前往“导入资源”页面</p>';
+            list.innerHTML = escapeHtml('') + '<p style="color:var(--text-tertiary);text-align:center;padding:40px;">暂无已导入的智能体，请前往“导入资源”页面</p>';
             return;
         }
 
-        list.innerHTML = agents.map(agent => {
+        list.innerHTML = escapeHtml('') + agents.map(agent => {
             const platformConfig = agent.platform_config || {};
             return `
                 <div class="admin-work-item" data-agent-id="${escapeHtml(agent.id)}">
@@ -1377,11 +1377,11 @@
         const list = document.getElementById('admin-workflows-list');
         if (!list) return;
         if (workflows.length === 0) {
-            list.innerHTML = `<p style="color:var(--text-tertiary);text-align:center;padding:40px;">${WORKFLOW_TEXT.empty}</p>`;
+            list.innerHTML = escapeHtml('') + `<p style="color:var(--text-tertiary);text-align:center;padding:40px;">${WORKFLOW_TEXT.empty}</p>`;
             return;
         }
 
-        list.innerHTML = workflows.map(wf => {
+        list.innerHTML = escapeHtml('') + workflows.map(wf => {
             const platformConfig = wf.platform_config || {};
             const workflowId = platformConfig.workflow_id || '';
             const status = wf.status || 'active';
@@ -2405,7 +2405,7 @@
         // F3-R2/R7：流式输出开关（默认开启；关闭则走非流式 {output} 契约）
         const streamLabel = document.createElement('label');
         streamLabel.style.cssText = 'display:inline-flex;align-items:center;gap:6px;margin:8px 0;font-size:13px;cursor:pointer;';
-        streamLabel.innerHTML = '<input type="checkbox" data-stream-toggle checked style="cursor:pointer"> 流式输出';
+        streamLabel.innerHTML = escapeHtml('') + '<input type="checkbox" data-stream-toggle checked style="cursor:pointer"> 流式输出';
         form.appendChild(streamLabel);
 
         // Submit button
