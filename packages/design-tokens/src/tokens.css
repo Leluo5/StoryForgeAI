@@ -5,7 +5,7 @@
   --violet-500: #7C3AED; --magenta-500: #DB2777; --cyan-500: #0891B2; --emerald-500: #059669;
   --success-500: #22C55E; --success-100: #F0FDF4; --warning-500: #F59E0B; --warning-100: #FEF3C7;
   --danger-500: #EF4444; --danger-100: #FEF2F2; --info-500: #0891B2; --info-100: #ECFEFF;
-  --text-primary: #1A1A2E; --text-secondary: #475569; --text-tertiary: #94A3B8;
+  --text-primary: #1A1A2E; --text-secondary: #475569; --text-tertiary: #5B6B7F;
   --bg-primary: #F0F2F5; --bg-secondary: #FFFFFF; --bg-tertiary: #F8F9FA; --bg-hover: #EEF2F7;
   --border-color: #E2E8F0; --border-light: #F1F5F9;
   --font-sans: Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei', sans-serif;
@@ -26,7 +26,7 @@
   /* 强调色（离开类动作，如「返回作品库」）：琥珀金，与品牌靛蓝互补且语义为「退出」 */
   --btn-accent-bg: #B45309; --btn-accent-bg-hover: #92400E; --btn-accent-bg-active: #7C2D12; --btn-accent-text: #FFFFFF;
   /* 编辑模式选中态（富文本/Markdown 切换）：翡翠绿，与品牌靛蓝同属创作域识别色，选中/未选中视觉反馈清晰 */
-  --btn-mode-active-bg: #059669; --btn-mode-active-bg-hover: #047857; --btn-mode-active-bg-active: #065F46; --btn-mode-active-text: #FFFFFF;
+  --btn-mode-active-bg: #047857; --btn-mode-active-bg-hover: #065F46; --btn-mode-active-bg-active: #065F46; --btn-mode-active-text: #FFFFFF;
   /* 工作台章节导航栏底色：复用蓝灰 --bg-hover，弱对比区分正文白底 */
   --nav-bg: var(--bg-hover);
   --btn-ghost-text: var(--text-secondary); --btn-ghost-text-hover: var(--text-primary); --btn-ghost-bg-hover: var(--bg-hover);
