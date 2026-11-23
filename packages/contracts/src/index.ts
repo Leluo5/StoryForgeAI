@@ -12,3 +12,5 @@ export * from './character-portability';
 export * from './arkclaw';
 export * from './collab';
 export * from './knowledge';
+export * from './knowledge-job';
+export * from './knowledge-portability';
