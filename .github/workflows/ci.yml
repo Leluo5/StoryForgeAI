@@ -168,7 +168,7 @@ jobs:
         with:
           node-version: "22.16.0"
       # infra/docker-compose.yml 将 storyforge_pg 标为 external（复用本地数据卷），CI 干净环境需预先创建，否则 compose up 失败
-      - name: Start disposable PostgreSQL 16 and Redis 7
+      - name: Start disposable pgvector PostgreSQL 16 and Redis 7
         run: |
           docker volume create infra_storyforge_pg
           docker compose -f infra/docker-compose.yml up -d postgres --wait
@@ -181,7 +181,7 @@ jobs:
       - name: Run database-backed gates
         run: pnpm verify:m1
         env:
-          M1_STAGES: docker,migration-fresh,migration-second,unit-test,database-failure
+          M1_STAGES: docker,migration-fresh,migration-second,knowledge-migration,unit-test,database-failure
           M1_ALLOW_DATABASE_RESTART: "1"
       - name: Upload acceptance evidence
         if: always()
@@ -265,7 +265,7 @@ jobs:
         uses: ./.github/actions/setup-node-pnpm
         with:
           node-version: "22.16.0"
-      - name: Start disposable PostgreSQL 16 and Redis 7
+      - name: Start disposable pgvector PostgreSQL 16 and Redis 7
         run: |
           docker volume create infra_storyforge_pg
           docker compose -f infra/docker-compose.yml up -d postgres --wait

@@ -1,14 +1,19 @@
 import 'reflect-metadata';
 import { NestFactory } from '@nestjs/core';
+import { DataSource } from 'typeorm';
 import { AppModule } from './app.module';
 import { configureApp } from './app.setup';
 import { env } from './config/env';
+import { assertKnowledgeVectorExtension } from './database/data-source';
 import { AiTaskProcessor } from './ai/ai-task.processor';
 import { CollabArchiveProcessor } from './collab/collab-archive.processor';
 
 export async function bootstrap(): Promise<void> {
   const app = await NestFactory.create(AppModule);
   configureApp(app);
+
+  // M3c-3 知识库 T07：vector 扩展缺失则拒绝启动（向量功能依赖），避免运行时静默降级
+  await assertKnowledgeVectorExtension(app.get(DataSource));
 
   // 启动 AI 任务消费 Worker（A5/A8 要求：bootstrap 时拉起队列消费者，任务才能 queued→running→succeeded）
   const worker = app.get(AiTaskProcessor).createWorker();

@@ -2,8 +2,9 @@
 name: storyforge
 
 services:
+  # pgvector 不在官方 postgres:16 镜像内，切换为 pgvector/pgvector:pg16 以支持知识库向量扩展
   postgres:
-    image: postgres:16
+    image: pgvector/pgvector:pg16
     environment:
       POSTGRES_USER: storyforge
       POSTGRES_PASSWORD: storyforge

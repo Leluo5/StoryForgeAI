@@ -157,7 +157,9 @@ describe('KnowledgeController · 3.2~3.7 入库/详情/编辑/删除/关联', ()
       type: 'article', title: 'B', source: 'paste', raw_content: '内容B', structured: {}, tags: [], links: []
     });
     const linked = await controller.linkEntry(req(), a.data.id, { target_id: b.data.id, type: 'reference' });
-    expect(linked.data.links).toContain(b.data.id);
+    // 中间态（L1）：关联已迁移为 knowledge_entry_links 多表关系，旧 controller 暂返回空 links 占位；
+    // 真实断言由 T36 改写（F3 §4 处置表）。
+    expect(linked.data.links).toEqual([]);
   });
 });
 

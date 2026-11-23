@@ -50,6 +50,13 @@ import { AgentArchiveOutboxEntity } from './agent-archive-outbox.entity';
 import { KnowledgeEntryEntity } from './knowledge-entry.entity';
 import { WorkflowEntity } from './workflow.entity';
 import { ModelEntity } from './model.entity';
+import { KnowledgeWorkRefEntity } from './knowledge-work-ref.entity';
+import { KnowledgeTagEntity } from './knowledge-tag.entity';
+import { KnowledgeEntryTagEntity } from './knowledge-entry-tag.entity';
+import { KnowledgeEntryLinkEntity } from './knowledge-entry-link.entity';
+import { KnowledgeEntryEmbeddingEntity } from './knowledge-entry-embedding.entity';
+import { KnowledgeJobEntity } from './knowledge-job.entity';
+import { KnowledgeJobEventEntity } from './knowledge-job-event.entity';
 import { AuthBase1736899200000 } from './migrations/1736899200000-auth-base';
 import { WritingBase1736985600000 } from './migrations/1736985600000-writing-base';
 import { RevisionBase1760000000000 } from './migrations/1760000000000-revision-base';
@@ -70,6 +77,7 @@ import { AiTaskRoleProfileScope1760700001000 } from './migrations/1760700001000-
 import { KnowledgeBase1760600000000 } from './migrations/1760600000000-knowledge-base';
 import { WorkflowBase1760700002000 } from './migrations/1760700002000-workflow-base';
 import { ModelBase1760700003000 } from './migrations/1760700003000-model-base';
+import { KnowledgeVector1760600001000 } from './migrations/1760600001000-knowledge-vector';
 
 export function createDataSource(databaseUrl: string = env.DATABASE_URL): DataSource {
   return new DataSource({
@@ -124,7 +132,14 @@ export function createDataSource(databaseUrl: string = env.DATABASE_URL): DataSo
       AgentArchiveOutboxEntity,
       KnowledgeEntryEntity,
       WorkflowEntity,
-      ModelEntity
+      ModelEntity,
+      KnowledgeWorkRefEntity,
+      KnowledgeTagEntity,
+      KnowledgeEntryTagEntity,
+      KnowledgeEntryLinkEntity,
+      KnowledgeEntryEmbeddingEntity,
+      KnowledgeJobEntity,
+      KnowledgeJobEventEntity
     ],
     migrations: [
       AuthBase1736899200000,
@@ -146,7 +161,8 @@ export function createDataSource(databaseUrl: string = env.DATABASE_URL): DataSo
       AiTaskRoleProfileScope1760700001000,
       KnowledgeBase1760600000000,
       WorkflowBase1760700002000,
-      ModelBase1760700003000
+      ModelBase1760700003000,
+      KnowledgeVector1760600001000
     ],
     migrationsTableName: 'migrations',
     synchronize: false,
@@ -156,3 +172,17 @@ export function createDataSource(databaseUrl: string = env.DATABASE_URL): DataSo
 }
 
 export const AppDataSource = createDataSource();
+
+// M3c-3 知识库 T07：API 启动前检查 vector 扩展存在。
+// 缺失时拒绝启动（知识库向量功能无法工作），输出明确错误而非静默降级。
+export async function assertKnowledgeVectorExtension(dataSource: DataSource): Promise<void> {
+  const row = await dataSource.query<{ exists: boolean }[]>(
+    `SELECT EXISTS (SELECT 1 FROM pg_extension WHERE extname = 'vector') AS exists`
+  );
+  if (!row[0]?.exists) {
+    throw new Error(
+      'PostgreSQL 缺少 vector 扩展（知识库向量功能依赖）。' +
+        '请使用 pgvector/pgvector:pg16 镜像启动数据库，并确认迁移 1760600001000-knowledge-vector 已执行。'
+    );
+  }
+}

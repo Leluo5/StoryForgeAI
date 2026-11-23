@@ -29,7 +29,7 @@ const requestedStages = (process.env.M1_STAGES ?? '')
   .split(',')
   .map((value) => value.trim())
   .filter(Boolean);
-const databaseStageIds = new Set(['docker', 'migration-fresh', 'migration-second', 'browser', 'database-failure']);
+const databaseStageIds = new Set(['docker', 'migration-fresh', 'migration-second', 'knowledge-migration', 'browser', 'database-failure']);
 
 mkdirSync(evidenceDirectory, { recursive: true });
 if (!reportOnly) mkdirSync(dirname(reportPath), { recursive: true });
@@ -70,6 +70,7 @@ const allChecks = [
   { id: 'legacy-compile', label: '旧 Python 语法编译', command: 'python', args: ['-m', 'compileall', '-q', '.'] },
   { id: 'migration-fresh', label: '测试库清表与完整显式迁移', command: pnpm, args: ['--filter', '@storyforge/api', 'test:prepare'], env: undefined },
   { id: 'migration-second', label: '显式迁移幂等重跑', command: pnpm, args: ['--filter', '@storyforge/api', 'migration:run'], env: undefined },
+  { id: 'knowledge-migration', label: 'M3c-3 知识库迁移双跑（空库 + 存量库 up/down + 结构断言）', command: pnpm, args: ['--filter', '@storyforge/api', 'exec', 'tsx', 'src/database/verify-knowledge-migrations.ts'], env: undefined },
   { id: 'browser', label: 'M0/M1 Chromium 浏览器验收', command: pnpm, args: ['test:e2e'], env: undefined },
   { id: 'database-failure', label: '保存中行锁等待与数据库重启', command: 'node', args: ['scripts/verify-m1-db-failure.mjs'], env: undefined }
 ];
