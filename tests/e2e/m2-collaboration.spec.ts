@@ -103,7 +103,8 @@ test.describe('M2 变更协作', () => {
     await openPanel(page, '待办');
 
     await page.getByLabel('标题').fill('校验回滚边界');
-    await page.getByLabel('说明').fill('待办说明');
+    // 「说明」label 同时存在于 hidden 的 AI 创作面板与当前待办面板，限定可见元素避免 strict 违规
+    await page.getByLabel('说明').filter({ visible: true }).fill('待办说明');
     await page.getByRole('button', { name: '创建待办', exact: true }).click();
     await expectPanelText(page, '校验回滚边界');
 

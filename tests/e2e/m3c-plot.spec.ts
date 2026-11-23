@@ -16,7 +16,7 @@ interface PlotTreePayload {
 }
 
 async function openPlotTab(page: Page): Promise<void> {
-  await page.getByRole('tablist', { name: '中央工作区页签' }).getByRole('tab', { name: '剧情' }).click();
+  await page.getByRole('group', { name: '创作功能入口' }).getByRole('button', { name: '剧情树' }).click();
   await expect(page).toHaveURL(/tab=plot/);
 }
 
