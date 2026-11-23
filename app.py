@@ -309,7 +309,8 @@ def import_works():
         if source_type == "workflow":
             # 导入工作流：进入独立工作流管理模块的全局未分类池
             # Coze 工作流列表项可能同时带 id 与 workflow_id，优先取 workflow_id
-            actual_id = bid.get("workflow_id") or bid.get("id", bid) if isinstance(bid, dict) else bid
+            actual_id = (bid.get("workflow_id") or bid.get("id", bid)
+                         if isinstance(bid, dict) else bid)
             wf_info = {
                 "id": actual_id,
                 "name": bid.get("name", ""),
@@ -1001,7 +1002,8 @@ def chat_work(work_id):
             # 会静默吞掉错误，导致前端只见 done 永远转圈。显式检测非 SSE 并透出上游错误。
             # getattr 防御：测试 mock 等无 headers 的对象跳过检查，走正常 SSE 解析。
             resp_headers = getattr(resp, "headers", None)
-            if resp_headers is not None and "text/event-stream" not in resp_headers.get("Content-Type", ""):
+            if (resp_headers is not None
+                    and "text/event-stream" not in resp_headers.get("Content-Type", "")):
                 try:
                     err_obj = resp.json()
                     upstream_msg = err_obj.get("msg") or err_obj.get("message") or resp.text[:200]

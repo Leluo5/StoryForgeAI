@@ -20,36 +20,46 @@ class WorkflowService:
 
     def list_workflows(self, project_id: str, status: Optional[str] = None,
                        keyword: Optional[str] = None) -> List[Dict[str, Any]]:
+        """列出项目下的工作流，支持按状态与关键字过滤。"""
         return self.store.list_workflows(project_id, status=status, keyword=keyword)
 
     def get_workflow(self, project_id: str, workflow_id: str,
                      include_versions: bool = False) -> Dict[str, Any]:
+        """获取工作流详情，可选一并返回版本列表。"""
         return self.store.get_workflow(project_id, workflow_id, include_versions)
 
     def create_workflow(self, project_id: str, payload: Dict[str, Any]) -> Dict[str, Any]:
+        """创建并返回工作流。"""
         return self.store.create_workflow(project_id, payload)
 
     def update_workflow(self, project_id: str, workflow_id: str,
                         updates: Dict[str, Any], note: str = "") -> Dict[str, Any]:
+        """更新工作流信息，并记录变更备注。"""
         return self.store.update_workflow(project_id, workflow_id, updates, note=note)
 
     def set_status(self, project_id: str, workflow_id: str, status: str) -> Dict[str, Any]:
+        """设置工作流状态（启用/禁用）。"""
         return self.store.set_status(project_id, workflow_id, status)
 
     def archive_workflow(self, project_id: str, workflow_id: str) -> Dict[str, Any]:
+        """归档工作流。"""
         return self.store.archive_workflow(project_id, workflow_id)
 
     def restore_workflow(self, project_id: str, workflow_id: str) -> Dict[str, Any]:
+        """恢复已归档的工作流。"""
         return self.store.restore_workflow(project_id, workflow_id)
 
     def delete_workflow(self, project_id: str, workflow_id: str,
                         force: bool = False) -> bool:
+        """删除工作流，force 为真时强制删除。"""
         return self.store.delete_workflow(project_id, workflow_id, force=force)
 
     def get_versions(self, project_id: str, workflow_id: str) -> List[Dict[str, Any]]:
+        """获取工作流的版本列表。"""
         return self.store.get_versions(project_id, workflow_id)
 
     def rollback(self, project_id: str, workflow_id: str, version_no: int) -> Dict[str, Any]:
+        """把工作流回滚到指定版本。"""
         return self.store.rollback(project_id, workflow_id, version_no)
 
     # ---------- Coze 导入 ----------

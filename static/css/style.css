@@ -91,6 +91,8 @@
     --ai-gen-bg: #f8f7ff;
     --ai-gen-border: #e8e5ff;
     --text-muted: #888;
+    --workflow-status-active-text: #10b981;
+    --workflow-status-inactive-text: #64748b;
 }
 
 [data-theme="dark"] {
@@ -1187,12 +1189,12 @@ select.form-input {
 
 .workflow-status-active {
     background: rgba(16, 185, 129, 0.12);
-    color: #10b981;
+    color: var(--workflow-status-active-text);
 }
 
 .workflow-status-inactive {
     background: rgba(148, 163, 184, 0.15);
-    color: #64748b;
+    color: var(--workflow-status-inactive-text);
 }
 
 .admin-work-actions {
