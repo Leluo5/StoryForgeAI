@@ -20,6 +20,7 @@ import { VersionPanel } from '../revision/version-panel';
 import { CommentPanel } from '../revision/comment-panel';
 import { TodoPanel } from '../revision/todo-panel';
 import { AiTaskPanel } from '../ai/ai-task-panel';
+import { AgentPanel } from '../agent/agent-panel';
 import { PlotWorkspace, PlotStoreProvider } from '../plot/plot-workspace';
 import { PlotInspector } from '../plot/plot-inspector';
 import { PlotDerivationPanel } from '../plot/plot-derivation-panel';
@@ -141,8 +142,8 @@ export function WorkbenchPage({ client = defaultClient }: Props) {
   }, [workId, chapterId]);
   useEffect(() => { void loadRoleMarks(); }, [loadRoleMarks]);
 
-  // 合法右侧面板：chapter（章节信息）/ revision（修订）/ version（版本）/ comment（评论）/ todo（待办）/ ai（AI 创作）/ plot（剧情）/ role（角色版图）
-  const PANELS = ['chapter', 'revision', 'version', 'comment', 'todo', 'ai', 'plot', 'role'];
+  // 合法右侧面板：chapter（章节信息）/ revision（修订）/ version（版本）/ comment（评论）/ todo（待办）/ ai（AI 创作）/ agent（Agent 管理）/ plot（剧情）/ role（角色版图）
+  const PANELS = ['chapter', 'revision', 'version', 'comment', 'todo', 'ai', 'agent', 'plot', 'role'];
   const currentPanel = PANELS.includes(searchParams.get('panel') ?? '') ? (searchParams.get('panel') as string) : 'chapter';
   // 中央页签：写作 / 剧情 / 角色版图 / 创作工具；非法深链参数就地归一化
   const currentTab = searchParams.get('tab') === 'plot' ? 'plot'
@@ -305,6 +306,7 @@ export function WorkbenchPage({ client = defaultClient }: Props) {
         { key: 'comment', label: '评论' },
         { key: 'todo', label: '待办' },
         { key: 'ai', label: 'AI 创作' },
+        { key: 'agent', label: 'Agent 管理' },
         { key: 'plot', label: '剧情' },
         { key: 'role', label: '角色' },
       ]}
@@ -323,6 +325,10 @@ export function WorkbenchPage({ client = defaultClient }: Props) {
     } else if (currentPanel === 'ai') {
       body = <section role="tabpanel" aria-label="AI 创作">
         <AiTaskPanel workId={workId} chapterId={chapterId} />
+      </section>;
+    } else if (currentPanel === 'agent') {
+      body = <section role="tabpanel" aria-label="Agent 管理">
+        <AgentPanel />
       </section>;
     } else if (currentPanel === 'plot') {
       body = <section role="tabpanel" aria-label="剧情" className="plot-side">
@@ -391,7 +397,7 @@ export function WorkbenchPage({ client = defaultClient }: Props) {
         {writer.readOnly && <Button variant="ghost" size="sm" onClick={() => void writer.takeover()}>接管写入</Button>}
         <Button variant="primary" size="sm" disabled={exporting} onClick={() => void downloadRecovery()}>{exporting ? '导出中' : '导出恢复数据'}</Button>
         <Button variant="ghost" size="sm" className="panel-trigger left-trigger" onClick={() => openDialog(leftDialog.current)}>打开章节导航</Button>
-        <Button variant="primary" size="sm" className="panel-trigger right-trigger" onClick={() => openDialog(rightDialog.current)}>打开{currentPanel === 'revision' ? '修订' : currentPanel === 'version' ? '版本' : currentPanel === 'comment' ? '评论' : currentPanel === 'todo' ? '待办' : currentPanel === 'ai' ? 'AI 创作' : currentPanel === 'plot' ? '剧情' : '章节信息'}</Button>
+        <Button variant="primary" size="sm" className="panel-trigger right-trigger" onClick={() => openDialog(rightDialog.current)}>打开{currentPanel === 'revision' ? '修订' : currentPanel === 'version' ? '版本' : currentPanel === 'comment' ? '评论' : currentPanel === 'todo' ? '待办' : currentPanel === 'ai' ? 'AI 创作' : currentPanel === 'agent' ? 'Agent 管理' : currentPanel === 'plot' ? '剧情' : '章节信息'}</Button>
         {/* 右侧功能区：入口组（写作/角色版图/剧情树/创作工具）+ 返回作品库。
             整体作为单一 flex item，margin-left:auto 推到最右；容器宽度不足换行时整组仍强制右对齐（需求2），
             避免返回按钮单独换行后出现左对齐/居中异常。 */}
@@ -469,7 +475,7 @@ export function WorkbenchPage({ client = defaultClient }: Props) {
       {navigation}
     </dialog>
     <dialog ref={rightDialog} className="workbench-dialog right-dialog" aria-labelledby="right-dialog-title" onClose={restoreDialogFocus}>
-      <h2 id="right-dialog-title">{currentPanel === 'revision' ? '修订' : currentPanel === 'version' ? '版本历史' : currentPanel === 'comment' ? '评论' : currentPanel === 'todo' ? '待办' : currentPanel === 'plot' ? '剧情' : currentPanel === 'role' ? '角色版图' : '章节信息'}</h2>
+      <h2 id="right-dialog-title">{currentPanel === 'revision' ? '修订' : currentPanel === 'version' ? '版本历史' : currentPanel === 'comment' ? '评论' : currentPanel === 'todo' ? '待办' : currentPanel === 'agent' ? 'Agent 管理' : currentPanel === 'plot' ? '剧情' : currentPanel === 'role' ? '角色版图' : '章节信息'}</h2>
       <Button variant="ghost" size="sm" block onClick={() => rightDialog.current?.close()}>关闭右侧面板</Button>
       {context('dialog')}
     </dialog>

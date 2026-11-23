@@ -58,7 +58,13 @@ export function App() {
   }
 
   if (loading) return <p role="status">正在恢复会话</p>;
-  if (!session) return <AuthPage login={loginOrRegister} onSuccess={setSession} />;
+  // 未登录：仅 /login 渲染登录页，其余路径统一重定向到 /login（保持 URL 与登录态一致）
+  if (!session) return <BrowserRouter>
+    <Routes>
+      <Route path="/login" element={<AuthPage login={loginOrRegister} onSuccess={setSession} />} />
+      <Route path="*" element={<Navigate to="/login" replace />} />
+    </Routes>
+  </BrowserRouter>;
   return <BrowserRouter>
     <header className="app-session">
       {/* 用户栏：用户名（最左）→ 主题切换 / 通知 纯图标 → 退出登录 */}
