@@ -258,6 +258,13 @@ export function WorkbenchPage({ client = defaultClient }: Props) {
 
   const navigation = tree ? <ChapterTree tree={tree} currentChapterId={chapterId}
     onOpen={(id) => navigate(chapterUrl(workId, id))} onAction={performAction} /> : <p role="status">正在加载章节</p>;
+  // 当前章节信息（需求4）：章名 + 字数，正文区左侧展示；章名双击可重命名（复用现有 prompt 编辑规范）
+  const currentChapter = tree?.chapters.find((chapter) => chapter.id === chapterId);
+  function renameCurrentChapter(): void {
+    if (!currentChapter) return;
+    const title = window.prompt('章节名称', currentChapter.title)?.trim();
+    if (title && title !== currentChapter.title) void performAction({ type: 'rename_chapter', chapterId, title });
+  }
   // 切换右侧面板：持久化到 ?panel= 查询参数，刷新/深链不丢
   function switchPanel(panel: string): void {
     if (!PANELS.includes(panel)) return;
@@ -382,17 +389,21 @@ export function WorkbenchPage({ client = defaultClient }: Props) {
           仅返回作品库用 --btn-accent-bg 强调，语义为「离开当前作品」。 */}
       <div className="workbench-header-row workbench-header-actions">
         {writer.readOnly && <Button variant="ghost" size="sm" onClick={() => void writer.takeover()}>接管写入</Button>}
-        <Button variant="ghost" size="sm" disabled={exporting} onClick={() => void downloadRecovery()}>{exporting ? '导出中' : '导出恢复数据'}</Button>
+        <Button variant="primary" size="sm" disabled={exporting} onClick={() => void downloadRecovery()}>{exporting ? '导出中' : '导出恢复数据'}</Button>
         <Button variant="ghost" size="sm" className="panel-trigger left-trigger" onClick={() => openDialog(leftDialog.current)}>打开章节导航</Button>
-        <Button variant="ghost" size="sm" className="panel-trigger right-trigger" onClick={() => openDialog(rightDialog.current)}>打开{currentPanel === 'revision' ? '修订' : currentPanel === 'version' ? '版本' : currentPanel === 'comment' ? '评论' : currentPanel === 'todo' ? '待办' : currentPanel === 'ai' ? 'AI 创作' : currentPanel === 'plot' ? '剧情' : '章节信息'}</Button>
-        {/* 功能区入口组：auto 外边距推到右侧，返回作品库随之贴到 header 最右边缘 */}
-        <div className="workbench-feature-entries" role="group" aria-label="创作功能入口">
-          <Button variant="primary" size="sm" onClick={() => switchTab('manuscript')}>写作</Button>
-          <Button variant="primary" size="sm" onClick={() => switchTab('roles')}>角色版图</Button>
-          <Button variant="primary" size="sm" onClick={() => switchTab('plot')}>剧情树</Button>
-          <Button variant="primary" size="sm" onClick={() => switchTab('tools')}>创作工具</Button>
+        <Button variant="primary" size="sm" className="panel-trigger right-trigger" onClick={() => openDialog(rightDialog.current)}>打开{currentPanel === 'revision' ? '修订' : currentPanel === 'version' ? '版本' : currentPanel === 'comment' ? '评论' : currentPanel === 'todo' ? '待办' : currentPanel === 'ai' ? 'AI 创作' : currentPanel === 'plot' ? '剧情' : '章节信息'}</Button>
+        {/* 右侧功能区：入口组（写作/角色版图/剧情树/创作工具）+ 返回作品库。
+            整体作为单一 flex item，margin-left:auto 推到最右；容器宽度不足换行时整组仍强制右对齐（需求2），
+            避免返回按钮单独换行后出现左对齐/居中异常。 */}
+        <div className="workbench-right-actions">
+          <div className="workbench-feature-entries" role="group" aria-label="创作功能入口">
+            <Button variant="primary" size="sm" onClick={() => switchTab('manuscript')}>写作</Button>
+            <Button variant="primary" size="sm" onClick={() => switchTab('roles')}>角色版图</Button>
+            <Button variant="primary" size="sm" onClick={() => switchTab('plot')}>剧情树</Button>
+            <Button variant="primary" size="sm" onClick={() => switchTab('tools')}>创作工具</Button>
+          </div>
+          <Button variant="ghost" size="sm" className="btn-accent" onClick={() => navigate('/works')}>返回作品库</Button>
         </div>
-        <Button variant="ghost" size="sm" className="btn-accent" onClick={() => navigate('/works')}>返回作品库</Button>
       </div>
       {/* 第三行：富文本 / Markdown 编辑模式切换。正文编辑器通过 portal 把切换按钮挂到此容器（右对齐），
           模式状态仍留在 EditorPane 内；正文文本框填满剩余空间 */}
@@ -405,16 +416,17 @@ export function WorkbenchPage({ client = defaultClient }: Props) {
       <aside className={`workbench-left${leftNavHidden ? ' is-hidden' : ''}${panels.leftCollapsed ? ' is-collapsed' : ''}`} aria-label="章节导航栏">
         {/* 折叠/展开按钮：与左侧共享导航工具栏的「展开/收起」同款样式（图标 + 文字 + 悬停底） */}
         <PanelCollapseToggle collapsed={panels.leftCollapsed} onToggle={() => updatePanels({ leftCollapsed: !panels.leftCollapsed })} />
-        {!panels.leftCollapsed && <>
-          {/* 宽度拖动条：仅保留拖动条本身，删除「左侧栏宽度」文字（需求8）；固定宽度由拖动决定（需求7） */}
-          <input id="left-width" aria-label="左侧栏宽度" type="range" min="200" max="400" step="8"
-            value={panels.leftWidth} onChange={(event) => updatePanels({ leftWidth: Number(event.target.value) })} />
-          {navigation}
-        </>}
+        {!panels.leftCollapsed && navigation}
       </aside>
       <main className="workbench-center" aria-label="正文工作区">
         {/* 用 hidden 而不是卸载：切页签不能丢掉正文编辑器的未保存状态；角色版图未来也保持挂载以保留筛选状态 */}
         <div hidden={currentTab !== 'manuscript'}>
+          {/* 需求4：正文区章节信息模块 —— 章名（视觉强调，双击重命名）+ 本章字数，左对齐 */}
+          <div className="chapter-info-bar" aria-label="章节信息">
+            <h2 className="chapter-info-bar__title" title={currentChapter?.title ?? ''}
+              onDoubleClick={renameCurrentChapter}>{currentChapter?.title ?? '正在读取章节'}</h2>
+            <span className="chapter-info-bar__words">本章 {currentChapter?.word_count ?? 0} 字</span>
+          </div>
           <EditorPane initialDocument={writer.document} readOnly={writer.readOnly}
             roleMarks={roleMarks} chapterMarks={chapterMarks}
             onDismissMark={(mark) => {

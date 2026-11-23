@@ -63,9 +63,11 @@ export function EditorPane({
   }
 
   const modeControl = <div role="group" aria-label="编辑模式" className="editor-mode-controls">
-    <Button variant={mode === 'rich' ? 'primary' : 'ghost'} size="sm"
+    {/* 需求3：选中/未选中视觉互换 —— 基础态统一 ghost（透明底灰字），选中态用翡翠绿 btn-mode-active 覆盖，
+        所有 hover/active/选中/默认状态由 CSS 提供清晰反馈，切换流畅 */}
+    <Button variant="ghost" size="sm" className={mode === 'rich' ? 'btn-mode-active' : undefined}
       aria-pressed={mode === 'rich'} onClick={showRich}>富文本</Button>
-    <Button variant={mode === 'markdown' ? 'primary' : 'ghost'} size="sm"
+    <Button variant="ghost" size="sm" className={mode === 'markdown' ? 'btn-mode-active' : undefined}
       aria-pressed={mode === 'markdown'} onClick={showMarkdown}>Markdown</Button>
   </div>;
 

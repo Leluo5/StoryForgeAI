@@ -6,7 +6,7 @@ import { canonicalizeContent, createEmptyDocument } from '@storyforge/editor-sch
 import { WorkEntity } from '../database/work.entity';
 import { VolumeEntity } from '../database/volume.entity';
 import { ChapterEntity } from '../database/chapter.entity';
-import { toWork } from './work.service';
+import { countDocumentCharacters, toWork } from './work.service';
 
 function toVolume(volume: VolumeEntity): Volume {
   return { id: volume.id, work_id: volume.work_id, title: volume.title, position: volume.position };
@@ -19,7 +19,8 @@ function toChapterSummary(chapter: ChapterEntity): ChapterSummary {
     title: chapter.title,
     position: chapter.position,
     version: chapter.version,
-    content_hash: chapter.content_hash
+    content_hash: chapter.content_hash,
+    word_count: countDocumentCharacters(chapter.document)
   };
 }
 async function assertOwnedWork(manager: EntityManager, workId: string, authorId: string, lock = false): Promise<WorkEntity> {

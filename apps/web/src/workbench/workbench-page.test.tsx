@@ -82,14 +82,19 @@ describe('WorkbenchRoute', () => {
     await waitFor(() => expect(screen.getAllByRole('status').map((node) => node.textContent)).toContain('已同步'));
   });
 
-  it('normalizes invalid deep-link state and persists panel width per work', async () => {
+  it('normalizes invalid deep-link state and persists panel collapse per work', async () => {
     const api = client();
     renderPage(api, `/works/${workId}/write/${chapterId}?tab=revisions&panel=comments`);
     expect(await screen.findByTestId('location')).toHaveTextContent('?tab=manuscript&panel=chapter');
-    const slider = await screen.findByRole('slider', { name: '左侧栏宽度' });
-    fireEvent.change(slider, { target: { value: '296' } });
+    // 需求1：左侧栏宽度拖动条已移除，展开/收起仍可用 —— 点击「收起左侧栏」收起并持久化 leftCollapsed
+    const collapse = await screen.findByRole('button', { name: '收起左侧栏' });
+    await userEvent.click(collapse);
+    expect(await screen.findByRole('button', { name: '展开左侧栏' })).toBeInTheDocument();
     // 持久化经 rAF 节流 + 150ms 防抖异步写入，需等待防抖完成后再断言 localStorage
-    await waitFor(() => expect(JSON.parse(localStorage.getItem(`storyforge-workbench:${workId}`)!)).toMatchObject({ leftWidth: 296 }));
+    await waitFor(() => expect(JSON.parse(localStorage.getItem(`storyforge-workbench:${workId}`)!)).toMatchObject({ leftCollapsed: true }));
+    // 点击展开恢复
+    await userEvent.click(screen.getByRole('button', { name: '展开左侧栏' }));
+    expect(await screen.findByRole('button', { name: '收起左侧栏' })).toBeInTheDocument();
   });
 
   it('restores focus to the narrow-screen navigation trigger after closing its dialog', async () => {

@@ -33,6 +33,11 @@
   gap: var(--sp-1, 4px);
   padding: var(--sp-4, 16px) var(--sp-2, 8px);
   overflow-y: auto;
+  scrollbar-width: none;
+}
+
+.side-nav__list::-webkit-scrollbar {
+  display: none;
 }
 
 .side-nav__item {

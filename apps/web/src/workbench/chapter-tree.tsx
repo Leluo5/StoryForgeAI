@@ -31,6 +31,11 @@ function titlePrompt(label: string, current = ''): string | undefined {
   return value ? value : undefined;
 }
 
+/** 字数格式化：千分位 + 「字」，如 1,234 字。未提供时按 0 兜底。 */
+function formatWords(count?: number): string {
+  return `${(count ?? 0).toLocaleString('zh-CN')} 字`;
+}
+
 /** 右键菜单项定义：run 内部完成「输入标题 → 派发 TreeAction」 */
 interface MenuItem { label: string; disabled?: boolean; run(): void | Promise<void> }
 
@@ -104,8 +109,11 @@ export function ChapterTree({ tree, currentChapterId, onOpen, onAction }: Props)
       {[...tree.volumes].sort((a, b) => a.position - b.position).map((volume, volumeIndex) => {
         const chapters = tree.chapters.filter((chapter) => chapter.volume_id === volume.id)
           .sort((a, b) => a.position - b.position);
+        // 卷字数汇总：该卷下各章字数之和（需求7，旧数据缺失按 0 兜底）
+        const volumeWords = chapters.reduce((sum, chapter) => sum + (chapter.word_count ?? 0), 0);
         return <li role="treeitem" aria-expanded="true" key={volume.id}>
-          {/* 卷行：名称渐隐截断（悬停 title 看全文）+ 右侧加号新建章节；重命名/上下移收进右键菜单 */}
+          {/* 卷行：名称渐隐截断（悬停 title 看全文）+ 字数（右对齐）+ 右侧加号新建章节（悬停显示，需求6）；
+              重命名/上下移收进右键菜单 */}
           <div className="volume-row" onContextMenu={(event) => openMenu(event, [
             { label: '新建章节', run: () => createChapter(volume.id) },
             { label: '重命名卷', run: () => renameVolume(volume.id, volume.title) },
@@ -113,11 +121,12 @@ export function ChapterTree({ tree, currentChapterId, onOpen, onAction }: Props)
             { label: '下移', run: () => run({ type: 'move_volume', volumeId: volume.id, direction: 1 }), disabled: volumeIndex === tree.volumes.length - 1 }
           ])}>
             <strong className="fade-truncate" title={volume.title}>{volume.title}</strong>
+            <span className="tree-word-count" title={`本卷共 ${formatWords(volumeWords)}`}>{formatWords(volumeWords)}</span>
             <Button className="tree-add" size="sm" variant="ghost" aria-label={`在${volume.title}新建章节`}
               disabled={busy} onClick={() => createChapter(volume.id)}>{PLUS_ICON}</Button>
           </div>
           <ul role="group">
-            {chapters.map((chapter, chapterIndex) => <li role="treeitem"
+            {chapters.map((chapter, chapterIndex) => <li role="treeitem" className="chapter-item"
               aria-selected={chapter.id === currentChapterId} key={chapter.id}
               onContextMenu={(event) => openMenu(event, [
                 { label: '重命名章节', run: () => renameChapter(chapter.id, chapter.title) },
@@ -132,6 +141,8 @@ export function ChapterTree({ tree, currentChapterId, onOpen, onAction }: Props)
                   if (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
                   event.preventDefault(); onOpen(chapter.id);
                 }}>{chapter.title}</a>
+              {/* 需求7：章节字数，右对齐，宽度不足时章名渐隐截断、字数保证全显 */}
+              <span className="tree-word-count" title={`本章 ${formatWords(chapter.word_count)}`}>{formatWords(chapter.word_count)}</span>
             </li>)}
           </ul>
         </li>;

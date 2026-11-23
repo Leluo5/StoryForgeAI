@@ -12,15 +12,21 @@
 .workbench-header .save-status {
   font-size: var(--fs-small); color: var(--text-tertiary);
 }
+/* 右侧功能区：入口组 + 返回作品库，整体作为单一 flex item 用 margin-left:auto 推到最右。
+   容器宽度不足换行时，整组（含返回作品库）作为一个整体仍强制右对齐（需求2），
+   彻底避免返回作品库单独换行后出现左对齐/居中异常。
+   flex-wrap:wrap + justify-content:flex-end：窄屏（≤392px）下行宽不足以容纳入口组+返回按钮时，
+   内部换行且每行仍右对齐，不横向溢出容器右缘（多屏验证发现的溢出修复）。 */
+.workbench-header-row .workbench-right-actions {
+  display: inline-flex; align-items: center; gap: var(--sp-2);
+  margin-left: auto; min-width: 0;
+  flex-wrap: wrap; justify-content: flex-end;
+}
 /* 创作功能入口组：与作品库「新建作品」同款 primary 按钮，横向排列。
-   入口组以 margin-left:auto 推到右侧，使「作品名左对齐、其余功能按钮（含返回作品库）统一右对齐」，
-   最后一个「返回作品库」随之贴到 header 最右边缘。
    用 .workbench-header-row 前缀提高特异性，覆盖全局 [role='group'] { margin:0; padding-left } 的干扰。 */
 .workbench-header-row .workbench-feature-entries {
-  display: inline-flex; align-items: center; gap: var(--sp-2); margin-left: auto; padding: 0;
+  display: inline-flex; align-items: center; gap: var(--sp-2); padding: 0;
 }
-/* 返回作品库：贴第一行最右（入口组以 auto 外边距已把本行右侧内容推到最右，返回作品库随之贴边） */
-.workbench-header-row > .sf-btn:last-child { margin-left: 0; }
 /* 第二行：左侧数据动作（接管写入 / 导出恢复数据 / 打开章节导航 / 打开章节信息）→ 中间空白 → 功能区 + 返回作品库。
    与第一行同为 .workbench-header-row（flex + wrap），保证按钮横向排列、响应式换行一致。 */
 .workbench-header-actions { display: flex; align-items: center; gap: var(--sp-2); flex-wrap: wrap; }
@@ -34,6 +40,20 @@
 .workbench-editor-mode { display: flex; align-items: center; justify-content: flex-end; min-height: 0; }
 .workbench-editor-mode:empty { display: none; }
 .workbench-editor-mode .editor-mode-controls { display: inline-flex; align-items: center; gap: var(--sp-2); }
+/* 需求3：编辑模式切换按钮 —— 基础态统一 ghost（透明底灰字）；选中态翡翠绿（--btn-mode-active-*）。
+   高特异性覆盖 ghost 基础色，hover/active/选中/默认四态视觉反馈清晰，过渡流畅无卡顿。 */
+.workbench-editor-mode .btn-mode-active,
+.editor-mode-controls .btn-mode-active {
+  background: var(--btn-mode-active-bg); border-color: transparent; color: var(--btn-mode-active-text);
+}
+.workbench-editor-mode .btn-mode-active:hover:not(:disabled),
+.editor-mode-controls .btn-mode-active:hover:not(:disabled) {
+  background: var(--btn-mode-active-bg-hover); color: var(--btn-mode-active-text);
+}
+.workbench-editor-mode .btn-mode-active:active:not(:disabled),
+.editor-mode-controls .btn-mode-active:active:not(:disabled) {
+  background: var(--btn-mode-active-bg-active);
+}
 .workbench-grid {
   display: grid; grid-template-columns: var(--left-width) minmax(0, 1fr) var(--right-width);
   flex: 1; min-height: 480px; overflow: hidden;
@@ -88,13 +108,23 @@
 .panel-collapse-toggle:focus-visible { box-shadow: 0 0 0 2px var(--brand-100); color: var(--text-primary); }
 .panel-collapse-toggle svg { flex: none; }
 .panel-collapse-toggle__label { flex: 1; text-align: left; }
-/* 需求8：左侧栏宽度拖动条 —— 仅保留拖动条本身，删除「左侧栏宽度」文字 */
-.workbench-left #left-width {
-  display: block; width: 100%; margin: 0 0 var(--sp-2);
-  accent-color: var(--brand-500); cursor: ew-resize;
-}
 .workbench-right { border-left: 1px solid var(--border-color); }
 .workbench-center { min-width: 0; overflow: auto; padding: var(--sp-5); }
+/* 需求4：正文区章节信息模块 —— 左对齐；章名视觉强调（加粗 + 标题字号 + 品牌色），字数小字淡灰。
+   章名悬停提示可编辑，双击触发重命名（现有 prompt 编辑规范）。 */
+.chapter-info-bar {
+  display: flex; align-items: baseline; gap: var(--sp-3);
+  width: min(100%, 720px); margin: 0 auto var(--sp-3);
+}
+.chapter-info-bar__title {
+  margin: 0; font-size: var(--fs-h3); font-weight: var(--fw-bold); color: var(--brand-600);
+  cursor: pointer; line-height: 1.3; white-space: nowrap; overflow: hidden;
+  text-overflow: ellipsis; max-width: 60%;
+}
+.chapter-info-bar__title:hover { text-decoration: underline dotted; color: var(--brand-500); }
+[data-theme='dark'] .chapter-info-bar__title { color: var(--brand-400); }
+[data-theme='dark'] .chapter-info-bar__title:hover { color: var(--brand-300); }
+.chapter-info-bar__words { font-size: var(--fs-small); color: var(--text-tertiary); white-space: nowrap; }
 .workbench-center > section { width: min(100%, 720px); margin: 0 auto; }
 /* 需求3：富文本 / Markdown 切换按钮移出后，正文文本框填满中央区可用宽度 */
 .workbench-center > section[aria-label='正文编辑器'] { width: 100%; }
@@ -120,7 +150,31 @@
 [role='treeitem'][aria-selected='true'] > a { color: var(--brand-600); background: var(--brand-100); border-radius: var(--radius-md); }
 /* 深色主题下 brand-600 在 brand-100 上对比度不足，改用浅色强调 */
 [data-theme='dark'] [role='treeitem'][aria-selected='true'] > a { color: var(--brand-400); }
+/* 需求7：章节行 = 章名（渐隐截断，flex:1）+ 字数（右对齐，不压缩），整行 flex 布局。
+   width 不足时章名渐隐截断，字数保证全部显示。 */
+.chapter-item { display: flex; align-items: center; min-width: 0; }
+.chapter-item > a { flex: 1; min-width: 0; }
 .volume-row { display: flex; align-items: center; gap: var(--sp-1); margin-top: var(--sp-3); min-width: 0; }
+/* 需求6：卷行 + 号按钮默认隐藏，悬停卷区域才显示，平滑过渡；不影响点击触发（hover 时 pointer-events 恢复）。
+   字数已用 margin-left:auto 推到右侧，+ 号紧跟字数右侧（占位保持字数位置稳定，避免收起/显示时跳动）。 */
+.workbench-left .tree-add {
+  opacity: 0; pointer-events: none; padding: var(--sp-1);
+  transition: opacity 0.15s ease;
+}
+.workbench-left .volume-row:hover .tree-add,
+.workbench-left .volume-row:focus-within .tree-add { opacity: 1; pointer-events: auto; }
+/* BUG 修复：触屏/笔设备无 hover 能力时，pointer-events:none 会拦截首次点击导致「点击+号无反应」。
+   在 (hover:none)（主指针无 hover）或 (any-hover:none)（所有指针无 hover）设备上，
+   让 + 号始终可点（opacity:1 + pointer-events:auto），不依赖 hover 前置触发。
+   桌面鼠标设备（hover:hover）仍保持「悬停卷行才显示」的原需求6 交互。 */
+@media (hover: none), (any-hover: none) {
+  .workbench-left .volume-row .tree-add { opacity: 1; pointer-events: auto; }
+}
+/* 需求7：字数统计 —— 小字淡灰、右对齐、不压缩、不换行；卷行与章节行统一 */
+.tree-word-count {
+  flex: none; margin-left: auto; font-size: var(--fs-small);
+  color: var(--text-tertiary); white-space: nowrap; font-variant-numeric: tabular-nums;
+}
 .tree-actions { margin: var(--sp-3) 0; }
 .context-body { display: flex; flex-direction: column; gap: var(--sp-3); }
 .workbench-dialog > .sf-btn { margin-bottom: var(--sp-3); }
