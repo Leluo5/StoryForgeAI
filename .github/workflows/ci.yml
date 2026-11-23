@@ -21,7 +21,7 @@ jobs:
   # 变更范围识别：docs-only 提交与只影响单一模块的 PR 不再触发全量重活
   changes:
     name: 变更范围识别
-    runs-on: ubuntu-22.04
+    runs-on: ubuntu-24.04
     timeout-minutes: 5
     outputs:
       docs_only: ${{ steps.flags.outputs.docs_only }}
@@ -108,7 +108,7 @@ jobs:
     name: 文档变更快速通过
     needs: changes
     if: needs.changes.outputs.docs_only == 'true'
-    runs-on: ubuntu-22.04
+    runs-on: ubuntu-24.04
     timeout-minutes: 5
     steps:
       - name: Skip heavy gates
@@ -119,7 +119,7 @@ jobs:
     name: 静态质量门禁（lint / typecheck / build）
     needs: changes
     if: needs.changes.outputs.docs_only == 'false'
-    runs-on: ubuntu-22.04
+    runs-on: ubuntu-24.04
     timeout-minutes: 15
     steps:
       - name: Checkout
@@ -149,7 +149,7 @@ jobs:
     name: 单元与 API E2E 测试（vitest）
     needs: changes
     if: needs.changes.outputs.docs_only == 'false'
-    runs-on: ubuntu-22.04
+    runs-on: ubuntu-24.04
     timeout-minutes: 30
     env:
       NODE_ENV: test
@@ -205,7 +205,7 @@ jobs:
     name: 旧体系 Python 门禁（合规 / pytest / 编译）
     needs: changes
     if: needs.changes.outputs.docs_only == 'false' && (needs.changes.outputs.legacy == 'true' || needs.changes.outputs.full == 'true')
-    runs-on: ubuntu-22.04
+    runs-on: ubuntu-24.04
     timeout-minutes: 20
     steps:
       - name: Checkout
@@ -243,7 +243,7 @@ jobs:
     name: 浏览器 E2E 验收（Playwright）
     needs: changes
     if: needs.changes.outputs.docs_only == 'false' && (needs.changes.outputs.e2e == 'true' || needs.changes.outputs.full == 'true')
-    runs-on: ubuntu-22.04
+    runs-on: ubuntu-24.04
     timeout-minutes: 35
     env:
       NODE_ENV: test
@@ -282,7 +282,7 @@ jobs:
           key: ${{ runner.os }}-playwright-${{ hashFiles('pnpm-lock.yaml') }}
           restore-keys: |
             ${{ runner.os }}-playwright-
-      # ubuntu-22.04 runner 镜像已预装 Playwright 系统依赖（日志可见全部 "already the newest version"），
+      # ubuntu-24.04 runner 镜像已预装 Playwright 系统依赖（日志可见全部 "already the newest version"），
       # 命中浏览器缓存时无需再次 apt-get，直接复用缓存中的 Chromium
       - name: Install Chromium (cache miss)
         if: steps.playwright-cache.outputs.cache-hit != 'true'
@@ -321,7 +321,7 @@ jobs:
     name: M0–M3c 全链路验收（含浏览器 E2E）
     needs: [changes, quality, test, legacy, e2e]
     if: always() && github.event_name != 'pull_request' && needs.changes.outputs.full == 'true' && !cancelled()
-    runs-on: ubuntu-22.04
+    runs-on: ubuntu-24.04
     timeout-minutes: 15
     steps:
       - name: Checkout
