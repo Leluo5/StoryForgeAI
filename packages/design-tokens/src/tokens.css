@@ -49,7 +49,7 @@
   --brand-500: #6366F1; --brand-600: #4F46E5; --brand-700: #4338CA;
   --success-500: #4ADE80; --success-100: #14532D; --warning-500: #FBBF24; --warning-100: #451A03;
   --danger-500: #F87171; --danger-100: #450A0A; --info-500: #22D3EE; --info-100: #164E63;
-  --text-primary: #F1F5F9; --text-secondary: #94A3B8; --text-tertiary: #64748B;
+  --text-primary: #F1F5F9; --text-secondary: #94A3B8; --text-tertiary: #94A3B8;
   --bg-primary: #0F172A; --bg-secondary: #1E293B; --bg-tertiary: #263449; --bg-hover: #334155;
   --border-color: #334155; --border-light: #1E293B;
   --shadow-sm: 0 1px 2px rgb(0 0 0 / 24%); --shadow-md: 0 8px 24px rgb(0 0 0 / 32%);
