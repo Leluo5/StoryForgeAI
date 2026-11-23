@@ -155,9 +155,10 @@ describe('WorkbenchRoute', () => {
     await waitFor(() => expect(api.plot?.fetchTree).toHaveBeenCalledWith(workId));
   });
 
-  // 知识库与智能体管理已从工作台右侧 tab 迁移到作品库页头入口（独立路由 /knowledge、/agents）。
-  // 旧深链 ?panel=knowledge / ?panel=agent 不再合法：页面应安全归一化为默认面板（chapter），且不渲染对应面板。
-  it('normalizes the legacy knowledge and agent deep links back to the chapter panel', async () => {
+  // 知识库已从工作台右侧 tab 迁移到作品库页头入口（独立路由 /knowledge），旧深链 ?panel=knowledge 不再合法：
+  // 页面应安全归一化为默认面板（chapter），且不渲染知识库面板。
+  // 注意：Agent 管理在 main 中是合法右侧面板（F11 协同），故 tab 应存在，仅 knowledge 归一化。
+  it('normalizes the legacy knowledge deep link back to the chapter panel', async () => {
     const api = client();
     renderPage(api, `/works/${workId}/write/${chapterId}?tab=manuscript&panel=knowledge`);
     // 非法 panel 被归一化：URL 不再保留 knowledge
@@ -165,7 +166,8 @@ describe('WorkbenchRoute', () => {
     expect(screen.getByTestId('location')).toHaveTextContent('panel=chapter');
     const rightTabs = screen.getByRole('tablist', { name: '右侧面板' });
     expect(within(rightTabs).queryByRole('tab', { name: '知识库' })).toBeNull();
-    expect(within(rightTabs).queryByRole('tab', { name: 'Agent 管理' })).toBeNull();
+    // Agent 管理是合法面板，tab 应存在；深链为 knowledge（归一化到 chapter），故面板不渲染
+    expect(within(rightTabs).getByRole('tab', { name: 'Agent 管理' })).toBeInTheDocument();
     expect(screen.queryByRole('heading', { name: '知识库' })).toBeNull();
     expect(screen.queryByRole('heading', { name: 'Agent 管理' })).toBeNull();
   });
@@ -186,14 +188,15 @@ describe('WorkbenchRoute', () => {
     expect(screen.queryByRole('heading', { name: '深链作品' })).toBeNull();
   });
 
-  it('normalizes the legacy agent deep link back to the chapter panel', async () => {
+  // Agent 管理在 main 中是合法右侧面板（F11 协同）：深链 ?panel=agent 应保留并渲染 Agent 管理，
+  // 而非被归一化为章节信息（本分支曾删除该面板，merge 后恢复 main 语义，测试跟随 main）。
+  it('keeps the agent panel as a legal deep-link target and renders it', async () => {
     const api = client();
     renderPage(api, `/works/${workId}/write/${chapterId}?tab=manuscript&panel=agent`);
-    await waitFor(() => expect(screen.getByTestId('location')).not.toHaveTextContent('panel=agent'));
-    expect(screen.getByTestId('location')).toHaveTextContent('panel=chapter');
+    await waitFor(() => expect(screen.getByTestId('location')).toHaveTextContent('panel=agent'));
     const rightTabs = screen.getByRole('tablist', { name: '右侧面板' });
-    expect(within(rightTabs).queryByRole('tab', { name: 'Agent 管理' })).toBeNull();
-    expect(screen.queryByRole('heading', { name: 'Agent 管理' })).toBeNull();
+    expect(within(rightTabs).getByRole('tab', { name: 'Agent 管理' })).toBeInTheDocument();
+    expect(await screen.findByRole('heading', { name: 'Agent 管理' })).toBeVisible();
   });
 
   // 功能入口（写作 / 角色版图 / 剧情树 / 创作工具）位于写作工作台页头，点击后导航到对应功能。

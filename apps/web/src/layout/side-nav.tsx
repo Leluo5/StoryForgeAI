@@ -1,5 +1,5 @@
 import type { JSX } from 'react';
-import { NavLink } from 'react-router-dom';
+import { NavLink, type NavLinkRenderProps } from 'react-router-dom';
 import './side-nav.css';
 
 /** 侧栏导航项定义 */
@@ -50,7 +50,7 @@ export function SideNav({ expanded, onToggle }: SideNavProps): JSX.Element {
           <NavLink
             key={item.key}
             to={item.to}
-            className={({ isActive }) => `side-nav__item${isActive ? ' side-nav__item--active' : ''}`}
+            className={({ isActive }: NavLinkRenderProps) => `side-nav__item${isActive ? ' side-nav__item--active' : ''}`}
             title={item.label}
             aria-label={item.label}
           >
