@@ -1395,7 +1395,9 @@ def _run_workflow_sync(pat_token, workflow_id, parameters):
         return False, _sanitize_error(exc=e, default="执行失败，请稍后重试")
 
 
-def _build_coze_chat_request(work_config, user_message, conversation_id="", parameters=None, user_id=""):
+def _build_coze_chat_request(
+    work_config, user_message, conversation_id="", parameters=None, user_id=""
+):
     """构建 Coze 对话请求体；conversation_id 由路由放入 URL Query。"""
     body = {
         "bot_id": work_config["coze_bot_id"],
