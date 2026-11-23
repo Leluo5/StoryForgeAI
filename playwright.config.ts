@@ -25,14 +25,16 @@ export default defineConfig({
   webServer: [
     {
       command: 'pnpm --filter @storyforge/api start',
-      url: 'http://127.0.0.1:3001/api/v1/health',
+      // 必须与 apps/web/vite.config.ts 的 /api 代理目标一致（FastGPT 占用 3001，API 用 3002），
+      // 否则浏览器请求会被代理到未监听的端口，E2E 全部连接失败。
+      url: 'http://127.0.0.1:3002/api/v1/health',
       reuseExistingServer: false,
       timeout: 120_000,
       env: {
         NODE_ENV: 'test',
         DATABASE_URL: e2e.databaseUrl,
         REDIS_URL: process.env.REDIS_URL ?? 'redis://127.0.0.1:6380',
-        PORT: '3001',
+        PORT: '3002',
         WEB_ORIGIN: 'http://127.0.0.1:5173',
         SESSION_TTL_SECONDS: '604800'
       }
