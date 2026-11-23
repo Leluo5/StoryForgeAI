@@ -139,8 +139,8 @@ test('exports and imports the plot tree JSON', async ({ page }) => {
   expect(exported.nodes).toHaveLength(2);
   expect(exported.nodes.map((node) => node.title)).toContain('开端');
 
-  // 覆盖导入一份结构合法的 JSON
-  await page.locator('input[type="file"]').setInputFiles({
+  // 覆盖导入一份结构合法的 JSON（剧情页签的 file input；角色版图页签也有一个，需限定在剧情 region）
+  await page.getByRole('region', { name: '剧情', exact: true }).locator('input[type="file"]').setInputFiles({
     name: 'plot.json',
     mimeType: 'application/json',
     buffer: Buffer.from(JSON.stringify({
@@ -160,7 +160,7 @@ test('exports and imports the plot tree JSON', async ({ page }) => {
   expect(imported.nodes).toHaveLength(1);
 
   // 非法 JSON：报错且不改动现有树
-  await page.locator('input[type="file"]').setInputFiles({
+  await page.getByRole('region', { name: '剧情', exact: true }).locator('input[type="file"]').setInputFiles({
     name: 'broken.json',
     mimeType: 'application/json',
     buffer: Buffer.from('{ not json')
