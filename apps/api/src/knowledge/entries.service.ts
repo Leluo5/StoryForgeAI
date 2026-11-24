@@ -12,7 +12,7 @@ import {
   Injectable,
   NotFoundException
 } from '@nestjs/common';
-import { DataSource, EntityManager, In, IsNull } from 'typeorm';
+import { DataSource, EntityManager, In, IsNull, Not } from 'typeorm';
 import { createHash } from 'node:crypto';
 import type {
   KnowledgeEntryCreateRequest,
@@ -26,6 +26,7 @@ import type {
 import { KnowledgeEntryEntity } from '../database/knowledge-entry.entity';
 import { KnowledgeTagEntity } from '../database/knowledge-tag.entity';
 import { KnowledgeEntryTagEntity } from '../database/knowledge-entry-tag.entity';
+import { KnowledgeWorkRefEntity } from '../database/knowledge-work-ref.entity';
 import { WorkEntity } from '../database/work.entity';
 import { classifyEntryType } from './classify';
 import { normalizeTitleKey } from './knowledge.service';
@@ -402,6 +403,39 @@ export class KnowledgeEntriesService {
   }
 
   // ═══════════════════════════════════════════════════════════════════
+  // 库摘要（当前全局库与指定作品库的条目、引用、回收站计数）
+  // ═══════════════════════════════════════════════════════════════════
+
+  async summary(
+    authorId: string,
+    opts: { work_id?: string }
+  ): Promise<{
+    global: { entries: number; trash: number; references: number };
+    work: { entries: number; trash: number; references: number } | null;
+  }> {
+    const entryRepo = this.dataSource.getRepository(KnowledgeEntryEntity);
+    const refRepo = this.dataSource.getRepository(KnowledgeWorkRefEntity);
+
+    // 全局库统计：owner_id = authorId（不区分作品；global 条目 work_id 为 NULL，回收站按 deleted_at）
+    const globalActive = await entryRepo.countBy({ owner_id: authorId, library_scope: 'global', deleted_at: IsNull() });
+    const globalTrash = await entryRepo.countBy({ owner_id: authorId, library_scope: 'global', deleted_at: Not(IsNull()) });
+    const globalReferences = await refRepo.countBy({ owner_id: authorId });
+
+    const global = { entries: globalActive, trash: globalTrash, references: globalReferences };
+
+    // 指定作品库统计：校验作品归属（不匹配 → 404）
+    if (!opts.work_id) return { global, work: null };
+    const work = await this.dataSource.getRepository(WorkEntity).findOneBy({ id: opts.work_id });
+    if (!work || work.author_id !== authorId) throw new NotFoundException('Work not found or not owned');
+
+    const workActive = await entryRepo.countBy({ owner_id: authorId, library_scope: 'work', work_id: opts.work_id, deleted_at: IsNull() });
+    const workTrash = await entryRepo.countBy({ owner_id: authorId, library_scope: 'work', work_id: opts.work_id, deleted_at: Not(IsNull()) });
+    const workReferences = await refRepo.countBy({ owner_id: authorId, work_id: opts.work_id });
+
+    return { global, work: { entries: workActive, trash: workTrash, references: workReferences } };
+  }
+
+  // ═══════════════════════════════════════════════════════════════════
   // 列表（四维过滤 + 游标分页；返回摘要不含原文）
   // ═══════════════════════════════════════════════════════════════════
 
@@ -507,13 +541,35 @@ export class KnowledgeEntriesService {
   // 软删 / 恢复 / 收藏 / 置顶
   // ═══════════════════════════════════════════════════════════════════
 
-  async softDelete(authorId: string, entryId: string): Promise<{ ok: true }> {
+  async softDelete(
+    authorId: string,
+    entryId: string
+  ): Promise<{
+    id: string;
+    deleted_at: string;
+    referenced_by: Array<{ work_id: string; work_title: string; ref_count: number }>;
+  }> {
     return this.dataSource.transaction(async (manager) => {
       const entity = await this.mustFindActive(manager, authorId, entryId);
       entity.deleted_at = new Date();
       entity.deleted_by = authorId;
       await manager.save(entity);
-      return { ok: true };
+
+      // 统计引用作品（T21 软删响应要求返回引用作品列表）
+      const refs = await manager.getRepository(KnowledgeWorkRefEntity).find({ where: { entry_id: entryId } });
+      const workIds = [...new Set(refs.map((r) => r.work_id))];
+      const workTitles: Record<string, string> = {};
+      if (workIds.length) {
+        const works = await manager.getRepository(WorkEntity).find({ where: { id: In(workIds) } });
+        for (const w of works) workTitles[w.id] = w.title;
+      }
+      const referenced_by = workIds.map((wid) => ({
+        work_id: wid,
+        work_title: workTitles[wid] ?? '',
+        ref_count: refs.filter((r) => r.work_id === wid).length
+      }));
+
+      return { id: entryId, deleted_at: entity.deleted_at.toISOString(), referenced_by };
     });
   }
 

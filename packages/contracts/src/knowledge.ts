@@ -355,6 +355,23 @@ export const knowledgeTagRequestSchema = z
   .strict();
 export type KnowledgeTagRequest = z.infer<typeof knowledgeTagRequestSchema>;
 
+// 标签列表查询（?scope=&work_id=；scope 必填，作品库可带 work_id）
+export const knowledgeTagListQuerySchema = z
+  .object({
+    scope: knowledgeScopeSchema,
+    work_id: id.optional()
+  })
+  .strict();
+export type KnowledgeTagListQuery = z.infer<typeof knowledgeTagListQuerySchema>;
+
+// 重命名标签（仅 name；重命名后刷新相关条目 search_text）
+export const knowledgeTagRenameRequestSchema = z
+  .object({
+    name: z.string().trim().min(1).max(KNOWLEDGE_TAG_NAME_MAX)
+  })
+  .strict();
+export type KnowledgeTagRenameRequest = z.infer<typeof knowledgeTagRenameRequestSchema>;
+
 // 收藏 / 置顶
 export const knowledgeFlagsRequestSchema = z
   .object({
@@ -397,6 +414,22 @@ export const knowledgeEntryPurgeRequestSchema = z
   })
   .strict();
 export type KnowledgeEntryPurgeRequest = z.infer<typeof knowledgeEntryPurgeRequestSchema>;
+
+// 重试结构化 / 改判类型后重建（body { entry_type?: 枚举 }；已有运行中结构化作业 409）
+export const knowledgeRestructureRequestSchema = z
+  .object({
+    entry_type: knowledgeEntryTypeSchema.optional()
+  })
+  .strict();
+export type KnowledgeRestructureRequest = z.infer<typeof knowledgeRestructureRequestSchema>;
+
+// 库摘要查询（可选作品库）
+export const knowledgeSummaryQuerySchema = z
+  .object({
+    work_id: id.optional()
+  })
+  .strict();
+export type KnowledgeSummaryQuery = z.infer<typeof knowledgeSummaryQuerySchema>;
 
 // ───────────────────────────── 错误码约定（§4.8，T04） ─────────────────────────────
 

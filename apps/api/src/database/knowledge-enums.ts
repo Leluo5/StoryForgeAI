@@ -5,7 +5,7 @@ export const KNOWLEDGE_ENTRY_TYPES = ['article', 'paper', 'novel', 'inspiration'
 export const KNOWLEDGE_LIBRARY_SCOPES = ['global', 'work'] as const;
 export const KNOWLEDGE_STRUCTURE_STATUSES = ['pending', 'structuring', 'ready', 'failed'] as const;
 export const KNOWLEDGE_OUTLINE_STATUSES = ['pending', 'ready', 'failed'] as const;
-export const KNOWLEDGE_ORIGINS = ['manual', 'upload', 'markdown_import', 'backup', 'ref_copy'] as const;
+export const KNOWLEDGE_ORIGINS = ['manual', 'upload', 'markdown_import', 'backup', 'ref_copy', 'coze_import'] as const;
 export const KNOWLEDGE_LINK_KINDS = ['manual', 'inspiration_auto'] as const;
 export const KNOWLEDGE_JOB_KINDS = [
   'ingest',

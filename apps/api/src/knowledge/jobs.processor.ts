@@ -8,7 +8,7 @@ import { createHash, randomUUID } from 'node:crypto';
 import type { DataSource, EntityManager } from 'typeorm';
 import { KnowledgeJobEntity } from '../database/knowledge-job.entity';
 import { KnowledgeJobEventEntity } from '../database/knowledge-job-event.entity';
-import { knowledgeErrorCode } from '@storyforge/contracts';
+import { knowledgeErrorCode, encodeCursor, decodeCursor } from '@storyforge/contracts';
 import type { KnowledgeJobQueue } from './jobs.queue';
 import type { KnowledgeJobEventBus } from './jobs.sse';
 import type { KnowledgeJobProgress } from '@storyforge/contracts';
@@ -195,6 +195,58 @@ export class KnowledgeJobService {
       });
     }
     return job;
+  }
+
+  // 作业列表：按作者隔离 + 可选 scope/workId/kind/status 过滤 + created_at DESC 游标分页
+  // 游标编码复用契约 encodeCursor/decodeCursor 语义（`created_at|id`，base64url）
+  async listJobs(
+    authorId: string,
+    query: {
+      scope?: 'global' | 'work';
+      work_id?: string | null;
+      kind?: string;
+      status?: string;
+      limit?: number;
+      cursor?: string | null;
+    } = {}
+  ): Promise<{ items: KnowledgeJobEntity[]; total: number; next_cursor: string | null }> {
+    const limit = Math.min(Math.max(query.limit ?? 20, 1), 100);
+    const repo = this.dataSource.getRepository(KnowledgeJobEntity);
+
+    const base = repo
+      .createQueryBuilder('job')
+      .where('job.owner_id = :authorId', { authorId });
+
+    if (query.scope) base.andWhere('job.library_scope = :scope', { scope: query.scope });
+    if (query.work_id) base.andWhere('job.work_id = :workId', { workId: query.work_id });
+    if (query.kind) base.andWhere('job.kind = :kind', { kind: query.kind });
+    if (query.status) base.andWhere('job.status = :status', { status: query.status });
+
+    // 游标：created_at|id 字典序，取 (created_at, id) < 游标值
+    if (query.cursor) {
+      const decoded = decodeCursor(query.cursor);
+      if (decoded) {
+        base.andWhere(
+          '(job.created_at < :cursorAt OR (job.created_at = :cursorAt AND job.id < :cursorId))',
+          { cursorAt: new Date(decoded.updatedAt), cursorId: decoded.id }
+        );
+      }
+    }
+
+    const total = await base.getCount();
+    const items = await base
+      .orderBy('job.created_at', 'DESC')
+      .addOrderBy('job.id', 'DESC')
+      .take(limit + 1)
+      .getMany();
+
+    const hasMore = items.length > limit;
+    const pageItems = hasMore ? items.slice(0, limit) : items;
+    const last = pageItems[pageItems.length - 1];
+    const nextCursor =
+      hasMore && last ? encodeCursor(last.created_at.toISOString(), last.id) : null;
+
+    return { items: pageItems, total, next_cursor: nextCursor };
   }
 
   // ───────────────────────────── 事件写入（seq 单调） ─────────────────────────────

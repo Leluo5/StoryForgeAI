@@ -306,6 +306,48 @@ export class KnowledgeRefsService {
     });
   }
 
+  // ───────────────────────────── 引用收藏/置顶（T23 补漏点 1） ─────────────────────────────
+
+  async setRefFlags(
+    authorId: string,
+    workId: string,
+    refId: string,
+    flags: { favorite?: boolean; pinned?: boolean }
+  ): Promise<{ id: string; favorite: boolean; pinned: boolean }> {
+    return this.dataSource.transaction(async (manager) => {
+      const work = await manager.getRepository(WorkEntity).findOneBy({ id: workId });
+      if (!work || work.author_id !== authorId) throw new NotFoundException('Work not found or not owned');
+      const ref = await manager.getRepository(KnowledgeWorkRefEntity).findOneBy({ id: refId, work_id: workId });
+      if (!ref) throw new NotFoundException('Reference not found');
+      if (flags.favorite !== undefined) ref.favorite = flags.favorite;
+      if (flags.pinned !== undefined) {
+        ref.pinned = flags.pinned;
+        ref.pinned_at = flags.pinned ? new Date() : null;
+      }
+      await manager.save(ref);
+      return { id: ref.id, favorite: ref.favorite, pinned: ref.pinned };
+    });
+  }
+
+  // ───────────────────────────── 引用另存为副本（T23 补漏点 2） ─────────────────────────────
+
+  // copy 端点传 refId；先查 ref 归属校验，取 ref.entry_id（全局条目 id）→ 薄封装复用 copyToWork。
+  async copyRef(
+    authorId: string,
+    workId: string,
+    refId: string,
+    input: { keep_ref?: boolean; title?: string }
+  ): Promise<KnowledgeEntryDetail> {
+    const work = await this.dataSource.getRepository(WorkEntity).findOneBy({ id: workId });
+    if (!work || work.author_id !== authorId) throw new NotFoundException('Work not found or not owned');
+    const ref = await this.dataSource.getRepository(KnowledgeWorkRefEntity).findOneBy({ id: refId, work_id: workId });
+    if (!ref) throw new NotFoundException('Reference not found');
+    const entryId = ref.entry_id;
+    if (!entryId) throw new NotFoundException('Reference source entry not found');
+    // 复用 copyToWork 内部逻辑（source_entry_id 已记录来源，keep_ref 语义一致）
+    return this.copyToWork(authorId, workId, entryId, input);
+  }
+
   // ───────────────────────────── 软删全局条目 → 刷新全部引用快照 ─────────────────────────────
 
   // 由 entries.service 软删时调用；刷新引用快照（标题 / 类型 / 标签 / 摘录 / 结构化摘要）

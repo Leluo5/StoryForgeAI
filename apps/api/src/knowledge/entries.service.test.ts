@@ -4,6 +4,7 @@
 //       expected_version 乐观锁（409）、search_text 重算、软删/恢复/收藏/置顶、
 //       列表摘要不返回全文、详情按 library_scope 权限返回。
 import { NotFoundException } from '@nestjs/common';
+import { randomUUID } from 'node:crypto';
 import { createWritingFixture, destroyWritingFixture, type WritingFixture } from '../../test/writing-fixture';
 import { KnowledgeEntriesService } from './entries.service';
 import { KnowledgeEntryEntity } from '../database/knowledge-entry.entity';
@@ -186,10 +187,14 @@ describe('KnowledgeEntriesService · search_text 重算', () => {
 describe('KnowledgeEntriesService · 软删 / 恢复 / 收藏 / 置顶', () => {
   it('软删只置 deleted_at，不物理删除', async () => {
     const created = await service.createEntry(fixture.authorId, createInput());
-    await service.softDelete(fixture.authorId, created.id);
+    const res = await service.softDelete(fixture.authorId, created.id);
     const entity = await fixture.dataSource.getRepository(KnowledgeEntryEntity).findOneByOrFail({ id: created.id });
     expect(entity.deleted_at).toBeInstanceOf(Date);
     expect(entity.title).toBe('测试条目');
+    // T21 补漏点1：软删返回引用作品列表（无引用 → 空数组）
+    expect(res.id).toBe(created.id);
+    expect(res.deleted_at).toBeTruthy();
+    expect(res.referenced_by).toEqual([]);
   });
 
   it('软删后常规详情 404', async () => {
@@ -272,3 +277,60 @@ describe('KnowledgeEntriesService · 列表摘要与详情权限', () => {
 void KnowledgeTagEntity;
 void KnowledgeEntryTagEntity;
 void KnowledgeWorkRefEntity;
+
+describe('KnowledgeEntriesService · summary 库摘要（T21 补漏点2）', () => {
+  it('无 work_id：global 计数 + work=null', async () => {
+    await service.createEntry(fixture.authorId, createInput({ title: '全局条目' }));
+    const res = await service.summary(fixture.authorId, {});
+    expect(res.global.entries).toBeGreaterThanOrEqual(1);
+    expect(res.global.trash).toBe(0);
+    expect(res.global.references).toBe(0);
+    expect(res.work).toBeNull();
+  });
+
+  it('回收站条目计入 trash，不计入 entries', async () => {
+    const created = await service.createEntry(fixture.authorId, createInput({ title: '将删条目' }));
+    await service.softDelete(fixture.authorId, created.id);
+    const res = await service.summary(fixture.authorId, {});
+    expect(res.global.trash).toBeGreaterThanOrEqual(1);
+  });
+
+  it('带 work_id：work 计数（entries/references），global 不含 work 条目', async () => {
+    const workEntry = await service.createEntry(fixture.authorId, createInput({
+      scope: 'work',
+      work_id: fixture.workId,
+      title: '作品条目'
+    }));
+    // 写入一条引用（work 库指向全局条目）
+    const globalEntry = await service.createEntry(fixture.authorId, createInput({ title: '被引用全局条目' }));
+    const refRepo = fixture.dataSource.getRepository(KnowledgeWorkRefEntity);
+    const ref = refRepo.create({
+      id: randomUUID(),
+      owner_id: fixture.authorId,
+      work_id: fixture.workId,
+      entry_id: globalEntry.id,
+      snapshot_title: '被引用全局条目',
+      snapshot_type: 'article',
+      snapshot_tags: [],
+      snapshot_excerpt: '',
+      snapshot_structured: null,
+      favorite: false,
+      pinned: false,
+      pinned_at: null,
+      added_by: fixture.authorId
+    });
+    await refRepo.save(ref);
+
+    const res = await service.summary(fixture.authorId, { work_id: fixture.workId });
+    expect(res.work).not.toBeNull();
+    expect(res.work!.entries).toBeGreaterThanOrEqual(1);
+    expect(res.work!.references).toBeGreaterThanOrEqual(1);
+    expect(res.global.entries).toBeGreaterThanOrEqual(1);
+    void workEntry;
+  });
+
+  it('带非本人 work_id：404', async () => {
+    await expect(service.summary(fixture.otherAuthorId, { work_id: fixture.workId }))
+      .rejects.toBeInstanceOf(NotFoundException);
+  });
+});
