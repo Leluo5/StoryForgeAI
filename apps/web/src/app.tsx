@@ -16,6 +16,7 @@ const WorkbenchRoute = lazy(() => import('./workbench/workbench-page').then((mod
 const ArkClawPage = lazy(() => import('./arkclaw/arkclaw-page').then((mod) => ({ default: mod.ArkClawPage })));
 const KnowledgePage = lazy(() => import('./knowledge/knowledge-page').then((mod) => ({ default: mod.KnowledgePage })));
 const AgentsPage = lazy(() => import('./agent/agents-page').then((mod) => ({ default: mod.AgentsPage })));
+const AgentDetailPage = lazy(() => import('./agent/agent-detail-page').then((mod) => ({ default: mod.AgentDetailPage })));
 const WorkflowsPage = lazy(() => import('./agent/workflows-page').then((mod) => ({ default: mod.WorkflowsPage })));
 const ModelsPage = lazy(() => import('./agent/models-page').then((mod) => ({ default: mod.ModelsPage })));
 const AdminPage = lazy(() => import('./agent/admin-page').then((mod) => ({ default: mod.AdminPage })));
@@ -105,6 +106,7 @@ export function App() {
         <Route path="/works" element={<Suspense fallback={<p role="status">正在加载作品库</p>}><WorksPage /></Suspense>} />
         <Route path="/knowledge" element={<Suspense fallback={<p role="status">正在加载知识库</p>}><KnowledgePage /></Suspense>} />
         <Route path="/agents" element={<Suspense fallback={<p role="status">正在加载智能体管理</p>}><AgentsPage /></Suspense>} />
+        <Route path="/agents/:agentId" element={<Suspense fallback={<p role="status">正在加载智能体详情</p>}><AgentDetailPage /></Suspense>} />
         <Route path="/workflows" element={<Suspense fallback={<p role="status">正在加载工作流管理</p>}><WorkflowsPage /></Suspense>} />
         <Route path="/models" element={<Suspense fallback={<p role="status">正在加载模型</p>}><ModelsPage /></Suspense>} />
         <Route path="/admin" element={<Suspense fallback={<p role="status">正在加载后台</p>}><AdminPage /></Suspense>} />

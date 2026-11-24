@@ -2,6 +2,7 @@ import {
   createAgentRequestSchema,
   createAgentResponseSchema,
   deleteAgentResponseSchema,
+  getAgentDetailResponseSchema,
   listAgentsResponseSchema,
   listToolsResponseSchema,
   updateAgentRequestSchema,
@@ -12,6 +13,7 @@ import {
   type AgentListItem,
   type AiToolListItem,
   type CreateAgentRequest,
+  type GetAgentDetailResponse,
   type UpdateAgentRequest,
   type UpdateToolRequest
 } from '@storyforge/contracts';
@@ -43,6 +45,11 @@ export function deleteAgent(agentId: string) {
   return apiRequest(`${root}/ai-agents/${part(agentId)}`, deleteAgentResponseSchema, { method: 'DELETE' });
 }
 
+/** 获取 Agent 详情（含已绑定工具列表） */
+export function getAgentDetail(agentId: string) {
+  return apiRequest(`${root}/ai-agents/${part(agentId)}`, getAgentDetailResponseSchema);
+}
+
 // ───────────────────────────── 工具管理 ─────────────────────────────
 
 /** 列出全部创作工具（含绑定 Agent 概要） */
@@ -55,4 +62,4 @@ export function updateTool(toolId: string, input: UpdateToolRequest) {
   return apiRequest(`${root}/ai-tools/${part(toolId)}`, updateToolResponseSchema, json('PATCH', updateToolRequestSchema.parse(input)));
 }
 
-export type { Agent, AgentListItem, AiToolListItem };
+export type { Agent, AgentListItem, AiToolListItem, GetAgentDetailResponse };

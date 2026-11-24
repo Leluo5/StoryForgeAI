@@ -156,6 +156,40 @@ describe('AgentService', () => {
     for (const a of listed.agents) expect(a.bound_tool_count).toBe(0);
   });
 
+  // ── getAgentDetail ──
+
+  it('returns an agent detail with its bound tools for the owner', async () => {
+    const agent = await service.createAgent(fixture.authorId, { name: '详情目标', model_id: 'm1' });
+    // 绑定工具 'continue' 到该 Agent
+    await fixture.dataSource.getRepository(AiToolEntity).update({ tool_id: 'continue' }, { agent_id: agent.agent.id });
+
+    const detail = await service.getAgentDetail(fixture.authorId, agent.agent.id);
+    expect(detail.agent.id).toBe(agent.agent.id);
+    expect(detail.agent.name).toBe('详情目标');
+    expect(detail.agent.bound_tool_count).toBe(1);
+    // 功能描述字段已随契约扩展映射
+    expect(typeof detail.agent.description).toBe('string');
+    expect(detail.tools.map((t) => t.tool_id)).toEqual(['continue']);
+    expect(detail.tools[0]?.bound_agent?.id).toBe(agent.agent.id);
+  });
+
+  it('returns empty tools for an agent without bindings', async () => {
+    const agent = await service.createAgent(fixture.authorId, { name: '无绑定', model_id: 'm1' });
+    const detail = await service.getAgentDetail(fixture.authorId, agent.agent.id);
+    expect(detail.tools).toHaveLength(0);
+    expect(detail.agent.bound_tool_count).toBe(0);
+  });
+
+  it('rejects fetching a non-owned or missing agent with 404', async () => {
+    const agent = await service.createAgent(fixture.authorId, { name: '他人', model_id: 'm1' });
+    // 其他作者无权读取
+    await expect(service.getAgentDetail(fixture.otherAuthorId, agent.agent.id))
+      .rejects.toBeInstanceOf(NotFoundException);
+    // 不存在的 agent
+    await expect(service.getAgentDetail(fixture.authorId, randomUUID()))
+      .rejects.toBeInstanceOf(NotFoundException);
+  });
+
   // ── M3b-B4 ensureDefaultAgent ──
 
   it('lazily creates a default Mock agent and binds all enabled tools', async () => {

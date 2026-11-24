@@ -1,0 +1,289 @@
+/* Agent 详情页：卡片式分区块展示，对齐现有设计令牌与系统风格 */
+.agent-detail {
+  max-width: 960px;
+  margin: 0 auto;
+}
+
+.agent-detail__topbar {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3);
+  margin-bottom: var(--sp-4);
+}
+
+.agent-detail__back {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-1);
+  padding: var(--sp-1) var(--sp-2);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-md);
+  background: var(--bg-secondary);
+  color: var(--text-primary);
+  font-size: var(--fs-body);
+  font-weight: var(--fw-medium);
+  cursor: pointer;
+}
+.agent-detail__back:hover { background: var(--bg-hover); }
+
+.agent-detail__header {
+  padding: var(--sp-4);
+  margin-bottom: var(--sp-4);
+  background: var(--card-bg);
+  border: 1px solid var(--card-border);
+  border-radius: var(--card-radius);
+  box-shadow: var(--card-shadow);
+}
+
+.agent-detail__title-row {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  flex-wrap: wrap;
+}
+
+.agent-detail__title {
+  margin: 0;
+  font-size: var(--fs-h1);
+  font-weight: var(--fw-semibold);
+  color: var(--text-primary);
+}
+
+.agent-detail__subtitle {
+  margin: var(--sp-2) 0 0;
+  color: var(--text-secondary);
+  font-size: var(--fs-body);
+  line-height: 1.6;
+  white-space: pre-wrap;
+}
+
+.agent-detail__badge-row {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  margin-top: var(--sp-3);
+  flex-wrap: wrap;
+}
+
+.agent-detail__grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  gap: var(--sp-3);
+}
+
+.agent-detail__field {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-1);
+}
+
+.agent-detail__field-label {
+  font-size: var(--fs-caption);
+  color: var(--text-tertiary);
+  font-weight: var(--fw-medium);
+}
+
+.agent-detail__field-value {
+  font-size: var(--fs-body);
+  color: var(--text-primary);
+  word-break: break-all;
+}
+
+.agent-detail__section {
+  margin-bottom: var(--sp-4);
+  padding: var(--sp-4);
+  background: var(--card-bg);
+  border: 1px solid var(--card-border);
+  border-radius: var(--card-radius);
+  box-shadow: var(--card-shadow);
+}
+
+/* 区块标题行（标题 + 编辑按钮） */
+.agent-detail__section-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--sp-2);
+  margin-bottom: var(--sp-3);
+}
+.agent-detail__section-head .agent-detail__section-title {
+  margin: 0;
+}
+
+/* 编辑按钮 */
+.agent-detail__edit-btn {
+  padding: var(--sp-1) var(--sp-3);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-md);
+  background: var(--bg-secondary);
+  color: var(--text-primary);
+  font-size: var(--fs-small);
+  font-weight: var(--fw-medium);
+  cursor: pointer;
+  flex-shrink: 0;
+}
+.agent-detail__edit-btn:hover:not(:disabled) {
+  border-color: var(--brand-500);
+  color: var(--brand-500);
+}
+.agent-detail__edit-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+.agent-detail__edit-btn--small {
+  padding: 2px var(--sp-2);
+  font-size: var(--fs-caption);
+}
+
+/* 编辑表单 */
+.agent-detail__form {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-3);
+}
+.agent-detail__form-field {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-1);
+}
+.agent-detail__form-field input,
+.agent-detail__form-field textarea {
+  padding: var(--sp-2) var(--sp-3);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-md);
+  background: var(--bg-secondary);
+  color: var(--text-primary);
+  font: inherit;
+  font-size: var(--fs-body);
+}
+.agent-detail__form-field input:focus,
+.agent-detail__form-field textarea:focus {
+  outline: 2px solid var(--brand-500);
+  outline-offset: 1px;
+  border-color: var(--brand-500);
+}
+.agent-detail__form-field textarea { resize: vertical; }
+
+.agent-detail__check {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-2);
+  font-size: var(--fs-body);
+  color: var(--text-primary);
+  cursor: pointer;
+}
+
+.agent-detail__form-actions {
+  display: flex;
+  gap: var(--sp-2);
+}
+.agent-detail__form-actions button {
+  padding: var(--sp-2) var(--sp-4);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-md);
+  background: var(--bg-secondary);
+  color: var(--text-primary);
+  font-size: var(--fs-body);
+  font-weight: var(--fw-medium);
+  cursor: pointer;
+}
+.agent-detail__form-actions button[type="submit"] {
+  background: var(--brand-500);
+  border-color: var(--brand-500);
+  color: #fff;
+}
+.agent-detail__form-actions button[type="submit"]:hover:not(:disabled) { filter: brightness(1.08); }
+.agent-detail__form-actions button:disabled { opacity: 0.5; cursor: not-allowed; }
+
+.agent-detail__section-title {
+  margin: 0 0 var(--sp-3);
+  font-size: var(--fs-h3);
+  font-weight: var(--fw-semibold);
+  color: var(--text-primary);
+}
+
+/* 已绑定工具列表 */
+.agent-detail__tools {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  gap: var(--sp-3);
+}
+
+.agent-detail__tool-card {
+  padding: var(--sp-3);
+  background: var(--bg-tertiary);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-md);
+}
+
+.agent-detail__tool-name {
+  font-size: var(--fs-body-lg);
+  font-weight: var(--fw-semibold);
+  color: var(--text-primary);
+}
+
+.agent-detail__tool-id {
+  font-family: var(--font-mono);
+  font-size: var(--fs-caption);
+  color: var(--text-tertiary);
+}
+
+.agent-detail__tool-desc {
+  margin: var(--sp-1) 0 0;
+  font-size: var(--fs-small);
+  color: var(--text-secondary);
+  line-height: 1.5;
+}
+
+/* 状态徽章（复用现有 agent-badge 语义） */
+.agent-detail__badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 8px;
+  border-radius: 999px;
+  font-size: var(--fs-caption);
+  font-weight: var(--fw-medium);
+}
+.agent-detail__badge--enabled {
+  background: var(--success-100);
+  color: var(--success-600);
+}
+.agent-detail__badge--disabled {
+  background: var(--danger-100);
+  color: var(--danger-600);
+}
+.agent-detail__badge--neutral {
+  background: var(--tag-bg);
+  color: var(--tag-text);
+}
+
+.agent-detail__empty {
+  margin: 0;
+  padding: var(--sp-4);
+  text-align: center;
+  color: var(--text-tertiary);
+  background: var(--bg-tertiary);
+  border: 1px dashed var(--border-color);
+  border-radius: var(--radius-md);
+  font-size: var(--fs-body);
+}
+
+.agent-detail__loading {
+  color: var(--text-secondary);
+  font-size: var(--fs-body);
+}
+
+.agent-detail__error {
+  padding: var(--sp-3);
+  margin-bottom: var(--sp-4);
+  color: var(--danger-600);
+  background: var(--danger-100);
+  border: 1px solid var(--danger-500);
+  border-radius: var(--radius-md);
+  font-size: var(--fs-body);
+}
+
+/* 响应式：窄屏单列，紧凑间距 */
+@media (max-width: 640px) {
+  .agent-detail__header { padding: var(--sp-3); }
+  .agent-detail__section { padding: var(--sp-3); }
+  .agent-detail__tools { grid-template-columns: 1fr; }
+  .agent-detail__grid { grid-template-columns: 1fr; }
+}

@@ -44,6 +44,126 @@
   max-width: 880px;
 }
 
+/* ── 卡片式总览 ── */
+.agents-page__loading {
+  color: var(--text-secondary);
+  font-size: var(--fs-body);
+  padding: var(--sp-5) 0;
+}
+
+.agents-page__error {
+  padding: var(--sp-3);
+  margin-bottom: var(--sp-4);
+  color: var(--danger-600);
+  background: var(--danger-100);
+  border: 1px solid var(--danger-500);
+  border-radius: var(--radius-md);
+  font-size: var(--fs-body);
+}
+
+.agents-page__empty {
+  padding: var(--sp-7);
+  text-align: center;
+  color: var(--text-tertiary);
+  background: var(--bg-secondary);
+  border: 1px dashed var(--border-color);
+  border-radius: var(--radius-lg);
+  font-size: var(--fs-body);
+}
+
+/* 卡片网格：自适应列，宽屏 3 列、中屏 2 列、窄屏单列 */
+.agents-page__cards {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  gap: var(--sp-4);
+}
+
+.agent-overview-card {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-2);
+  padding: var(--sp-4);
+  text-align: left;
+  background: var(--card-bg);
+  border: 1px solid var(--card-border);
+  border-radius: var(--card-radius);
+  box-shadow: var(--card-shadow);
+  cursor: pointer;
+  font: inherit;
+  color: inherit;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease, transform 0.15s ease;
+}
+.agent-overview-card:hover {
+  border-color: var(--brand-500);
+  box-shadow: var(--shadow-md);
+  transform: translateY(-2px);
+}
+.agent-overview-card:active {
+  transform: translateY(0);
+}
+
+.agent-overview-card__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--sp-2);
+}
+
+.agent-overview-card__name {
+  font-size: var(--fs-h3);
+  font-weight: var(--fw-semibold);
+  color: var(--text-primary);
+}
+
+.agent-overview-card__badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 8px;
+  border-radius: 999px;
+  font-size: var(--fs-caption);
+  font-weight: var(--fw-medium);
+  flex-shrink: 0;
+}
+.agent-overview-card__badge--enabled { background: var(--success-100); color: var(--success-600); }
+.agent-overview-card__badge--disabled { background: var(--danger-100); color: var(--danger-600); }
+
+.agent-overview-card__desc {
+  margin: 0;
+  font-size: var(--fs-body);
+  color: var(--text-secondary);
+  line-height: 1.6;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  min-height: calc(var(--fs-body) * 1.6);
+}
+
+.agent-overview-card__foot {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--sp-2);
+  margin-top: auto;
+  padding-top: var(--sp-2);
+  border-top: 1px solid var(--border-light);
+}
+
+.agent-overview-card__meta {
+  font-size: var(--fs-caption);
+  color: var(--text-tertiary);
+}
+
+.agent-overview-card__default {
+  margin-left: auto;
+  padding: 2px 8px;
+  border-radius: 999px;
+  font-size: var(--fs-caption);
+  font-weight: var(--fw-medium);
+  background: var(--accent-100);
+  color: var(--accent-600);
+}
+
 @media (max-width: 767px) {
   .agents-page {
     padding: var(--sp-5, 24px) var(--sp-4, 16px);
@@ -51,5 +171,8 @@
   .agents-page__header {
     flex-direction: column;
     align-items: stretch;
+  }
+  .agents-page__cards {
+    grid-template-columns: 1fr;
   }
 }
