@@ -46,6 +46,16 @@ export class AgentController {
     return ok(request, await this.agentService.listAgents(request.author.id));
   }
 
+  // ── Agent 详情（含绑定工具列表） ──
+
+  @Get('ai-agents/:agentId')
+  async getAgentDetail(
+    @Req() request: AuthenticatedRequest,
+    @Param('agentId') agentId: string
+  ) {
+    return ok(request, await this.agentService.getAgentDetail(request.author.id, agentId));
+  }
+
   // ── 创建 Agent ──
 
   @Post('ai-agents')

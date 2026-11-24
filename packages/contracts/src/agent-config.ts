@@ -44,6 +44,8 @@ export const agentSchema = z.object({
   model_config: modelConfigSchema,
   status: agentStatusSchema,
   is_default: z.boolean(),
+  // 功能描述（V2 实体已有，V1 契约补上以支持详情页展示）
+  description: z.string().default(''),
   created_at: timestamp,
   updated_at: timestamp
 });
@@ -144,12 +146,19 @@ export const updateToolResponseSchema = z.object({
   warning: z.string().nullable()
 });
 
+// Agent 详情：Agent 列表项 + 已绑定工具列表
+export const getAgentDetailResponseSchema = z.object({
+  agent: agentListItemSchema,
+  tools: z.array(aiToolListItemSchema)
+});
+
 export type CreateAgentResponse = z.infer<typeof createAgentResponseSchema>;
 export type UpdateAgentResponse = z.infer<typeof updateAgentResponseSchema>;
 export type DeleteAgentResponse = z.infer<typeof deleteAgentResponseSchema>;
 export type ListAgentsResponse = z.infer<typeof listAgentsResponseSchema>;
 export type ListToolsResponse = z.infer<typeof listToolsResponseSchema>;
 export type UpdateToolResponse = z.infer<typeof updateToolResponseSchema>;
+export type GetAgentDetailResponse = z.infer<typeof getAgentDetailResponseSchema>;
 
 // ═══════════════════════════════════════════════════════════════════
 // V2 扩展：作品级三类 Agent + 版本快照 + 分组 + 流程进度

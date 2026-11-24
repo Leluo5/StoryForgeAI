@@ -11,6 +11,7 @@ import type {
   UpdateToolInput,
   ListAgentsResponse,
   ListToolsResponse,
+  GetAgentDetailResponse,
   CreateAgentV2Input,
   UpdateAgentV2Input,
   ListAgentsV2Query,
@@ -39,6 +40,8 @@ function toAgent(entity: AgentEntity): Agent {
     model_config: entity.model_config,
     status: entity.status as Agent['status'],
     is_default: entity.is_default,
+    // 功能描述（V2 实体已有字段；V1 契约映射补齐）
+    description: entity.description ?? '',
     created_at: entity.created_at.toISOString(),
     updated_at: entity.updated_at.toISOString()
   };
@@ -143,6 +146,23 @@ export class AgentService {
       bound_tool_count: tools.filter((t) => t.agent_id === agent.id).length
     }));
     return { agents: items };
+  }
+
+  /** 获取单个 Agent 详情（含已绑定工具列表） */
+  async getAgentDetail(authorId: string, agentId: string): Promise<GetAgentDetailResponse> {
+    const repo = this.dataSource.getRepository(AgentEntity);
+    const agent = await repo.findOneBy({ id: agentId, author_id: authorId });
+    if (!agent) throw new NotFoundException('Agent not found');
+
+    const tools = await this.dataSource.getRepository(AiToolEntity).find();
+    const boundTools = tools.filter((t) => t.agent_id === agent.id);
+    const boundToolItems: AiToolListItem[] = boundTools.map((t) =>
+      toToolListItem(t, agent)
+    );
+    return {
+      agent: { ...toAgent(agent), bound_tool_count: boundTools.length },
+      tools: boundToolItems
+    };
   }
 
   /** 创建 Agent（默认互斥：is_default=true 时清掉其他默认） */
