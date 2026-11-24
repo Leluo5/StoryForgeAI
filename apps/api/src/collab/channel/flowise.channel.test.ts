@@ -7,6 +7,7 @@ function makeRequest(overrides: Partial<AgentChannelRequest> = {}): AgentChannel
   return {
     taskId: 'task-1',
     workId: 'work-1',
+    author_id: 'author-1',
     channel: 'flowise',
     chatflowId: 'cf-abc',
     instruction: '生成角色资料',

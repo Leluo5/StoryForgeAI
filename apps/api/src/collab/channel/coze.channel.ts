@@ -1,6 +1,7 @@
-import { Injectable } from '@nestjs/common';
+import { Inject, Injectable, Optional } from '@nestjs/common';
 import type { AgentChannel, AgentChannelRequest, AgentChannelResult } from '@storyforge/contracts';
 import { env as defaultEnv } from '../../config/env';
+import { SiteConfigService } from '../../site-config/site-config.service';
 import { CollabUpstreamError, timeoutError, upstreamFailedError } from './collab-upstream.error';
 
 // Coze 通道所需环境变量子集（便于单测注入替身；显式允许 undefined）
@@ -52,10 +53,21 @@ export class CozeChannel implements AgentChannel {
   readonly name = 'coze' as const;
   private static readonly POLL_INTERVAL_MS = 1_000;
 
-  constructor(private readonly envProvider: CozeChannelEnv = defaultEnv) {}
+  constructor(
+    @Optional() private readonly envProvider: CozeChannelEnv = defaultEnv,
+    @Inject(SiteConfigService) private readonly siteConfig?: SiteConfigService
+  ) {}
 
   async invoke(request: AgentChannelRequest): Promise<AgentChannelResult> {
-    const { COZE_API_BASE, COZE_PAT, COZE_BOT_ID, COLLAB_HTTP_TIMEOUT_MS = 120_000 } = this.envProvider;
+    // 作者级接管：优先从 site_config 平台凭据读，未命中回退 envProvider（env 兜底）
+    const credentials = await this.siteConfig?.getPlatformCredentials(request.author_id) ?? {};
+    const cozeCreds = credentials.coze ?? {};
+    const env = this.envProvider;
+    const COZE_API_BASE = cozeCreds.base_url ?? env.COZE_API_BASE;
+    const COZE_PAT = cozeCreds.pat ?? env.COZE_PAT;
+    // COZE_BOT_ID 保留 env 兜底（站点设置未纳入 Bot 标识）
+    const COZE_BOT_ID = env.COZE_BOT_ID;
+    const COLLAB_HTTP_TIMEOUT_MS = env.COLLAB_HTTP_TIMEOUT_MS ?? 120_000;
     if (!COZE_API_BASE || !COZE_PAT || !COZE_BOT_ID) {
       throw new CollabUpstreamError('Coze 通道未配置', false, 'COLLAB_CHANNEL_NOT_CONFIGURED');
     }

@@ -49,6 +49,7 @@ describe('AgentChannelRegistry (T09)', () => {
     const request: AgentChannelRequest = {
       taskId: 'task-1',
       workId: 'work-1',
+      author_id: 'author-1',
       channel: 'coze',
       instruction: '生成角色资料',
       roleContext: { name: '林默' },

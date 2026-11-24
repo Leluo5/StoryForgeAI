@@ -57,6 +57,7 @@ import { KnowledgeEntryLinkEntity } from './knowledge-entry-link.entity';
 import { KnowledgeEntryEmbeddingEntity } from './knowledge-entry-embedding.entity';
 import { KnowledgeJobEntity } from './knowledge-job.entity';
 import { KnowledgeJobEventEntity } from './knowledge-job-event.entity';
+import { SiteConfigEntity } from './site-config.entity';
 import { AuthBase1736899200000 } from './migrations/1736899200000-auth-base';
 import { WritingBase1736985600000 } from './migrations/1736985600000-writing-base';
 import { RevisionBase1760000000000 } from './migrations/1760000000000-revision-base';
@@ -78,6 +79,9 @@ import { KnowledgeBase1760600000000 } from './migrations/1760600000000-knowledge
 import { WorkflowBase1760700002000 } from './migrations/1760700002000-workflow-base';
 import { ModelBase1760700003000 } from './migrations/1760700003000-model-base';
 import { KnowledgeVector1760600001000 } from './migrations/1760600001000-knowledge-vector';
+import { WorkAccessCode1760800000000 } from './migrations/1760800000000-work-access-code';
+import { WorkCozeBindings1760900000000 } from './migrations/1760900000000-work-coze-bindings';
+import { SiteConfig1761000000000 } from './migrations/1761000000000-site-config';
 
 export function createDataSource(databaseUrl: string = env.DATABASE_URL): DataSource {
   return new DataSource({
@@ -139,7 +143,8 @@ export function createDataSource(databaseUrl: string = env.DATABASE_URL): DataSo
       KnowledgeEntryLinkEntity,
       KnowledgeEntryEmbeddingEntity,
       KnowledgeJobEntity,
-      KnowledgeJobEventEntity
+      KnowledgeJobEventEntity,
+      SiteConfigEntity
     ],
     migrations: [
       AuthBase1736899200000,
@@ -162,7 +167,10 @@ export function createDataSource(databaseUrl: string = env.DATABASE_URL): DataSo
       KnowledgeBase1760600000000,
       WorkflowBase1760700002000,
       ModelBase1760700003000,
-      KnowledgeVector1760600001000
+      KnowledgeVector1760600001000,
+      WorkAccessCode1760800000000,
+      WorkCozeBindings1760900000000,
+      SiteConfig1761000000000
     ],
     migrationsTableName: 'migrations',
     synchronize: false,

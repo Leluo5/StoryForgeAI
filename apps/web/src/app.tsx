@@ -20,6 +20,8 @@ const AgentDetailPage = lazy(() => import('./agent/agent-detail-page').then((mod
 const WorkflowsPage = lazy(() => import('./agent/workflows-page').then((mod) => ({ default: mod.WorkflowsPage })));
 const ModelsPage = lazy(() => import('./agent/models-page').then((mod) => ({ default: mod.ModelsPage })));
 const AdminPage = lazy(() => import('./agent/admin-page').then((mod) => ({ default: mod.AdminPage })));
+const ExperiencePage = lazy(() => import('./experience/experience-page').then((mod) => ({ default: mod.ExperiencePage })));
+const ExperienceChatPage = lazy(() => import('./experience/experience-page').then((mod) => ({ default: mod.ExperienceChatPage })));
 
 export function App() {
   const [session, setSession] = useState<SessionResponse>();
@@ -59,10 +61,12 @@ export function App() {
   }
 
   if (loading) return <p role="status">正在恢复会话</p>;
-  // 未登录：仅 /login 渲染登录页，其余路径统一重定向到 /login（保持 URL 与登录态一致）
+  // 未登录：/login 与公开的在线体验路由可访问；其余路径重定向到 /login（保持 URL 与登录态一致）
   if (!session) return <BrowserRouter>
     <Routes>
       <Route path="/login" element={<AuthPage login={loginOrRegister} onSuccess={setSession} />} />
+      <Route path="/experience" element={<Suspense fallback={<p role="status">正在加载在线体验</p>}><ExperiencePage /></Suspense>} />
+      <Route path="/experience/works/:workId" element={<Suspense fallback={<p role="status">正在加载体验聊天</p>}><ExperienceChatPage /></Suspense>} />
       <Route path="*" element={<Navigate to="/login" replace />} />
     </Routes>
   </BrowserRouter>;
@@ -115,6 +119,9 @@ export function App() {
       </Route>
       {/* ArkClaw 验证页：main 演进功能，独立于模块壳 */}
       <Route path="/arkclaw" element={<Suspense fallback={<p role="status">正在加载 ArkClaw 验证页</p>}><ArkClawPage /></Suspense>} />
+      {/* F3 在线体验：公开页（登录用户亦可访问），独立于模块壳 */}
+      <Route path="/experience" element={<Suspense fallback={<p role="status">正在加载在线体验</p>}><ExperiencePage /></Suspense>} />
+      <Route path="/experience/works/:workId" element={<Suspense fallback={<p role="status">正在加载体验聊天</p>}><ExperienceChatPage /></Suspense>} />
       <Route path="*" element={<Navigate to="/works" replace />} />
     </Routes>
   </BrowserRouter>;

@@ -16,3 +16,4 @@ export * from './collab';
 export * from './knowledge';
 export * from './knowledge-job';
 export * from './knowledge-portability';
+export * from './site-config';

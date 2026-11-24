@@ -1,6 +1,7 @@
-import { Injectable } from '@nestjs/common';
+import { Inject, Injectable, Optional } from '@nestjs/common';
 import type { AgentChannel, AgentChannelRequest, AgentChannelResult } from '@storyforge/contracts';
 import { env as defaultEnv } from '../../config/env';
+import { SiteConfigService } from '../../site-config/site-config.service';
 import { CollabUpstreamError, timeoutError, upstreamFailedError } from './collab-upstream.error';
 
 // Flowise 通道所需环境变量子集（便于单测注入替身；显式允许 undefined）
@@ -16,10 +17,19 @@ export interface FlowiseChannelEnv {
 export class FlowiseChannel implements AgentChannel {
   readonly name = 'flowise' as const;
 
-  constructor(private readonly envProvider: FlowiseChannelEnv = defaultEnv) {}
+  constructor(
+    @Optional() private readonly envProvider: FlowiseChannelEnv = defaultEnv,
+    @Inject(SiteConfigService) private readonly siteConfig?: SiteConfigService
+  ) {}
 
   async invoke(request: AgentChannelRequest): Promise<AgentChannelResult> {
-    const { FLOWISE_BASE_URL, FLOWISE_API_KEY, COLLAB_HTTP_TIMEOUT_MS = 120_000 } = this.envProvider;
+    // 作者级接管：优先从 site_config 平台凭据读，未命中回退 envProvider（env 兜底）
+    const credentials = await this.siteConfig?.getPlatformCredentials(request.author_id) ?? {};
+    const flowiseCreds = credentials.flowise ?? {};
+    const env = this.envProvider;
+    const FLOWISE_BASE_URL = flowiseCreds.base_url ?? env.FLOWISE_BASE_URL;
+    const FLOWISE_API_KEY = flowiseCreds.api_key ?? env.FLOWISE_API_KEY;
+    const COLLAB_HTTP_TIMEOUT_MS = env.COLLAB_HTTP_TIMEOUT_MS ?? 120_000;
     if (!FLOWISE_BASE_URL || !FLOWISE_API_KEY) {
       throw new CollabUpstreamError('Flowise 通道未配置', false, 'COLLAB_CHANNEL_NOT_CONFIGURED');
     }

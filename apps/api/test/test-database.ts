@@ -50,6 +50,12 @@ export async function dropWritingAndAuthTables(dataSource: DataSource): Promise<
   await dataSource.query('DROP TABLE IF EXISTS role_profile_writeback_fields CASCADE');
   await dataSource.query('DROP TABLE IF EXISTS role_profile_writebacks CASCADE');
   await dataSource.query('DROP TABLE IF EXISTS collab_settings CASCADE');
+  // Agent 项目级升级（迁移 1760400000000）新增表：role_agent_bindings 引用 ai_agents，
+  // 必须在 ai_agents 之前 drop；flow_progress / agent_group_overrides 为独立表。
+  // 此前遗漏导致这些表在 afterAll 后残留，进而引发全量 e2e 序列偶发 "authors already exists"。
+  await dataSource.query('DROP TABLE IF EXISTS role_agent_bindings CASCADE');
+  await dataSource.query('DROP TABLE IF EXISTS agent_group_overrides CASCADE');
+  await dataSource.query('DROP TABLE IF EXISTS flow_progress CASCADE');
   // M3c-3 知识库表（先删引用表，按 FK 依赖倒序：jobs→events、entries→embeddings/links/tags/refs）
   await dataSource.query('DROP TABLE IF EXISTS knowledge_job_events CASCADE');
   await dataSource.query('DROP TABLE IF EXISTS knowledge_jobs CASCADE');
@@ -63,6 +69,8 @@ export async function dropWritingAndAuthTables(dataSource: DataSource): Promise<
   await dataSource.query('DROP TABLE IF EXISTS ai_workflows CASCADE');
   // 模型管理表（作者级选型目录：ai_models→authors）
   await dataSource.query('DROP TABLE IF EXISTS ai_models CASCADE');
+  // 站点设置表（作者级：site_config→authors）
+  await dataSource.query('DROP TABLE IF EXISTS site_config CASCADE');
   // M3c 剧情表（先删引用表，按 FK 依赖倒序）
   await dataSource.query('DROP TABLE IF EXISTS plot_generation_drafts CASCADE');
   await dataSource.query('DROP TABLE IF EXISTS derivation_candidates CASCADE');
@@ -105,7 +113,7 @@ export async function clearAuthTables(dataSource: DataSource): Promise<void> {
   // ai_tools / ai_agents 显式列入 TRUNCATE，避免「TRUNCATE authors CASCADE」沿 FK 链
   // （authors→ai_agents→ai_tools）递归清空全局工具种子。所有表一次性显式列出，CASCADE 不再波及额外表。
   await dataSource.query(
-    'TRUNCATE TABLE ai_tools, ai_agents, ai_workflows, ai_models, ai_task_events, ai_tasks, audit_logs, notifications, todos, comment_threads, version_snapshots, revision_sets, chapter_changes, chapters, volumes, works, sessions, authors, agent_archive_outbox, agent_task_citations, role_profile_writeback_fields, role_profile_writebacks, collab_settings, knowledge_job_events, knowledge_jobs, knowledge_entry_embeddings, knowledge_entry_links, knowledge_entry_tags, knowledge_tags, knowledge_work_refs, knowledge_entries RESTART IDENTITY CASCADE'
+    'TRUNCATE TABLE ai_tools, ai_agents, ai_workflows, ai_models, site_config, ai_task_events, ai_tasks, audit_logs, notifications, todos, comment_threads, version_snapshots, revision_sets, chapter_changes, chapters, volumes, works, sessions, authors, agent_archive_outbox, agent_task_citations, role_profile_writeback_fields, role_profile_writebacks, collab_settings, role_agent_bindings, agent_group_overrides, flow_progress, knowledge_job_events, knowledge_jobs, knowledge_entry_embeddings, knowledge_entry_links, knowledge_entry_tags, knowledge_tags, knowledge_work_refs, knowledge_entries RESTART IDENTITY CASCADE'
   );
   // 重新预置全局权威工具（与迁移种子一致，幂等），保证每个用例工具清单可用。
   await dataSource.query(`

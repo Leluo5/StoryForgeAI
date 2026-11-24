@@ -15,9 +15,10 @@ import { CollabModule } from './collab/collab.module';
 import { KnowledgeModule } from './knowledge/knowledge.module';
 import { WorkflowModule } from './workflow/workflow.module';
 import { ModelModule } from './model/model.module';
+import { SiteConfigModule } from './site-config/site-config.module';
 
 @Module({
-  imports: [TypeOrmModule.forRoot({ ...AppDataSource.options }), AuthModule, WritingModule, RevisionModule, AiTaskModule, AgentModule, PlotModule, CharacterModule, ArkClawModule, CollabModule, KnowledgeModule, WorkflowModule, ModelModule],
+  imports: [TypeOrmModule.forRoot({ ...AppDataSource.options }), AuthModule, WritingModule, RevisionModule, AiTaskModule, AgentModule, PlotModule, CharacterModule, ArkClawModule, CollabModule, KnowledgeModule, WorkflowModule, ModelModule, SiteConfigModule],
   controllers: [HealthController]
 })
 export class AppModule implements NestModule {

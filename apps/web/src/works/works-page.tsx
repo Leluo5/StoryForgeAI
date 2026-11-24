@@ -31,6 +31,8 @@ export function WorksPage() {
   const [showForm, setShowForm] = useState(false);
   const [title, setTitle] = useState('');
   const [description, setDescription] = useState('');
+  const [isPublic, setIsPublic] = useState(true);
+  const [accessCode, setAccessCode] = useState('');
   const [archivingId, setArchivingId] = useState<string>();
   const [openingId, setOpeningId] = useState<string>();
   const [error, setError] = useState('');
@@ -56,6 +58,8 @@ export function WorksPage() {
     setShowForm(true);
     setTitle('');
     setDescription('');
+    setIsPublic(true);
+    setAccessCode('');
     setError('');
   }
   async function submitWork(event: FormEvent) {
@@ -64,7 +68,7 @@ export function WorksPage() {
     setCreating(true);
     setError('');
     try {
-      const created = await createWork({ title, description });
+      const created = await createWork({ title, description, is_public: isPublic, access_code: accessCode.trim() });
       navigate(`/works/${created.work.id}/write/${created.first_chapter_id}?tab=manuscript&panel=chapter`);
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : '创建失败');
@@ -162,6 +166,9 @@ export function WorksPage() {
                   <div className="works-card__meta">
                     <span className="works-card__date">创建于 {formatDate(work.created_at)}</span>
                     <span className="works-card__words">{work.word_count ?? 0} 字</span>
+                    <span className="works-card__access">
+                      {work.is_public ? (work.access_code ? `公开·访问码` : '公开') : '私有'}
+                    </span>
                   </div>
                   <div className="works-card__footer">
                     <Button
@@ -234,6 +241,26 @@ export function WorksPage() {
             value={description}
             onChange={(event) => setDescription(event.target.value)}
           />
+          <label className="works-form__switch">
+            <input
+              type="checkbox"
+              name="is_public"
+              checked={isPublic}
+              onChange={(event) => setIsPublic(event.target.checked)}
+            />
+            <span>公开作品（允许访客在线体验）</span>
+          </label>
+          {isPublic ? (
+            <Input
+              id="work-access-code"
+              name="access_code"
+              label="访问码（可选）"
+              maxLength={64}
+              placeholder="留空则无需验证即可访问"
+              value={accessCode}
+              onChange={(event) => setAccessCode(event.target.value)}
+            />
+          ) : null}
         </form>
       </Modal>
     </main>

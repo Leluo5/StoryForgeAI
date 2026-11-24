@@ -12,7 +12,8 @@ vi.mock('./writing-client', () => ({
 
 const work: Work = {
   id: crypto.randomUUID(), author_id: crypto.randomUUID(), title: '既有作品', description: '',
-  status: 'active', created_at: new Date().toISOString(), updated_at: new Date().toISOString()
+  status: 'active', is_public: true, access_code: '',
+  created_at: new Date().toISOString(), updated_at: new Date().toISOString()
 };
 
 function renderPage() {
@@ -43,7 +44,7 @@ describe('WorksPage', () => {
     finish({ work: { ...work, title: '星河' }, first_chapter_id: chapterId });
     expect(await screen.findByText('工作台深链')).toBeVisible();
     expect(createWork).toHaveBeenCalledTimes(1);
-    expect(createWork).toHaveBeenCalledWith({ title: '星河', description: '' });
+    expect(createWork).toHaveBeenCalledWith({ title: '星河', description: '', is_public: true, access_code: '' });
   });
 
   it('keeps the create button and does not render module entry links in the header', async () => {

@@ -73,8 +73,8 @@ export class CollabTaskHandler {
       citations: [] // 检索后填充
     });
 
-    // 2) FastGPT 检索（演示库）→ 引用映射
-    const search = await this.fastGpt.search(roleContext.instruction);
+    // 2) FastGPT 检索（演示库）→ 引用映射（按作者查 site_config 凭据）
+    const search = await this.fastGpt.search(roleContext.instruction, 8, ctx.authorId);
     const citations = mapCitations(search.hits, search.datasetId);
 
     // 3) 引用先落库（独立提交；生成失败也保留引用）
@@ -85,6 +85,7 @@ export class CollabTaskHandler {
     const result = await channel.invoke({
       taskId: ctx.taskId,
       workId: ctx.workId,
+      author_id: ctx.authorId,
       channel: loaded.channel,
       ...(loaded.chatflowId ? { chatflowId: loaded.chatflowId } : {}),
       instruction: loaded.instruction,

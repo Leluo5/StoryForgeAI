@@ -190,6 +190,8 @@ export type AgentChannelName = CollabChannel;
 export interface AgentChannelRequest {
   taskId: string;
   workId: string;
+  // 发起任务的作者：channel 按 author_id 查 site_config 平台凭据（作者级接管）
+  author_id: string;
   channel: AgentChannelName;
   chatflowId?: string;
   instruction: string;

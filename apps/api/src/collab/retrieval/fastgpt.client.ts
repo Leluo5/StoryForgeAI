@@ -1,6 +1,7 @@
-import { Injectable } from '@nestjs/common';
+import { Inject, Injectable, Optional } from '@nestjs/common';
 import { z } from 'zod';
 import { env as defaultEnv } from '../../config/env';
+import { SiteConfigService } from '../../site-config/site-config.service';
 import { CollabUpstreamError, timeoutError, upstreamFailedError } from '../channel/collab-upstream.error';
 
 // FastGPT 客户端所需环境变量子集（便于单测注入替身；显式允许 undefined）
@@ -73,16 +74,21 @@ function normalizeScore(value: unknown): number | null {
 // 只取 id/title/content/score；title 缺失用 id 兜底由 citation.mapper 处理。
 @Injectable()
 export class FastGptClient {
-  constructor(private readonly envProvider: FastGptClientEnv = defaultEnv) {}
+  constructor(
+    @Optional() private readonly envProvider: FastGptClientEnv = defaultEnv,
+    @Inject(SiteConfigService) private readonly siteConfig?: SiteConfigService
+  ) {}
 
-  async search(query: string, limit = 8): Promise<FastGptSearchResult> {
-    const {
-      FASTGPT_BASE_URL,
-      FASTGPT_API_KEY,
-      FASTGPT_DATASET_ID,
-      FASTGPT_SEARCH_PATH = '/api/core/dataset/searchTest',
-      COLLAB_HTTP_TIMEOUT_MS = 120_000
-    } = this.envProvider;
+  async search(query: string, limit = 8, authorId?: string): Promise<FastGptSearchResult> {
+    // 作者级接管：优先从 site_config 平台凭据读，未命中回退 envProvider（env 兜底）
+    const credentials = authorId ? (await this.siteConfig?.getPlatformCredentials(authorId)) ?? {} : {};
+    const fastgptCreds = credentials.fastgpt ?? {};
+    const env = this.envProvider;
+    const FASTGPT_BASE_URL = fastgptCreds.base_url ?? env.FASTGPT_BASE_URL;
+    const FASTGPT_API_KEY = fastgptCreds.api_key ?? env.FASTGPT_API_KEY;
+    const FASTGPT_DATASET_ID = fastgptCreds.dataset_id ?? env.FASTGPT_DATASET_ID;
+    const FASTGPT_SEARCH_PATH = env.FASTGPT_SEARCH_PATH ?? '/api/core/dataset/searchTest';
+    const COLLAB_HTTP_TIMEOUT_MS = env.COLLAB_HTTP_TIMEOUT_MS ?? 120_000;
 
     if (!FASTGPT_BASE_URL || !FASTGPT_API_KEY || !FASTGPT_DATASET_ID) {
       throw new CollabUpstreamError('FastGPT 检索未配置', false, 'COLLAB_CHANNEL_NOT_CONFIGURED');

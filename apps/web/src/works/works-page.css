@@ -157,6 +157,16 @@
   color: var(--text-secondary, #475569);
 }
 
+/* 公开/私有/访问码徽标 */
+.works-card__access {
+  font: var(--fw-medium, 500) var(--fs-caption, 12px) / 1 var(--font-sans, sans-serif);
+  color: var(--brand-500, #4f46e5);
+  padding: 2px var(--sp-2, 8px);
+  border: 1px solid var(--brand-500, #4f46e5);
+  border-radius: var(--radius-full, 999px);
+  white-space: nowrap;
+}
+
 .works-card__footer {
   display: flex;
   justify-content: flex-end;
@@ -194,6 +204,22 @@
   justify-content: flex-end;
   gap: var(--sp-3, 12px);
   margin-top: var(--sp-2, 8px);
+}
+
+/* 公开/访问码开关行 */
+.works-form__switch {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2, 8px);
+  font: var(--fw-regular, 400) var(--fs-body, 14px) / 1.5 var(--font-sans, sans-serif);
+  color: var(--text-secondary, #475569);
+  cursor: pointer;
+}
+
+.works-form__switch input[type="checkbox"] {
+  width: 16px;
+  height: 16px;
+  accent-color: var(--brand-500, #4f46e5);
 }
 
 @media (max-width: 767px) {

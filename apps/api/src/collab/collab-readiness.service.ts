@@ -1,7 +1,8 @@
-import { Inject, Injectable, NotFoundException } from '@nestjs/common';
+import { Inject, Injectable, NotFoundException, Optional } from '@nestjs/common';
 import { DataSource } from 'typeorm';
 import type { CollabReadiness } from '@storyforge/contracts';
 import { env as defaultEnv } from '../config/env';
+import { SiteConfigService } from '../site-config/site-config.service';
 import { CollabSettingEntity } from '../database/collab-setting.entity';
 import { AgentEntity } from '../database/agent.entity';
 import { WorkEntity } from '../database/work.entity';
@@ -28,7 +29,8 @@ export interface CollabReadinessEnv {
 export class CollabReadinessService {
   constructor(
     @Inject(DataSource) private readonly dataSource: DataSource,
-    private readonly envProvider: CollabReadinessEnv = defaultEnv
+    @Optional() private readonly envProvider: CollabReadinessEnv = defaultEnv,
+    @Inject(SiteConfigService) private readonly siteConfig?: SiteConfigService
   ) {}
 
   async getReadiness(authorId: string, workId: string): Promise<CollabReadiness> {
@@ -47,6 +49,14 @@ export class CollabReadinessService {
       ? flowiseConfig.flowise_chatflow_id
       : null;
 
+    // 作者级接管：优先从 site_config 平台凭据读，未命中回退 envProvider（env 兜底）
+    const credentials = await this.siteConfig?.getPlatformCredentials(authorId) ?? {};
+    const cozeCreds = credentials.coze ?? {};
+    const flowiseCreds = credentials.flowise ?? {};
+    const fastgptCreds = credentials.fastgpt ?? {};
+    const n8nCreds = credentials.n8n ?? {};
+    const env = this.envProvider;
+
     return {
       settings: {
         enabled: settings?.enabled ?? false,
@@ -55,17 +65,17 @@ export class CollabReadinessService {
       },
       channels: {
         flowise: {
-          configured: Boolean(this.envProvider.FLOWISE_BASE_URL && this.envProvider.FLOWISE_API_KEY && flowiseChatflowId)
+          configured: Boolean((flowiseCreds.base_url ?? env.FLOWISE_BASE_URL) && (flowiseCreds.api_key ?? env.FLOWISE_API_KEY) && flowiseChatflowId)
         },
         coze: {
-          configured: Boolean(this.envProvider.COZE_API_BASE && this.envProvider.COZE_PAT && this.envProvider.COZE_BOT_ID)
+          configured: Boolean((cozeCreds.base_url ?? env.COZE_API_BASE) && (cozeCreds.pat ?? env.COZE_PAT) && env.COZE_BOT_ID)
         }
       },
       retrieval: {
-        configured: Boolean(this.envProvider.FASTGPT_BASE_URL && this.envProvider.FASTGPT_API_KEY && this.envProvider.FASTGPT_DATASET_ID)
+        configured: Boolean((fastgptCreds.base_url ?? env.FASTGPT_BASE_URL) && (fastgptCreds.api_key ?? env.FASTGPT_API_KEY) && (fastgptCreds.dataset_id ?? env.FASTGPT_DATASET_ID))
       },
       archive: {
-        configured: Boolean(this.envProvider.N8N_ARCHIVE_WEBHOOK_URL && this.envProvider.N8N_ARCHIVE_TOKEN)
+        configured: Boolean((n8nCreds.webhook_url ?? env.N8N_ARCHIVE_WEBHOOK_URL) && (n8nCreds.token ?? env.N8N_ARCHIVE_TOKEN))
       }
     };
   }
