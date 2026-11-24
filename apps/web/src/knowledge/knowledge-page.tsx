@@ -1,22 +1,12 @@
 import type { JSX } from 'react';
-import { KnowledgePanel } from './knowledge-panel';
+import { KnowledgeManager } from './knowledge-manager';
 import './knowledge-page.css';
 
 /**
- * 知识库独立页（/knowledge）。
- * 知识库为全局作用域（按作者归属，不按作品），故单独承载完整录入/检索/导入导出；
- * 入口收口到左侧共享导航工具栏（作品库/知识库/智能体/工作流/模型/后台）。
+ * 知识库独立页（/knowledge）—— 方案 C：全局知识库管理中心（三栏布局）。
+ * 左导航(类型/标签/收藏) + 中间列表(筛选+卡片) + 右侧详情(类型模板+四维大纲)。
+ * 日常快速检索/引用走工作台抽屉（方案 D），本页面向深度整理与批量操作。
  */
 export function KnowledgePage(): JSX.Element {
-  return <main className="knowledge-page">
-    <div className="knowledge-page__header">
-      <div>
-        <h1 className="knowledge-page__title">知识库</h1>
-        <p className="knowledge-page__subtitle">集中管理你的资料：录入、检索与 Markdown 导入导出</p>
-      </div>
-    </div>
-    <div className="knowledge-page__body">
-      <KnowledgePanel />
-    </div>
-  </main>;
+  return <KnowledgeManager />;
 }
