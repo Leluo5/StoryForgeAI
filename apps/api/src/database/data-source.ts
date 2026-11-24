@@ -48,6 +48,8 @@ import { RoleProfileWritebackFieldEntity } from './role-profile-writeback-field.
 import { AgentTaskCitationEntity } from './agent-task-citation.entity';
 import { AgentArchiveOutboxEntity } from './agent-archive-outbox.entity';
 import { KnowledgeEntryEntity } from './knowledge-entry.entity';
+import { WorkflowEntity } from './workflow.entity';
+import { ModelEntity } from './model.entity';
 import { AuthBase1736899200000 } from './migrations/1736899200000-auth-base';
 import { WritingBase1736985600000 } from './migrations/1736985600000-writing-base';
 import { RevisionBase1760000000000 } from './migrations/1760000000000-revision-base';
@@ -66,6 +68,8 @@ import { CharacterAiTools1760500005000 } from './migrations/1760500005000-charac
 import { CollabBase1760700000000 } from './migrations/1760700000000-collab-base';
 import { AiTaskRoleProfileScope1760700001000 } from './migrations/1760700001000-ai-task-role-profile-scope';
 import { KnowledgeBase1760600000000 } from './migrations/1760600000000-knowledge-base';
+import { WorkflowBase1760700002000 } from './migrations/1760700002000-workflow-base';
+import { ModelBase1760700003000 } from './migrations/1760700003000-model-base';
 
 export function createDataSource(databaseUrl: string = env.DATABASE_URL): DataSource {
   return new DataSource({
@@ -118,7 +122,9 @@ export function createDataSource(databaseUrl: string = env.DATABASE_URL): DataSo
       RoleProfileWritebackFieldEntity,
       AgentTaskCitationEntity,
       AgentArchiveOutboxEntity,
-      KnowledgeEntryEntity
+      KnowledgeEntryEntity,
+      WorkflowEntity,
+      ModelEntity
     ],
     migrations: [
       AuthBase1736899200000,
@@ -138,7 +144,9 @@ export function createDataSource(databaseUrl: string = env.DATABASE_URL): DataSo
       CharacterAiTools1760500005000,
       CollabBase1760700000000,
       AiTaskRoleProfileScope1760700001000,
-      KnowledgeBase1760600000000
+      KnowledgeBase1760600000000,
+      WorkflowBase1760700002000,
+      ModelBase1760700003000
     ],
     migrationsTableName: 'migrations',
     synchronize: false,

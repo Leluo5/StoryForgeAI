@@ -52,6 +52,10 @@ export async function dropWritingAndAuthTables(dataSource: DataSource): Promise<
   await dataSource.query('DROP TABLE IF EXISTS collab_settings CASCADE');
   // F5 知识库管理表（先删引用表，按 FK 依赖倒序：knowledge_entries→authors）
   await dataSource.query('DROP TABLE IF EXISTS knowledge_entries CASCADE');
+  // 工作流管理表（作者级配置：ai_workflows→authors）
+  await dataSource.query('DROP TABLE IF EXISTS ai_workflows CASCADE');
+  // 模型管理表（作者级选型目录：ai_models→authors）
+  await dataSource.query('DROP TABLE IF EXISTS ai_models CASCADE');
   // M3c 剧情表（先删引用表，按 FK 依赖倒序）
   await dataSource.query('DROP TABLE IF EXISTS plot_generation_drafts CASCADE');
   await dataSource.query('DROP TABLE IF EXISTS derivation_candidates CASCADE');
@@ -94,7 +98,7 @@ export async function clearAuthTables(dataSource: DataSource): Promise<void> {
   // ai_tools / ai_agents 显式列入 TRUNCATE，避免「TRUNCATE authors CASCADE」沿 FK 链
   // （authors→ai_agents→ai_tools）递归清空全局工具种子。所有表一次性显式列出，CASCADE 不再波及额外表。
   await dataSource.query(
-    'TRUNCATE TABLE ai_tools, ai_agents, ai_task_events, ai_tasks, audit_logs, notifications, todos, comment_threads, version_snapshots, revision_sets, chapter_changes, chapters, volumes, works, sessions, authors, agent_archive_outbox, agent_task_citations, role_profile_writeback_fields, role_profile_writebacks, collab_settings, knowledge_entries RESTART IDENTITY CASCADE'
+    'TRUNCATE TABLE ai_tools, ai_agents, ai_workflows, ai_models, ai_task_events, ai_tasks, audit_logs, notifications, todos, comment_threads, version_snapshots, revision_sets, chapter_changes, chapters, volumes, works, sessions, authors, agent_archive_outbox, agent_task_citations, role_profile_writeback_fields, role_profile_writebacks, collab_settings, knowledge_entries RESTART IDENTITY CASCADE'
   );
   // 重新预置全局权威工具（与迁移种子一致，幂等），保证每个用例工具清单可用。
   await dataSource.query(`

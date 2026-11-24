@@ -4,6 +4,8 @@ export * from './writing';
 export * from './revision';
 export * from './ai-task';
 export * from './agent-config';
+export * from './workflow';
+export * from './model';
 export * from './plot';
 export * from './character';
 export * from './character-anchor';
