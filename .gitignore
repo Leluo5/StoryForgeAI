@@ -27,6 +27,7 @@ logs/
 # 编辑器/系统
 .vscode/
 .idea/
+.trae/
 .DS_Store
 Thumbs.db
 
