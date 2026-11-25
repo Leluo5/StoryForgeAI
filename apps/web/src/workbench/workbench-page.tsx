@@ -14,6 +14,7 @@ import { ApiError } from '../api/client';
 import { ChapterTree, type TreeAction } from './chapter-tree';
 import { PanelCollapseToggle } from './panel-collapse-toggle';
 import { EditorModeSlotContext } from '../editor/editor-mode-slot';
+import { KnowledgeDrawer, type KnowledgeDrawerHandle } from '../knowledge/knowledge-drawer';
 import { chapterUrl } from './chapter-url';
 import { RevisionPanel } from '../revision/revision-panel';
 import { VersionPanel } from '../revision/version-panel';
@@ -93,6 +94,7 @@ export function WorkbenchPage({ client = defaultClient }: Props) {
   const [modeSlotEl, setModeSlotEl] = useState<HTMLDivElement | null>(null);
   const leftDialog = useRef<HTMLDialogElement>(null);
   const rightDialog = useRef<HTMLDialogElement>(null);
+  const knowledgeDrawer = useRef<KnowledgeDrawerHandle>(null);
   const returnFocus = useRef<HTMLElement | null>(null);
   // 面板宽度拖动高频触发 onChange：用 rAF 把 setPanels 合并到每帧一次，并把 localStorage 写入移出 setState updater 且防抖，
   // 否则每次拖动都会同步阻塞主线程（实测约 12.6ms/次，超过 60fps 一帧预算）导致布局掉帧闪烁。
@@ -397,6 +399,7 @@ export function WorkbenchPage({ client = defaultClient }: Props) {
         {writer.readOnly && <Button variant="ghost" size="sm" onClick={() => void writer.takeover()}>接管写入</Button>}
         <Button variant="primary" size="sm" disabled={exporting} onClick={() => void downloadRecovery()}>{exporting ? '导出中' : '导出恢复数据'}</Button>
         <Button variant="ghost" size="sm" className="panel-trigger left-trigger" onClick={() => openDialog(leftDialog.current)}>打开章节导航</Button>
+        <Button variant="ghost" size="sm" className="panel-trigger knowledge-trigger" onClick={() => knowledgeDrawer.current?.open()}>知识库</Button>
         <Button variant="primary" size="sm" className="panel-trigger right-trigger" onClick={() => openDialog(rightDialog.current)}>打开{currentPanel === 'revision' ? '修订' : currentPanel === 'version' ? '版本' : currentPanel === 'comment' ? '评论' : currentPanel === 'todo' ? '待办' : currentPanel === 'ai' ? 'AI 创作' : currentPanel === 'agent' ? 'Agent 管理' : currentPanel === 'plot' ? '剧情' : '章节信息'}</Button>
         {/* 右侧功能区：入口组（写作/角色版图/剧情树/创作工具）+ 返回作品库。
             整体作为单一 flex item，margin-left:auto 推到最右；容器宽度不足换行时整组仍强制右对齐（需求2），
@@ -479,6 +482,13 @@ export function WorkbenchPage({ client = defaultClient }: Props) {
       <Button variant="ghost" size="sm" block onClick={() => rightDialog.current?.close()}>关闭右侧面板</Button>
       {context('dialog')}
     </dialog>
+    {/* 知识库抽屉（T29）：浮层覆盖，不改三栏宽度；关闭后焦点归还「知识库」触发按钮，正文编辑器保持挂载（D01） */}
+    <KnowledgeDrawer ref={knowledgeDrawer} workId={workId}
+      onClose={() => {
+        // 归还焦点到触发按钮（复用 returnFocus 机制，与左右侧栏 dialog 一致）
+        const trigger = window.document.querySelector<HTMLElement>('.knowledge-trigger');
+        trigger?.focus();
+      }} />
     <ConflictDialog conflict={writer.conflict} onResolve={writer.resolveConflict}
       onRestore={writer.restoreFromServer} onExport={writer.exportRecovery} />
   </div>

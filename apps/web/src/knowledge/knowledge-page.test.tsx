@@ -25,29 +25,57 @@ const mockDetail = {
 
 vi.mock('./knowledge-client', () => ({
   knowledgeClient: {
-    createEntryPreview: vi.fn(),
-    commitEntry: vi.fn(),
-    searchEntries: vi.fn(async () => ({ total: 0, items: [] })),
-    getEntry: vi.fn(),
-    updateEntry: vi.fn(),
-    deleteEntry: vi.fn(),
-    linkEntry: vi.fn(),
-    extractOutline: vi.fn(),
-    exportMarkdown: vi.fn(),
-    importPreview: vi.fn(),
-    importMarkdown: vi.fn(),
-    validateMarkdown: vi.fn(),
+    // 列表 / 详情 / 标签 / 收藏置顶
     listEntries: vi.fn(async () => ({ items: [], next_cursor: null, total: 0 })),
     listTags: vi.fn(async () => []),
     fetchEntry: vi.fn(async () => mockDetail),
-    setEntryFlags: vi.fn(async () => ({}))
+    setEntryFlags: vi.fn(async () => ({ favorite: false, pinned: false })),
+    removeEntry: vi.fn(async () => ({ status: 'deleted' })),
+    // 录入（方案 C §3.5 弹窗）
+    createEntryPreview: vi.fn(async () => ({ preview_id: 'p1', conflicts: [] })),
+    commitEntry: vi.fn(async () => ({ id: 'k-new', status: 'created' })),
+    // Markdown 导入导出
+    exportKnowledge: vi.fn(async () => ({ job_id: 'e1', total: 0 })),
+    downloadExport: vi.fn(async () => new Blob(['# 导出'], { type: 'text/markdown' })),
+    previewImport: vi.fn(async () => ({ preview_id: 'i1', files: [], summary: { total: 0, new: 0, updated: 0, skipped: 0 }, conflicts: [] })),
+    commitImport: vi.fn(async () => ({ job_id: 'c1', total: 0, success: 0, failed: 0, created: 0, updated: 0 })),
+    // 整库备份 / 恢复
+    createBackup: vi.fn(async () => ({ job_id: 'b1', total: 0 })),
+    downloadBackup: vi.fn(async () => new Blob(['{"data":{}}'], { type: 'application/gzip' })),
+    previewRestore: vi.fn(async () => ({ preview_id: 'r1', file_name: 'b1.json.gz', uncompressed_bytes: 0, summary: { total: 0, new: 0, same_content: 0, same_title_diff_content: 0 }, conflicts: [] })),
+    commitRestore: vi.fn(async () => ({ job_id: 'rc1', total: 0, success: 0, failed: 0 }))
   }
 }));
+
+// 列表条目（批量操作用例用）
+function entry(id: string, title: string): Record<string, unknown> {
+  return {
+    kind: 'summary',
+    id,
+    entry_type: 'article',
+    title,
+    excerpt: '摘要',
+    tags: [],
+    structure_status: 'ready',
+    favorite: false,
+    pinned: false,
+    created_at: '2026-11-01T00:00:00Z',
+    updated_at: '2026-11-20T00:00:00Z'
+  };
+}
 
 function renderPage(initialEntry = '/knowledge') {
   return render(<MemoryRouter initialEntries={[initialEntry]}><Routes>
     <Route path="/knowledge" element={<KnowledgePage />} />
   </Routes></MemoryRouter>);
+}
+
+function mockList(items: Record<string, unknown>[]) {
+  vi.mocked(knowledgeClient.listEntries).mockResolvedValueOnce({
+    items: items as never,
+    next_cursor: null,
+    total: items.length
+  });
 }
 
 beforeEach(() => {
@@ -97,5 +125,90 @@ describe('KnowledgePage（方案 C 三栏）', () => {
     await user.click(workBtn);
     await screen.findByRole('heading', { name: '知识库管理中心', level: 1 });
     expect(knowledgeClient.listEntries).toHaveBeenCalledWith(expect.objectContaining({ scope: 'work', work_id: 'w42' }));
+  });
+
+  it('restores filters carried over from the drawer (方案 D 「全屏管理 →」)', async () => {
+    renderPage('/knowledge?work_id=w42&q=世界&type=novel&entry=k1');
+    await screen.findByRole('heading', { name: '知识库管理中心', level: 1 });
+    // ?q= 恢复关键词、?type= 恢复类型筛选、?entry= 恢复选中条目
+    const search = screen.getByRole('searchbox', { name: '列表关键词' }) as HTMLInputElement;
+    expect(search.value).toBe('世界');
+    expect(screen.getByRole('combobox', { name: '类型多选' })).toHaveValue('novel');
+    expect(knowledgeClient.fetchEntry).toHaveBeenCalledWith('k1');
+  });
+
+  it('opens the entry-create modal from the 录入 button', async () => {
+    renderPage();
+    const user = userEvent.setup();
+    await screen.findByRole('heading', { name: '知识库管理中心', level: 1 });
+    await user.click(screen.getByRole('button', { name: '录入' }));
+    expect(await screen.findByText('录入知识条目')).toBeVisible();
+  });
+
+  it('opens the import/export modal from the 导入/导出 button', async () => {
+    renderPage();
+    const user = userEvent.setup();
+    await screen.findByRole('heading', { name: '知识库管理中心', level: 1 });
+    await user.click(screen.getByRole('button', { name: '导入/导出' }));
+    expect(await screen.findByText(/导入 \/ 导出 Markdown/)).toBeVisible();
+  });
+
+  it('opens the backup modal from the 整库备份 button', async () => {
+    renderPage();
+    const user = userEvent.setup();
+    await screen.findByRole('heading', { name: '知识库管理中心', level: 1 });
+    await user.click(screen.getByRole('button', { name: '整库备份' }));
+    expect(await screen.findByText(/整库备份 \/ 恢复/)).toBeVisible();
+  });
+
+  it('shows the batch toolbar with the checked count', async () => {
+    mockList([entry('k1', '条目一'), entry('k2', '条目二')]);
+    renderPage();
+    const user = userEvent.setup();
+    await screen.findByText('条目一');
+    await user.click(screen.getByRole('checkbox', { name: '选中 条目一' }));
+    expect(screen.getByRole('toolbar', { name: '批量操作' })).toBeVisible();
+    expect(screen.getByText('已选 1 条')).toBeVisible();
+    expect(screen.getByRole('button', { name: '导出选中' })).toBeVisible();
+    expect(screen.getByRole('button', { name: '删除' })).toBeVisible();
+  });
+
+  it('soft-deletes checked entries after batch delete confirmation', async () => {
+    mockList([entry('k1', '条目一'), entry('k2', '条目二')]);
+    renderPage();
+    const user = userEvent.setup();
+    await screen.findByText('条目一');
+    await user.click(screen.getByRole('checkbox', { name: '选中 条目一' }));
+    await user.click(screen.getByRole('checkbox', { name: '选中 条目二' }));
+    await user.click(screen.getByRole('button', { name: '删除' }));
+    expect(await screen.findByText(/确定删除已选中的/)).toBeVisible();
+    await user.click(screen.getByRole('button', { name: '确认删除' }));
+    expect(knowledgeClient.removeEntry).toHaveBeenCalledWith('k1');
+    expect(knowledgeClient.removeEntry).toHaveBeenCalledWith('k2');
+    expect(screen.queryByText('确认删除选中条目')).toBeNull();
+  });
+
+  it('cancels the batch delete dialog without deleting', async () => {
+    mockList([entry('k1', '条目一')]);
+    renderPage();
+    const user = userEvent.setup();
+    await screen.findByText('条目一');
+    await user.click(screen.getByRole('checkbox', { name: '选中 条目一' }));
+    await user.click(screen.getByRole('button', { name: '删除' }));
+    expect(await screen.findByText(/确定删除已选中的/)).toBeVisible();
+    await user.click(screen.getByRole('button', { name: '保留' }));
+    expect(knowledgeClient.removeEntry).not.toHaveBeenCalled();
+    expect(screen.queryByText('确认删除选中条目')).toBeNull();
+  });
+
+  it('hides the batch toolbar again after cancelling the selection', async () => {
+    mockList([entry('k1', '条目一')]);
+    renderPage();
+    const user = userEvent.setup();
+    await screen.findByText('条目一');
+    await user.click(screen.getByRole('checkbox', { name: '选中 条目一' }));
+    expect(screen.getByRole('toolbar', { name: '批量操作' })).toBeVisible();
+    await user.click(screen.getByRole('button', { name: '取消' }));
+    expect(screen.queryByRole('toolbar', { name: '批量操作' })).toBeNull();
   });
 });

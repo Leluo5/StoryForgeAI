@@ -1,17 +1,23 @@
 import { useCallback, useEffect, useMemo, useReducer, useState, type JSX } from 'react';
 import { useSearchParams } from 'react-router-dom';
-import { Button, Badge, Spinner } from '@storyforge/ui';
+import { Button, Badge, Spinner, Modal } from '@storyforge/ui';
 import type {
+  KnowledgeConflictPolicy,
   KnowledgeEntryDetail,
   KnowledgeEntryOutline,
   KnowledgeEntrySummary,
   KnowledgeEntryStructured,
   KnowledgeEntryType,
+  KnowledgeImportPreviewResponse,
+  KnowledgeRestorePreviewResponse,
   KnowledgeScope,
   KnowledgeTag
 } from '@storyforge/contracts';
 import { knowledgeClient } from './knowledge-client';
-import { knowledgeInitialState, knowledgeReducer } from './knowledge-state';
+import { knowledgeInitialState, knowledgeReducer, knowledgeErrorMessage, type KnowledgeState } from './knowledge-state';
+import { EntryCreate } from './entry-create';
+import { ImportExport, type ExportRange } from './import-export';
+import { BackupPanel } from './backup-panel';
 import './knowledge-manager.css';
 
 // ───────────────────────── 常量 ─────────────────────────
@@ -25,6 +31,10 @@ const TYPE_META: Record<KnowledgeEntryType, { label: string }> = {
 };
 
 const ALL_TYPES: KnowledgeEntryType[] = ['article', 'paper', 'novel', 'inspiration', 'setting'];
+
+function isEntryType(value: string | undefined): value is KnowledgeEntryType {
+  return Boolean(value) && (ALL_TYPES as string[]).includes(value as string);
+}
 
 type SortField = 'updated_at' | 'created_at' | 'title';
 
@@ -348,15 +358,44 @@ export function KnowledgeManager(): JSX.Element {
   // 当前作品 id：来自 URL 查询参数 `?work_id=xxx`（方案 C §3.5「当前作品」库需已选中作品，
   // 从工作台/抽屉「全屏管理」跳转携带）。无 work_id 时禁用「当前作品」库。
   const urlWorkId = searchParams.get('work_id') ?? undefined;
-  const [state, dispatch] = useReducer(knowledgeReducer, knowledgeInitialState);
+  // 从抽屉（方案 D）「全屏管理 →」跳转携带的筛选：?q= 关键词 / ?type=a,b 类型 / ?entry= 选中条目
+  const urlKeyword = searchParams.get('q') ?? '';
+  const urlType = searchParams.get('type') ?? '';
+  const urlEntry = searchParams.get('entry') ?? '';
+  const [state, dispatch] = useReducer(knowledgeReducer, knowledgeInitialState, (init) => {
+    if (!urlWorkId) return init;
+    const next: KnowledgeState = { ...init, scope: 'work', workId: urlWorkId };
+    return next;
+  });
   const [navCollapsed, setNavCollapsed] = useState(false);
   const [detailCollapsed, setDetailCollapsed] = useState(false);
-  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [selectedId, setSelectedId] = useState<string | null>(() => (urlEntry ? urlEntry : null));
   const [checkedIds, setCheckedIds] = useState<Set<string>>(new Set());
-  const [activeType, setActiveType] = useState<KnowledgeEntryType | 'all'>('all');
+  const [activeType, setActiveType] = useState<KnowledgeEntryType | 'all'>(() => {
+    const first = urlType.split(',').filter((value) => value.length > 0)[0];
+    return isEntryType(first) ? first : 'all';
+  });
   const [tags, setTags] = useState<KnowledgeTag[]>([]);
-  const [keyword, setKeyword] = useState('');
+  const [keyword, setKeyword] = useState(() => urlKeyword);
   const [sortField, setSortField] = useState<SortField>('updated_at');
+
+  // 录入 / 导入导出 / 备份 弹窗（方案 C §3.5）
+  const [createOpen, setCreateOpen] = useState(false);
+  const [ioOpen, setIoOpen] = useState(false);
+  const [backupOpen, setBackupOpen] = useState(false);
+  const [ioLoading, setIoLoading] = useState(false);
+  const [ioError, setIoError] = useState<string | undefined>(undefined);
+  const [ioPreview, setIoPreview] = useState<KnowledgeImportPreviewResponse | undefined>(undefined);
+  const [ioCommitting, setIoCommitting] = useState(false);
+  const [backupLoading, setBackupLoading] = useState(false);
+  const [backupError, setBackupError] = useState<string | undefined>(undefined);
+  const [backupPreview, setBackupPreview] = useState<KnowledgeRestorePreviewResponse | undefined>(undefined);
+  const [backupCommitting, setBackupCommitting] = useState(false);
+
+  // 批量删除确认（方案 C §3.4：多选批量操作流程完整，无死状态）
+  const [deleteOpen, setDeleteOpen] = useState(false);
+  const [deleteBusy, setDeleteBusy] = useState(false);
+  const [deleteError, setDeleteError] = useState<string | undefined>(undefined);
 
   // 真实作品上下文：唯一来源是 URL `?work_id=`（方案 C §3.5「当前作品」库需已选中作品）。
   // 按钮可用性取决于 urlWorkId；数据请求的 work_id 仅在 work scope 时由 state.workId 携带。
@@ -423,6 +462,157 @@ export function KnowledgeManager(): JSX.Element {
     });
   }, []);
 
+  // ── 录入：创建成功后刷新列表并选中新条目（方案 C §3.5） ──
+  const handleCreated = useCallback((entryId: string) => {
+    setCreateOpen(false);
+    setSelectedId(entryId);
+    dispatch({ type: 'CACHE_INVALIDATE' });
+    // 触发列表重载（activeType 归位后由筛选 effect 自动拉取）
+    setActiveType('all');
+  }, []);
+
+  // ── 导入导出（方案 C §3.5「Markdown 导入导出：独立面板」） ──
+  const handleExport = useCallback(async (range: ExportRange) => {
+    setIoLoading(true);
+    setIoError(undefined);
+    try {
+      const res = await knowledgeClient.exportKnowledge({
+        scope: effectiveScope,
+        ...(effectiveScope === 'work' && workId ? { work_id: workId } : {}),
+        ...(range === 'selection' ? { entry_ids: [...checkedIds] } : {}),
+        format: 'markdown'
+      });
+      const blob = await knowledgeClient.downloadExport(res.job_id);
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `knowledge-export-${res.job_id}.md`;
+      a.click();
+      URL.revokeObjectURL(url);
+    } catch (cause) {
+      setIoError(knowledgeErrorMessage(cause));
+    } finally {
+      setIoLoading(false);
+    }
+  }, [effectiveScope, workId, checkedIds]);
+
+  const handleImportPreview = useCallback(async (files: File[]) => {
+    setIoLoading(true);
+    setIoError(undefined);
+    try {
+      const preview = await knowledgeClient.previewImport(files, {
+        scope: effectiveScope,
+        ...(effectiveScope === 'work' && workId ? { work_id: workId } : {})
+      });
+      setIoPreview(preview);
+    } catch (cause) {
+      setIoError(knowledgeErrorMessage(cause));
+    } finally {
+      setIoLoading(false);
+    }
+  }, [effectiveScope, workId]);
+
+  const handleImportCommit = useCallback(async (opts: { preview_id: string; policy: KnowledgeConflictPolicy }) => {
+    setIoCommitting(true);
+    setIoError(undefined);
+    try {
+      await knowledgeClient.commitImport(opts);
+      setIoOpen(false);
+      setIoPreview(undefined);
+      setSelectedId(null);
+      dispatch({ type: 'CACHE_INVALIDATE' });
+      setActiveType('all');
+    } catch (cause) {
+      setIoError(knowledgeErrorMessage(cause));
+    } finally {
+      setIoCommitting(false);
+    }
+  }, []);
+
+  // ── 整库备份 / 恢复（方案 C §3.5） ──
+  const handleBackup = useCallback(async () => {
+    setBackupLoading(true);
+    setBackupError(undefined);
+    try {
+      const res = await knowledgeClient.createBackup({
+        scope: effectiveScope,
+        ...(effectiveScope === 'work' && workId ? { work_id: workId } : {})
+      });
+      const blob = await knowledgeClient.downloadBackup(res.job_id);
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `knowledge-backup-${res.job_id}.json.gz`;
+      a.click();
+      URL.revokeObjectURL(url);
+    } catch (cause) {
+      setBackupError(knowledgeErrorMessage(cause));
+    } finally {
+      setBackupLoading(false);
+    }
+  }, [effectiveScope, workId]);
+
+  const handleRestorePreview = useCallback(async (files: File[]) => {
+    const file = files[0];
+    if (!file) return;
+    setBackupLoading(true);
+    setBackupError(undefined);
+    try {
+      const preview = await knowledgeClient.previewRestore(file);
+      setBackupPreview(preview);
+    } catch (cause) {
+      setBackupError(knowledgeErrorMessage(cause));
+    } finally {
+      setBackupLoading(false);
+    }
+  }, []);
+
+  const handleRestoreCommit = useCallback(async (opts: { preview_id: string; policy: KnowledgeConflictPolicy }) => {
+    setBackupCommitting(true);
+    setBackupError(undefined);
+    try {
+      await knowledgeClient.commitRestore(opts);
+      setBackupOpen(false);
+      setBackupPreview(undefined);
+      setSelectedId(null);
+      dispatch({ type: 'CACHE_INVALIDATE' });
+      setActiveType('all');
+    } catch (cause) {
+      setBackupError(knowledgeErrorMessage(cause));
+    } finally {
+      setBackupCommitting(false);
+    }
+  }, []);
+
+  // ── 批量删除：软删除选中条目（方案 C §3.4） ──
+  const handleBatchDelete = useCallback(async () => {
+    if (checkedIds.size === 0) return;
+    setDeleteBusy(true);
+    setDeleteError(undefined);
+    const ids = [...checkedIds];
+    const failed: Array<{ id: string; message: string }> = [];
+    for (const id of ids) {
+      try {
+        await knowledgeClient.removeEntry(id);
+      } catch (cause) {
+        failed.push({ id, message: knowledgeErrorMessage(cause) });
+      }
+    }
+    setDeleteBusy(false);
+    if (failed.length > 0) {
+      const first = failed[0];
+      const firstMsg = first?.message ?? '未知错误';
+      setDeleteError(`部分条目删除失败（${failed.length}/${ids.length}）：${firstMsg}`);
+      setCheckedIds(new Set(ids.filter((id) => failed.some((f) => f.id === id))));
+      return;
+    }
+    setDeleteOpen(false);
+    setCheckedIds(new Set());
+    if (selectedId && ids.includes(selectedId)) setSelectedId(null);
+    dispatch({ type: 'CACHE_INVALIDATE' });
+    setActiveType('all');
+  }, [checkedIds, selectedId]);
+
   const typeCounts = useMemo(() => {
     const counts: Record<KnowledgeEntryType, number> = { article: 0, paper: 0, novel: 0, inspiration: 0, setting: 0 };
     for (const item of state.items) counts[item.entry_type] += 1;
@@ -460,10 +650,60 @@ export function KnowledgeManager(): JSX.Element {
           onChange={(e) => setKeyword(e.target.value)}
           aria-label="搜索知识条目"
         />
-        <Button variant="primary" size="sm">录入</Button>
-        <Button variant="secondary" size="sm">导入/导出</Button>
-        <Button variant="secondary" size="sm">整库备份</Button>
+        <Button variant="primary" size="sm" onClick={() => setCreateOpen(true)}>录入</Button>
+        <Button variant="secondary" size="sm" onClick={() => setIoOpen(true)}>导入/导出</Button>
+        <Button variant="secondary" size="sm" onClick={() => setBackupOpen(true)}>整库备份</Button>
       </header>
+
+      {/* 录入弹窗（方案 C §3.5：统一录入弹窗） */}
+      <Modal open={createOpen} onClose={() => setCreateOpen(false)} title="录入知识条目">
+        <EntryCreate scope={effectiveScope} {...(effectiveScope === 'work' && workId ? { workId } : {})} onCreated={handleCreated} />
+      </Modal>
+
+      {/* Markdown 导入导出面板（方案 C §3.5） */}
+      <Modal open={ioOpen} onClose={() => setIoOpen(false)} title="导入 / 导出 Markdown">
+        <ImportExport
+          scope={effectiveScope}
+          onExport={handleExport}
+          onImportPreview={handleImportPreview}
+          onImportCommit={handleImportCommit}
+          loading={ioLoading}
+          committing={ioCommitting}
+          {...(ioPreview ? { preview: ioPreview } : {})}
+          {...(ioError ? { error: ioError } : {})}
+        />
+      </Modal>
+
+      {/* 整库备份 / 恢复面板（方案 C §3.5） */}
+      <Modal open={backupOpen} onClose={() => setBackupOpen(false)} title="整库备份 / 恢复">
+        <BackupPanel
+          scope={effectiveScope}
+          onBackup={handleBackup}
+          onRestorePreview={handleRestorePreview}
+          onRestoreCommit={handleRestoreCommit}
+          loading={backupLoading}
+          committing={backupCommitting}
+          {...(backupPreview ? { restorePreview: backupPreview } : {})}
+          {...(backupError ? { error: backupError } : {})}
+        />
+      </Modal>
+
+      {/* 批量删除确认（方案 C §3.4） */}
+      <Modal open={deleteOpen} onClose={() => !deleteBusy && setDeleteOpen(false)} title="确认删除选中条目">
+        <div className="kb-mgr__delete-dialog">
+          <p className="kb-mgr__delete-text">
+            确定删除已选中的 <strong>{checkedIds.size}</strong> 条知识条目吗？
+            删除为软删除，可在回收站恢复。
+          </p>
+          {deleteError && <p className="kb-mgr__delete-error" role="alert">{deleteError}</p>}
+          <div className="kb-mgr__delete-actions">
+            <Button variant="ghost" size="sm" onClick={() => setDeleteOpen(false)} disabled={deleteBusy}>保留</Button>
+            <Button variant="danger" size="sm" onClick={() => { void handleBatchDelete(); }} loading={deleteBusy}>
+              {deleteBusy ? '删除中…' : '确认删除'}
+            </Button>
+          </div>
+        </div>
+      </Modal>
 
       {/* 主体三栏 */}
       <div className="kb-mgr__body">
@@ -565,8 +805,8 @@ export function KnowledgeManager(): JSX.Element {
           {checkedIds.size > 0 && (
             <div className="kb-mgr__batch" role="toolbar" aria-label="批量操作">
               <span className="kb-mgr__batch-count">已选 {checkedIds.size} 条</span>
-              <Button variant="secondary" size="sm">导出选中</Button>
-              <Button variant="danger" size="sm">删除</Button>
+              <Button variant="secondary" size="sm" onClick={() => { void handleExport('selection'); }}>导出选中</Button>
+              <Button variant="danger" size="sm" onClick={() => { setDeleteError(undefined); setDeleteOpen(true); }}>删除</Button>
               <Button variant="ghost" size="sm" onClick={() => setCheckedIds(new Set())}>取消</Button>
             </div>
           )}

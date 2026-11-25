@@ -1,0 +1,514 @@
+/* ============================================================================
+   M3c-3 知识库 · 写作工作台抽屉（方案 D）
+   依据：docs/01-产品与设计/知识库工作台抽屉设计-方案D.md §2/§3/§5
+   定位：工作台左侧 380px 滑出抽屉，服务「边写边查、快速引用」；深度管理跳转方案 C。
+   视觉口径：与方案 C（kb-mgr）同一套 design tokens / 圆角 8px / 卡片间距 10px。
+   强调色：知识库语义色 --cyan-500（头部指示条、激活态、选中边框）。
+   ========================================================================== */
+
+/* 抽屉主体：覆盖 <dialog> 的居中行为，改为左缘贴边滑出 */
+dialog.kb-drawer {
+  position: fixed;
+  top: 0;
+  bottom: 0;
+  left: 0;
+  right: auto;
+  width: 380px;
+  max-width: 100vw;
+  margin: 0;
+  z-index: 210;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  background: var(--bg-secondary);
+  color: var(--text-primary);
+  border: 0;
+  border-right: 1px solid var(--border-color);
+  box-shadow: 10px 0 28px rgb(15 23 42 / 16%);
+  animation: kb-drawer-in 220ms ease-out;
+}
+
+@keyframes kb-drawer-in {
+  from { transform: translateX(-100%); opacity: 0.4; }
+  to { transform: translateX(0); opacity: 1; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  dialog.kb-drawer { animation: none; }
+}
+
+/* 窄视口降级为全屏浮层，避免挤压写作区 */
+@media (max-width: 720px) {
+  dialog.kb-drawer { width: 100vw; border-right: 0; box-shadow: none; }
+}
+
+/* ───────────────────────── 头部（48–56px） ───────────────────────── */
+
+.kb-drawer__header {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--sp-2);
+  min-height: 48px;
+  padding: var(--sp-2) var(--sp-4) 2px;
+  border-bottom: 1px solid var(--border-color);
+  box-shadow: inset 3px 0 0 var(--cyan-500);
+}
+
+.kb-drawer__title {
+  margin: 0;
+  font-size: var(--fs-body);
+  font-weight: var(--fw-semibold);
+}
+
+.kb-drawer__actions {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-1);
+}
+
+/* ───────────────────────── 库切换 + 搜索 ───────────────────────── */
+
+.kb-drawer__lib {
+  flex: 0 0 auto;
+  padding: var(--sp-2) var(--sp-4) 0;
+}
+
+.kb-drawer__tabs {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  padding: 3px;
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-md);
+  background: var(--bg-tertiary);
+}
+
+.kb-drawer__tab {
+  border: 0;
+  background: transparent;
+  padding: var(--sp-1) 12px;
+  border-radius: var(--radius-sm);
+  font: inherit;
+  font-size: var(--fs-small);
+  color: var(--text-secondary);
+  cursor: pointer;
+}
+
+.kb-drawer__tab[aria-selected='true'] {
+  background: var(--bg-secondary);
+  color: var(--cyan-500);
+  font-weight: var(--fw-semibold);
+  box-shadow: var(--shadow-sm);
+}
+
+.kb-drawer__search {
+  flex: 0 0 auto;
+  padding: var(--sp-2) var(--sp-4) var(--sp-1);
+}
+
+.kb-drawer__search-row {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+}
+
+.kb-drawer__search-field {
+  flex: 1 1 auto;
+  min-width: 0;
+  height: 38px;
+  padding: 0 var(--sp-3);
+  border: 1px solid var(--input-border);
+  border-radius: var(--radius-md);
+  background: var(--input-bg);
+  color: var(--text-primary);
+  font: inherit;
+  font-size: var(--fs-small);
+}
+
+.kb-drawer__search-field:focus {
+  outline: 2px solid var(--cyan-500);
+  outline-offset: -1px;
+}
+
+/* ───────────────────────── 筛选 Chip 行 ───────────────────────── */
+
+.kb-drawer__filters {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--sp-1);
+  padding: var(--sp-1) var(--sp-4);
+}
+
+.kb-drawer__chip {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-1);
+  padding: 2px 10px;
+  border: 1px solid var(--border-color);
+  border-radius: 999px;
+  background: transparent;
+  color: var(--text-secondary);
+  font: inherit;
+  font-size: var(--fs-small);
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.kb-drawer__chip:hover {
+  background: var(--bg-hover);
+}
+
+.kb-drawer__chip[aria-pressed='true'] {
+  border-color: var(--cyan-500);
+  background: var(--info-100);
+  color: var(--cyan-500);
+  font-weight: var(--fw-semibold);
+}
+
+.kb-drawer__chip-count {
+  font-size: var(--fs-caption);
+  opacity: 0.7;
+}
+
+.kb-drawer__clear {
+  margin-left: auto;
+  border: 0;
+  background: transparent;
+  color: var(--cyan-500);
+  font: inherit;
+  font-size: var(--fs-small);
+  cursor: pointer;
+}
+
+.kb-drawer__clear:hover {
+  text-decoration: underline;
+}
+
+/* ───────────────────────── 列表区 ───────────────────────── */
+
+.kb-drawer__list {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: var(--sp-1) var(--sp-4) var(--sp-3);
+}
+
+.kb-drawer__list-head {
+  display: flex;
+  align-items: baseline;
+  gap: var(--sp-2);
+  padding: 2px 2px 0;
+  font-size: var(--fs-small);
+  color: var(--text-secondary);
+}
+
+/* 紧凑卡片（§3.3：高度 72–88px）。右侧留 46px 给悬停浮出的「引用」按钮 */
+.kb-drawer__card {
+  position: relative;
+  width: 100%;
+  min-height: 72px;
+  padding: 10px 12px;
+  border: 1px solid var(--card-border);
+  border-radius: var(--radius-md);
+  background: var(--card-bg);
+  transition: background 120ms ease, border-color 120ms ease;
+}
+
+/* 选中态（正在抽屉内预览该条目） */
+.kb-drawer__card[aria-current='true'] {
+  border-color: var(--cyan-500);
+  box-shadow: 0 0 0 1px var(--cyan-500);
+}
+
+/* 引用成功后短暂高亮 */
+.kb-drawer__card--referenced {
+  border-color: var(--cyan-500);
+  background: var(--info-100);
+}
+
+.kb-drawer__card-title-hit {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  width: 100%;
+  /* 为右侧浮出的「引用」按钮统一让位，标题 / meta / 标签三行都不被遮挡 */
+  padding-right: 52px;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+  font: inherit;
+}
+
+.kb-drawer__card-title-hit:focus-visible {
+  outline: 2px solid var(--cyan-500);
+  outline-offset: 4px;
+  border-radius: var(--radius-sm);
+}
+
+.kb-drawer__card-head {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-1);
+  /* 为右下角「引用」按钮让出空间，避免标题被按钮压住 */
+  padding-right: 52px;
+}
+
+/* 行首类型图标（§3.3 卡片规格 [图标]） */
+.kb-drawer__card-icon {
+  flex: 0 0 auto;
+  font-size: var(--fs-small);
+}
+
+.kb-drawer__card-title {
+  flex: 1 1 auto;
+  /* min-width: 0 —— flex 子项默认 min-width:auto，缺它则省略号永不生效 */
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: var(--fs-body);
+  font-weight: var(--fw-semibold);
+}
+
+.kb-drawer__card-star {
+  flex: 0 0 auto;
+  font-size: var(--fs-small);
+}
+
+.kb-drawer__card-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--sp-1) var(--sp-2);
+  margin-top: 2px;
+  font-size: var(--fs-small);
+  color: var(--text-secondary);
+}
+
+/* 标签行固定单行（最多 2 个，组件已截断）；不折行以保持 72–88px 的紧凑高度 */
+.kb-drawer__card-tags {
+  display: flex;
+  flex-wrap: nowrap;
+  overflow: hidden;
+  gap: var(--sp-1);
+}
+
+.kb-drawer__card-tag {
+  flex: 0 1 auto;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  padding: 0 8px;
+  border-radius: 999px;
+  background: var(--tag-bg);
+  font-size: var(--fs-caption);
+  color: var(--tag-text);
+}
+
+/* 悬停浮现的「引用」快捷按钮（≤2 次点击） */
+.kb-drawer__card-ref {
+  position: absolute;
+  top: 50%;
+  right: var(--sp-2);
+  transform: translateY(-50%);
+  padding: 2px 10px;
+  border: 1px solid var(--cyan-500);
+  border-radius: var(--radius-sm);
+  background: var(--bg-secondary);
+  color: var(--cyan-500);
+  font: inherit;
+  font-size: var(--fs-small);
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity 120ms ease;
+}
+
+.kb-drawer__card:hover .kb-drawer__card-ref,
+.kb-drawer__card:focus-within .kb-drawer__card-ref,
+.kb-drawer__card-ref:focus-visible {
+  opacity: 1;
+}
+
+@media (hover: none) {
+  .kb-drawer__card-ref { opacity: 1; }
+}
+
+/* 列表状态（骨架 / 空态 / 错误） */
+.kb-drawer__state {
+  padding: var(--sp-3) var(--sp-1);
+  font-size: var(--fs-small);
+  color: var(--text-secondary);
+  text-align: center;
+}
+
+.kb-drawer__state-role {
+  margin-top: var(--sp-2);
+}
+
+.kb-drawer__skeleton {
+  height: 76px;
+  margin-bottom: 10px;
+  border-radius: var(--radius-md);
+  background: linear-gradient(
+    90deg,
+    var(--bg-tertiary) 25%,
+    var(--bg-hover) 45%,
+    var(--bg-tertiary) 65%
+  );
+}
+
+/* 「加载更多」分页提示行 */
+.kb-drawer__more {
+  display: flex;
+  justify-content: center;
+  padding: var(--sp-1) 0;
+}
+
+/* 引用 / 入库成功 Toast（抽屉内底部浮层） */
+.kb-drawer__toast {
+  position: fixed;
+  left: 16px;
+  bottom: var(--sp-4);
+  z-index: 240;
+  padding: var(--sp-2) var(--sp-3);
+  border: 1px solid var(--cyan-500);
+  border-radius: var(--radius-md);
+  background: var(--info-100);
+  color: var(--cyan-500);
+  font-size: var(--fs-small);
+  box-shadow: var(--shadow-sm);
+  animation: kb-drawer-toast-in 180ms ease-out;
+}
+
+@keyframes kb-drawer-toast-in {
+  from { transform: translateY(8px); opacity: 0; }
+  to { transform: translateY(0); opacity: 1; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .kb-drawer__toast { animation: none; }
+}
+
+/* ───────────────────────── 简易详情（抽屉内展开，不跳全页） ───────────────────────── */
+
+.kb-drawer__preview {
+  flex: 0 0 auto;
+  max-height: 58%;
+  overflow-y: auto;
+  padding: var(--sp-3) var(--sp-4) 14px;
+  border-top: 1px solid var(--border-color);
+  background: var(--bg-tertiary);
+}
+
+.kb-drawer__preview-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--sp-2);
+}
+
+.kb-drawer__preview-title {
+  margin: 0;
+  font-size: var(--fs-body);
+  font-weight: var(--fw-semibold);
+}
+
+.kb-drawer__preview-close {
+  flex: 0 0 auto;
+  border: 0;
+  background: transparent;
+  color: var(--text-secondary);
+  font-size: var(--fs-small);
+  cursor: pointer;
+}
+
+.kb-drawer__preview-close:hover {
+  color: var(--text-primary);
+}
+
+.kb-drawer__preview-meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--sp-2);
+  margin: var(--sp-1) 0 var(--sp-2);
+  font-size: var(--fs-small);
+  color: var(--text-secondary);
+}
+
+.kb-drawer__preview-summary {
+  margin: 0;
+  font-size: var(--fs-body);
+  line-height: 1.6;
+  white-space: pre-wrap;
+  display: -webkit-box;
+  -webkit-line-clamp: 4;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+/* 小说四维大纲折叠区 */
+.kb-drawer__outline {
+  margin-top: var(--sp-2);
+  border-top: 1px dashed var(--border-color);
+  padding-top: var(--sp-2);
+}
+
+.kb-drawer__outline-toggle {
+  border: 0;
+  background: transparent;
+  color: var(--cyan-500);
+  font: inherit;
+  font-size: var(--fs-small);
+  cursor: pointer;
+}
+
+.kb-drawer__outline-body {
+  margin-top: var(--sp-1);
+  font-size: var(--fs-small);
+  color: var(--text-secondary);
+}
+
+.kb-drawer__outline-body p {
+  margin: 0 0 var(--sp-1);
+}
+
+.kb-drawer__outline-heading {
+  margin: 0 0 var(--sp-1);
+  color: var(--text-primary);
+  font-weight: var(--fw-semibold);
+}
+
+.kb-drawer__preview-error {
+  padding: var(--sp-2) 0;
+  font-size: var(--fs-small);
+  color: var(--danger-600);
+}
+
+.kb-drawer__preview-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--sp-2);
+  margin-top: var(--sp-3);
+}
+
+/* ───────────────────────── 底部操作区（固定） ───────────────────────── */
+
+.kb-drawer__footer {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  padding: var(--sp-2) var(--sp-4);
+  border-top: 1px solid var(--border-color);
+  background: var(--bg-secondary);
+}

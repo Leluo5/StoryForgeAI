@@ -19,6 +19,7 @@ const chapter: Chapter = {
 const tree: TreeResponse = {
   work: {
     id: workId, author_id: crypto.randomUUID(), title: '深链作品', description: '', status: 'active',
+    is_public: true, access_code: '',
     created_at: now, updated_at: now
   },
   volumes: [{ id: volumeId, work_id: workId, title: '第一卷', position: 0 }],
@@ -174,6 +175,24 @@ describe('WorkbenchRoute', () => {
 
   // 未在作品库选择作品直接进入工作台（或作品已被删除）时，getTree 返回 404，
   // 应默认重定向回作品库 /works，而不是停留在报错页面。
+  // T29：工作台顶部工具栏新增「知识库」按钮，打开左侧浮层抽屉；正文编辑器保持挂载，关闭后焦点归还触发按钮（D01）
+  it('opens the knowledge drawer from the header and keeps the editor mounted', async () => {
+    const api = client();
+    const view = renderPage(api);
+    await screen.findByRole('heading', { name: '深链作品' });
+    await waitFor(() => expect(view.container.querySelector('.ProseMirror')).not.toBeNull());
+    const editor = view.container.querySelector('.ProseMirror')!;
+
+    const trigger = screen.getByRole('button', { name: '知识库' });
+    await userEvent.click(trigger);
+    expect(screen.getByRole('dialog', { name: '知识库' })).toBeVisible();
+    // 抽屉是浮层，不卸载正文编辑器
+    expect(view.container.querySelector('.ProseMirror')).toBe(editor);
+    // 关闭后焦点归还触发按钮
+    await userEvent.click(screen.getByRole('button', { name: '关闭知识库' }));
+    expect(trigger).toHaveFocus();
+  });
+
   it('redirects to the works page when the work no longer exists (getTree 404)', async () => {
     const api = client();
     api.getTree = vi.fn().mockRejectedValue(
