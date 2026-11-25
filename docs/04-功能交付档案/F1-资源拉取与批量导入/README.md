@@ -24,6 +24,7 @@
 ## 四、功能说明
 
 - **功能名**：资源拉取与批量导入
-- **核心目标**：管理员从 Coze 平台拉取 bot / workflow / dataset 资源并分类导入：Bot 进入全局未分类 Agent 池，workflow / dataset 进入作品管理。
-- **涉及代码**：`coze_client.py`、`work_manager.py`、`modules/agent_management/`、`app.py`（见 02-技术方案.md）。
+- **核心目标**：管理员从 Coze 平台拉取 bot / dataset 资源并分类导入：Bot 进入 Agent 管理（AgentEntity），dataset 进入知识库（KnowledgeEntryEntity）。
+- **涉及代码**：`apps/api/src/collab/coze-import.{client,service,controller}.ts`、`apps/web/src/agent/coze-import-{client,panel}.tsx`、`packages/contracts/src/coze-import.ts`（见 02-技术方案.md）。
 - **2026-11-21 归属修正**：Coze Bot 是 Agent 智能体，不再创建展示作品；重复导入按 `bot_id` 更新原 Agent，且不持久化 PAT。
+- **2026-11-25 新架构迁移**：实现由 Python（`coze_client.py`/`work_manager.py`/`app.py`）迁移至 TS 新架构，落点为 AgentEntity + KnowledgeEntryEntity，资源类型收敛为 **bot / dataset**（工作流本次不做，留待后续）。迁移提交 `1e7cc10`。旧实现记录见 01/02/03 分册的「新架构迁移说明」。
