@@ -4,7 +4,9 @@ import {
   proseMirrorDocumentSchema,
   reorderRequestSchema,
   saveChangeRequestSchema,
-  versionConflictDetailsSchema
+  updateWorkRequestSchema,
+  versionConflictDetailsSchema,
+  workSchema
 } from './writing';
 
 const change = {
@@ -31,5 +33,26 @@ describe('writing contracts', () => {
       server_document: document,
       server_content_hash: 'a'.repeat(64)
     }).server_document.type).toBe('doc');
+  });
+
+  it('defaults is_public to true and access_code to empty string on work responses', () => {
+    const work = workSchema.parse({
+      id: crypto.randomUUID(),
+      author_id: crypto.randomUUID(),
+      title: '测试',
+      description: '',
+      status: 'active',
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString()
+    });
+    expect(work.is_public).toBe(true);
+    expect(work.access_code).toBe('');
+  });
+
+  it('accepts optional access fields on create/update requests and trims access_code', () => {
+    expect(createWorkRequestSchema.safeParse({
+      title: '新书', description: '', is_public: false, access_code: '  abc  '
+    }).success).toBe(true);
+    expect(updateWorkRequestSchema.parse({ access_code: '  xyz  ' }).access_code).toBe('xyz');
   });
 });

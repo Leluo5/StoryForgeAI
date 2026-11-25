@@ -182,6 +182,12 @@ export class AgentService {
       agent.model_config = input.model_config ?? {};
       agent.status = 'active';
       agent.is_default = input.is_default ?? false;
+      // F1 扩展：Coze 导入可携带 description/kind/source/scope/project_id（均可选，普通创建不受影响）
+      if (input.description !== undefined) agent.description = input.description;
+      if (input.kind !== undefined) agent.kind = input.kind;
+      if (input.source !== undefined) agent.source = input.source;
+      if (input.scope !== undefined) agent.scope = input.scope;
+      if (input.project_id !== undefined) agent.project_id = input.project_id;
       // 若设为默认或作者首个 Agent，清掉其他默认
       if (agent.is_default) await this.clearOtherDefaults(manager, authorId);
       await manager.save(agent);

@@ -35,6 +35,10 @@ export const workSchema = z.object({
   status: z.enum(['active', 'archived']),
   /** 全作品正文字数（不含空白）。可选：旧接口/旧缓存可能缺失，前端用 0 兜底。 */
   word_count: z.number().int().nonnegative().optional(),
+  /** 是否公开（在线体验可访问）。默认 true。 */
+  is_public: z.boolean().default(true),
+  /** 访问码；空字符串表示无需验证。默认 ''。 */
+  access_code: z.string().max(64).default(''),
   created_at: timestamp,
   updated_at: timestamp
 });
@@ -58,13 +62,19 @@ export const chapterSummarySchema = z.object({
 export const chapterSchema = chapterSummarySchema.extend({ document: proseMirrorDocumentSchema });
 export const createWorkRequestSchema = z.object({
   title: z.string().trim().min(1).max(120),
-  description: z.string().trim().max(2000)
+  description: z.string().trim().max(2000),
+  /** 可选：默认公开（true）。 */
+  is_public: z.boolean().optional(),
+  /** 可选：默认空字符串（无需访问码）。 */
+  access_code: z.string().trim().max(64).optional()
 });
 export const createWorkResponseSchema = z.object({ work: workSchema, first_chapter_id: id });
 export const updateWorkRequestSchema = z.object({
   title: z.string().trim().min(1).max(120).optional(),
   description: z.string().trim().max(2000).optional(),
-  status: z.enum(['active', 'archived']).optional()
+  status: z.enum(['active', 'archived']).optional(),
+  is_public: z.boolean().optional(),
+  access_code: z.string().trim().max(64).optional()
 }).refine((value) => Object.keys(value).length > 0, 'At least one field is required');
 export const treeResponseSchema = z.object({
   work: workSchema,

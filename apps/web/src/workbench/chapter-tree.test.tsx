@@ -12,6 +12,7 @@ const secondId = crypto.randomUUID();
 const tree: TreeResponse = {
   work: {
     id: workId, author_id: crypto.randomUUID(), title: '测试作品', description: '', status: 'active',
+    is_public: true, access_code: '',
     created_at: new Date().toISOString(), updated_at: new Date().toISOString()
   },
   volumes: [{ id: volumeId, work_id: workId, title: '第一卷', position: 0 }],

@@ -14,9 +14,15 @@ export type AgentPlatform = z.infer<typeof agentPlatformSchema>;
 
 // 平台级配置：仅允许非敏感标识，禁止 URL/令牌/任意键；地址与密钥只能来自环境变量
 // F2 §4.5：platform_config 只存 flowise_chatflow_id，Coze/Mock 使用空对象
+// F1 扩展：Coze 平台允许 bot_id/icon_url/prologue/suggested_questions/parameters（非敏感标识）
 export const agentPlatformConfigSchema = z
   .object({
-    flowise_chatflow_id: z.string().regex(/^[A-Za-z0-9-]{1,64}$/).optional()
+    flowise_chatflow_id: z.string().regex(/^[A-Za-z0-9-]{1,64}$/).optional(),
+    bot_id: z.string().regex(/^[A-Za-z0-9_-]{1,100}$/).optional(),
+    icon_url: z.string().max(500).optional(),
+    prologue: z.string().max(2000).optional(),
+    suggested_questions: z.array(z.string().max(200)).max(10).optional(),
+    parameters: z.record(z.string(), z.string()).optional()
   })
   .strict()
   .default({});
@@ -79,13 +85,19 @@ export type AgentSummary = z.infer<typeof agentSummarySchema>;
 // ───────────────────────────── 请求 Schema ─────────────────────────────
 
 // 创建 Agent
+// F1 扩展：description/kind/source/scope/project_id 供 Coze 导入落库，普通创建不受影响（均可选）
 export const createAgentRequestSchema = z.object({
   name: z.string().min(1).max(80),
   platform: agentPlatformSchema.default('mock'),
   platform_config: agentPlatformConfigSchema.optional(),
   model_id: z.string().min(1).max(80),
   model_config: modelConfigSchema,
-  is_default: z.boolean().optional()
+  is_default: z.boolean().optional(),
+  description: z.string().max(1000).optional(),
+  kind: z.enum(['legacy', 'role_agent', 'tool_agent', 'flow_step_agent']).optional(),
+  source: z.enum(['manual', 'template', 'migration', 'auto']).optional(),
+  scope: z.enum(['project', 'role']).optional(),
+  project_id: z.string().uuid().nullable().optional()
 });
 
 // 更新 Agent（部分字段）
