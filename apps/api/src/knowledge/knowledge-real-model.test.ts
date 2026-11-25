@@ -31,7 +31,7 @@ describe('KnowledgeOpenAiClient', () => {
   });
 
   it('base() 补全 /v1 前缀（不双前缀）', async () => {
-    const fetcher = vi.fn(async () => new Response(JSON.stringify({ choices: [{ message: { content: 'ok' } }] }), { status: 200 }));
+    const fetcher = vi.fn(async (_url: string, _init?: RequestInit) => new Response(JSON.stringify({ choices: [{ message: { content: 'ok' } }] }), { status: 200 }));
     const client = new KnowledgeOpenAiClient({ baseUrl: 'https://gw.example.com', apiKey: 'k', model: 'gpt-4o-mini' }, fetcher as never);
     await client.chat({ system: 's', user: 'u' });
     expect(fetcher.mock.calls[0]![0]).toBe('https://gw.example.com/v1/chat/completions');

@@ -18,3 +18,4 @@ export * from './knowledge-job';
 export * from './knowledge-portability';
 export * from './site-config';
 export * from './coze-import';
+export * from './experience';

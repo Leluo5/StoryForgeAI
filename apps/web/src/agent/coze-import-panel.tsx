@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, type JSX } from 'react';
 import type { CozeResourceItem, CozeImportResponse } from '@storyforge/contracts';
 import { testCoze, listCozeResources, importCozeResources } from './coze-import-client';
 
