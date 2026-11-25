@@ -148,7 +148,7 @@ export const KnowledgeDrawer = forwardRef<KnowledgeDrawerHandle, Props>(function
   }, []);
 
   /** 按当前筛选加载列表（复用 T28 列表缓存，避免重复请求） */
-  const loadList = useCallback((opts?: { append?: boolean }) => {
+  const loadList = useCallback((opts?: { append?: boolean; force?: boolean }) => {
     const cacheKey = knowledgeCacheKey({
       scope: activeScope,
       ...(workId ? { workId } : {}),
@@ -157,7 +157,7 @@ export const KnowledgeDrawer = forwardRef<KnowledgeDrawerHandle, Props>(function
       tagIds: filters.tagIds
     });
     const cached = state.listCache[cacheKey];
-    if (!opts?.append && cached) {
+    if (!opts?.append && !opts?.force && cached) {
       setListError(null);
       dispatch({ type: 'LIST_LOADED', items: cached.items, nextCursor: cached.nextCursor, total: cached.total, cacheKey });
       return;
@@ -297,7 +297,10 @@ export const KnowledgeDrawer = forwardRef<KnowledgeDrawerHandle, Props>(function
   /** 录入 / 导入后刷新列表（清缓存 + 重拉） */
   const refreshAfterChange = useCallback(() => {
     dispatch({ type: 'CACHE_INVALIDATE' });
-    window.setTimeout(() => loadList(), 0);
+    // force: true 绕过 loadList 闭包里可能尚未失效的旧缓存：setTimeout(0) 触发时，
+    // React 未必已完成失效后的重渲染，loadList 闭包读到的仍是失效前的 state（缓存还在），
+    // 会命中旧空列表直接 return 而不重拉。force 强制走网络，确保新条目可见。
+    window.setTimeout(() => loadList({ force: true }), 0);
   }, [loadList]);
 
   /** 跳转方案 C 全页（携带当前筛选；深度管理走全页） */

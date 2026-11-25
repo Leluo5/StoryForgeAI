@@ -23,7 +23,7 @@ import {
   UseGuards,
   UseInterceptors
 } from '@nestjs/common';
-import { FilesInterceptor } from '@nestjs/platform-express';
+import { FileInterceptor } from '@nestjs/platform-express';
 import { memoryStorage } from 'multer';
 import { readFile } from 'node:fs/promises';
 import type { Response } from 'express';
@@ -138,7 +138,7 @@ export class KnowledgeBackupController {
   @Post('backups/restore/preview')
   @HttpCode(HttpStatus.OK)
   @UseGuards(CsrfGuard)
-  @UseInterceptors(FilesInterceptor('file', 1, { storage: memoryStorage() }))
+  @UseInterceptors(FileInterceptor('file', { storage: memoryStorage() }))
   async previewRestore(
     @Req() request: AuthenticatedRequest,
     @UploadedFile() file?: Express.Multer.File

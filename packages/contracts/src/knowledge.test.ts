@@ -247,6 +247,17 @@ describe('knowledge search query', () => {
     expect(knowledgeSearchQuerySchema.safeParse({ scope: 'global', cursor: 'abc' }).success).toBe(true);
   });
 
+  it('coerces boolean query flags from query-string strings (favorite/pinned/deleted)', () => {
+    // 查询串 ?favorite=true 传给 Zod 的是字符串，须 coerce 为布尔（bugfix：T37 E2E 422）
+    const parsed = knowledgeSearchQuerySchema.parse({ scope: 'global', favorite: 'true', pinned: 'false', deleted: 'true' });
+    expect(parsed.favorite).toBe(true);
+    expect(parsed.pinned).toBe(false);
+    expect(parsed.deleted).toBe(true);
+    // 布尔值原样也接受
+    expect(knowledgeSearchQuerySchema.safeParse({ scope: 'global', favorite: true }).success).toBe(true);
+    expect(knowledgeSearchQuerySchema.safeParse({ scope: 'global', deleted: false }).success).toBe(true);
+  });
+
   it('validates search response', () => {
     expect(knowledgeSearchResponseSchema.safeParse({ items: [summary()], total: 1, next_cursor: null }).success).toBe(true);
     expect(knowledgeSearchResponseSchema.safeParse({ items: [], total: 0, next_cursor: 'abc' }).success).toBe(true);

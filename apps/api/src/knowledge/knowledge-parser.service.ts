@@ -33,7 +33,7 @@ const CHUNK_SIZE = 3000;
 export class KnowledgeParserService {
   constructor(
     @Inject(KNOWLEDGE_LLM_PROVIDER) private readonly llm: KnowledgeLlmProvider,
-    private readonly outline: KnowledgeOutlineService
+    @Inject(KnowledgeOutlineService) private readonly outline: KnowledgeOutlineService
   ) {}
 
   /**

@@ -179,6 +179,9 @@
 .context-body { display: flex; flex-direction: column; gap: var(--sp-3); }
 .workbench-dialog > .sf-btn { margin-bottom: var(--sp-3); }
 .panel-trigger { display: none; }
+/* 知识库抽屉为覆盖层 dialog，全宽度可用：顶栏「知识库」触发按钮需常驻可见，
+   覆盖 .panel-trigger 默认 display:none（T29 集成遗漏，T38 浏览器 E2E 捕获）。 */
+.panel-trigger.knowledge-trigger { display: inline-flex; }
 .workbench-dialog {
   width: min(88vw, 360px); height: 100dvh; max-height: none; padding: var(--sp-4);
   color: var(--text-primary); background: var(--bg-secondary); border: 0;

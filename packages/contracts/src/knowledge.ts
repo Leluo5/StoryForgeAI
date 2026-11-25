@@ -37,6 +37,15 @@ export const KNOWLEDGE_LINK_MAX = 50; // 关联列表上限
 
 // ───────────────────────────── 枚举（§3.2） ─────────────────────────────
 
+// 查询串布尔 coerce：?favorite=true / ?deleted=false 传的是字符串，
+// 需显式映射 "true"→true、"false"→false，避免 Boolean("false")===true 陷阱。
+// 布尔值原样透传，其余（含 undefined）交给内层 schema 判定。
+const coerceQueryBoolean = (value: unknown) => {
+  if (value === 'true') return true;
+  if (value === 'false') return false;
+  return value;
+};
+
 // 库作用域：全局库 / 作品库
 export const knowledgeScopeSchema = z.enum(['global', 'work']);
 export type KnowledgeScope = z.infer<typeof knowledgeScopeSchema>;
@@ -326,9 +335,9 @@ export const knowledgeSearchQuerySchema = z
     time_field: knowledgeTimeFieldSchema.default('created_at'),
     time_from: timestamp.optional(),
     time_to: timestamp.optional(),
-    favorite: z.boolean().optional(),
-    pinned: z.boolean().optional(),
-    deleted: z.boolean().optional(),
+    favorite: z.preprocess(coerceQueryBoolean, z.boolean().optional()),
+    pinned: z.preprocess(coerceQueryBoolean, z.boolean().optional()),
+    deleted: z.preprocess(coerceQueryBoolean, z.boolean().optional()),
     cursor: z.string().optional(),
     limit: z.coerce.number().int().min(1).max(100).default(50)
   })

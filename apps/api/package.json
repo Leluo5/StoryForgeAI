@@ -12,7 +12,8 @@
     "start:prod": "node dist/main.js",
     "migration:run": "tsx src/database/run-migrations.ts",
     "bootstrap:author": "tsx src/auth/bootstrap-author.ts",
-    "test:prepare": "tsx test/prepare-e2e.ts"
+    "test:prepare": "tsx test/prepare-e2e.ts",
+    "bench": "tsx bench/knowledge.bench.ts"
   },
   "dependencies": {
     "@nestjs/common": "^11.2.10",

@@ -3,8 +3,8 @@
 // 职责：进程内事件广播 + 断线重放（Last-Event-ID / after_seq）+ 终态关闭 + 404。
 // 流式心跳与超时重连由 controller 层（T24）提供 Express 实现；本文件提供可测核心。
 import { EventEmitter } from 'node:events';
-import { Injectable, NotFoundException } from '@nestjs/common';
-import type { DataSource } from 'typeorm';
+import { Inject, Injectable, NotFoundException } from '@nestjs/common';
+import { DataSource } from 'typeorm';
 import { KnowledgeJobEventEntity } from '../database/knowledge-job-event.entity';
 import { KnowledgeJobEntity } from '../database/knowledge-job.entity';
 
@@ -53,8 +53,8 @@ const TERMINAL_STATUSES = new Set(['succeeded', 'failed', 'cancelled']);
 @Injectable()
 export class KnowledgeJobSseService {
   constructor(
-    private readonly dataSource: DataSource,
-    private readonly bus: KnowledgeJobEventBus
+    @Inject(DataSource) private readonly dataSource: DataSource,
+    @Inject(KnowledgeJobEventBus) private readonly bus: KnowledgeJobEventBus
   ) {}
 
   async getJob(jobId: string): Promise<KnowledgeJobEntity> {
@@ -72,13 +72,24 @@ export class KnowledgeJobSseService {
       .getRepository(KnowledgeJobEventEntity)
       .find({ where: { job_id: jobId }, order: { event_seq: 'ASC' } });
     const after = events.filter((e) => e.event_seq > afterSeq);
+    const replayEvents: JobEventView[] = after.map((e) => ({
+      seq: e.event_seq,
+      type: e.type,
+      payload: (e.payload as Record<string, unknown>) ?? {},
+      at: e.created_at.toISOString()
+    }));
+    // 同步终态作业（导出/备份/恢复提交）在请求内直接置 succeeded，可能未写 job_events 行；
+    // 若终态且无任何可重放事件，合成一帧终态事件，保证 SSE 客户端可观测到终态并关闭。
+    if (replayEvents.length === 0 && TERMINAL_STATUSES.has(job.status)) {
+      replayEvents.push({
+        seq: Math.max(job.event_seq ?? 0, afterSeq + 1),
+        type: job.status,
+        payload: (job.result as Record<string, unknown>) ?? {},
+        at: job.created_at.toISOString()
+      });
+    }
     return {
-      events: after.map((e) => ({
-        seq: e.event_seq,
-        type: e.type,
-        payload: (e.payload as Record<string, unknown>) ?? {},
-        at: e.created_at.toISOString()
-      })),
+      events: replayEvents,
       terminal: TERMINAL_STATUSES.has(job.status),
       status: job.status
     };

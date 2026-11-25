@@ -40,6 +40,7 @@ function req(overrides: Partial<AuthenticatedRequest> = {}): AuthenticatedReques
 function jobEntity(overrides: Record<string, unknown> = {}) {
   return {
     id: JOB_ID,
+    owner_id: AUTHOR_ID,
     kind: 'structure',
     status: 'queued',
     library_scope: 'global',
@@ -189,6 +190,11 @@ describe('KnowledgeJobsController · T24 作业列表/详情', () => {
     jobs.getJob.mockRejectedValue(
       new NotFoundException({ code: 'KNOWLEDGE_JOB_NOT_FOUND', message: '作业不存在' })
     );
+    await expect(controller.getJob(req(), JOB_ID)).rejects.toThrow(NotFoundException);
+  });
+
+  it('getJob：非本人作业 → 404（归属隔离，不泄露存在性）', async () => {
+    jobs.getJob.mockResolvedValue(jobEntity({ owner_id: randomUUID() }));
     await expect(controller.getJob(req(), JOB_ID)).rejects.toThrow(NotFoundException);
   });
 });

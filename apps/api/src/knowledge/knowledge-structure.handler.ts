@@ -51,8 +51,8 @@ export interface StructureHandlerInput {
 @Injectable()
 export class KnowledgeStructureHandler {
   constructor(
-    private readonly dataSource: DataSource,
-    private readonly jobService: KnowledgeJobService,
+    @Inject(DataSource) private readonly dataSource: DataSource,
+    @Inject(KnowledgeJobService) private readonly jobService: KnowledgeJobService,
     @Inject(KNOWLEDGE_STRUCTURE_PROVIDER)
     private readonly structureProvider: KnowledgeStructureProvider,
     @Inject(KNOWLEDGE_EMBEDDING_PROVIDER)

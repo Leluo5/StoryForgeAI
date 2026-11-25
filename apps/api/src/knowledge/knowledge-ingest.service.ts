@@ -52,7 +52,7 @@ export interface UploadOptions {
 export class KnowledgeIngestService {
   constructor(
     @Inject(DataSource) private readonly dataSource: DataSource,
-    private readonly jobService: KnowledgeJobService
+    @Inject(KnowledgeJobService) private readonly jobService: KnowledgeJobService
   ) {}
 
   // ═══════════════════════════════════════════════════════════════════

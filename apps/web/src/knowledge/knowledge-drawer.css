@@ -38,6 +38,12 @@ dialog.kb-drawer {
   dialog.kb-drawer { animation: none; }
 }
 
+/* 关闭态必须回归 display:none：作者规则 display:flex 会覆盖 UA 的 dialog:not([open]){display:none}，
+   导致 .close() 后抽屉仍渲染可见（T38 浏览器 E2E 捕获的真实缺陷）。 */
+dialog.kb-drawer:not([open]) {
+  display: none;
+}
+
 /* 窄视口降级为全屏浮层，避免挤压写作区 */
 @media (max-width: 720px) {
   dialog.kb-drawer { width: 100vw; border-right: 0; box-shadow: none; }
@@ -99,7 +105,7 @@ dialog.kb-drawer {
 
 .kb-drawer__tab[aria-selected='true'] {
   background: var(--bg-secondary);
-  color: var(--cyan-500);
+  color: #0e7490;
   font-weight: var(--fw-semibold);
   box-shadow: var(--shadow-sm);
 }
@@ -166,7 +172,7 @@ dialog.kb-drawer {
 .kb-drawer__chip[aria-pressed='true'] {
   border-color: var(--cyan-500);
   background: var(--info-100);
-  color: var(--cyan-500);
+  color: #0e7490;
   font-weight: var(--fw-semibold);
 }
 
@@ -179,7 +185,7 @@ dialog.kb-drawer {
   margin-left: auto;
   border: 0;
   background: transparent;
-  color: var(--cyan-500);
+  color: #0e7490;
   font: inherit;
   font-size: var(--fs-small);
   cursor: pointer;
@@ -324,7 +330,7 @@ dialog.kb-drawer {
   border: 1px solid var(--cyan-500);
   border-radius: var(--radius-sm);
   background: var(--bg-secondary);
-  color: var(--cyan-500);
+  color: #0e7490;
   font: inherit;
   font-size: var(--fs-small);
   cursor: pointer;
@@ -383,7 +389,7 @@ dialog.kb-drawer {
   border: 1px solid var(--cyan-500);
   border-radius: var(--radius-md);
   background: var(--info-100);
-  color: var(--cyan-500);
+  color: #0e7490;
   font-size: var(--fs-small);
   box-shadow: var(--shadow-sm);
   animation: kb-drawer-toast-in 180ms ease-out;
@@ -466,7 +472,7 @@ dialog.kb-drawer {
 .kb-drawer__outline-toggle {
   border: 0;
   background: transparent;
-  color: var(--cyan-500);
+  color: #0e7490;
   font: inherit;
   font-size: var(--fs-small);
   cursor: pointer;

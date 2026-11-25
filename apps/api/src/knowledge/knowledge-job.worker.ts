@@ -39,10 +39,10 @@ export class KnowledgeJobWorker {
 
   constructor(
     @Inject(DataSource) private readonly dataSource: DataSource,
-    private readonly jobService: KnowledgeJobService,
-    private readonly structureHandler: KnowledgeStructureHandler,
-    private readonly portabilityService: KnowledgePortabilityService,
-    private readonly backupService: KnowledgeBackupService
+    @Inject(KnowledgeJobService) private readonly jobService: KnowledgeJobService,
+    @Inject(KnowledgeStructureHandler) private readonly structureHandler: KnowledgeStructureHandler,
+    @Inject(KnowledgePortabilityService) private readonly portabilityService: KnowledgePortabilityService,
+    @Inject(KnowledgeBackupService) private readonly backupService: KnowledgeBackupService
   ) {}
 
   /** 创建消费该队列的 BullMQ Worker（main.ts 启动） */

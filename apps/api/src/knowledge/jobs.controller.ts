@@ -9,6 +9,7 @@ import {
   HttpCode,
   HttpStatus,
   Inject,
+  NotFoundException,
   Param,
   Query,
   Req,
@@ -76,6 +77,10 @@ export class KnowledgeJobsController {
     @Param('jobId') jobId: string
   ) {
     const entity = await this.jobs.getJob(jobId);
+    // 归属校验：非本人作业一律 404（避免泄露存在性），与 SSE / 下载端点保持一致
+    if (entity.owner_id !== request.author.id) {
+      throw new NotFoundException({ code: 'KNOWLEDGE_JOB_NOT_FOUND', message: '作业不存在' });
+    }
     return ok(request, this.toJobView(entity));
   }
 
