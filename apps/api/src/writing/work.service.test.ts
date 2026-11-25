@@ -18,6 +18,9 @@ describe('WorkService', () => {
   it('creates a work, default volume and empty first chapter atomically', async () => {
     const result = await service.create(fixture.authorId, { title: '新书', description: '' });
     expect(result.work.title).toBe('新书');
+    // F2 尾巴：默认公开且无访问码
+    expect(result.work.is_public).toBe(true);
+    expect(result.work.access_code).toBe('');
     const chapter = await fixture.dataSource.getRepository(ChapterEntity).findOneByOrFail({
       id: result.first_chapter_id
     });
@@ -25,6 +28,19 @@ describe('WorkService', () => {
     expect(chapter.content_hash).toBe(
       createHash('sha256').update(canonicalizeContent(createEmptyDocument())).digest('hex')
     );
+  });
+
+  it('persists is_public and access_code on create and update', async () => {
+    const created = await service.create(fixture.authorId, {
+      title: '访问码作品', description: '', is_public: false, access_code: 'SUN-2026'
+    });
+    expect(created.work.is_public).toBe(false);
+    expect(created.work.access_code).toBe('SUN-2026');
+    const updated = await service.update(fixture.authorId, created.work.id, {
+      is_public: true, access_code: ''
+    });
+    expect(updated.is_public).toBe(true);
+    expect(updated.access_code).toBe('');
   });
 
   it('lists only the current author and applies a parameterized title search', async () => {

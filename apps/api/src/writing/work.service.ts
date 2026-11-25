@@ -17,6 +17,8 @@ export function toWork(work: WorkEntity, wordCount = 0): Work {
     description: work.description,
     status: work.status,
     word_count: wordCount,
+    is_public: work.is_public,
+    access_code: work.access_code,
     created_at: work.created_at.toISOString(),
     updated_at: work.updated_at.toISOString()
   };
@@ -47,7 +49,9 @@ export class WorkService {
         author_id: authorId,
         title: input.title,
         description: input.description,
-        status: 'active'
+        status: 'active',
+        is_public: input.is_public ?? true,
+        access_code: input.access_code ?? ''
       }));
       // M3c-2：作品创建时同事务写入 5 组 23 类默认关系类型（Q2 / A2）
       await seedCharacterRelationTypes(manager, work.id);
@@ -97,6 +101,8 @@ export class WorkService {
     if (input.title !== undefined) work.title = input.title;
     if (input.description !== undefined) work.description = input.description;
     if (input.status !== undefined) work.status = input.status;
+    if (input.is_public !== undefined) work.is_public = input.is_public;
+    if (input.access_code !== undefined) work.access_code = input.access_code;
     return toWork(await repository.save(work));
   }
 }
