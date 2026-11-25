@@ -17,5 +17,6 @@ export * from './knowledge';
 export * from './knowledge-job';
 export * from './knowledge-portability';
 export * from './site-config';
+export * from './chat-room';
 export * from './coze-import';
 export * from './experience';

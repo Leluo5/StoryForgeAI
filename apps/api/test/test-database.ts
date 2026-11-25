@@ -71,6 +71,9 @@ export async function dropWritingAndAuthTables(dataSource: DataSource): Promise<
   await dataSource.query('DROP TABLE IF EXISTS ai_models CASCADE');
   // 站点设置表（作者级：site_config→authors）
   await dataSource.query('DROP TABLE IF EXISTS site_config CASCADE');
+  // M4-T2 F6 聊天室表（先删引用表，按 FK 依赖倒序）
+  await dataSource.query('DROP TABLE IF EXISTS chat_room_events CASCADE');
+  await dataSource.query('DROP TABLE IF EXISTS chat_rooms CASCADE');
   // M3c 剧情表（先删引用表，按 FK 依赖倒序）
   await dataSource.query('DROP TABLE IF EXISTS plot_generation_drafts CASCADE');
   await dataSource.query('DROP TABLE IF EXISTS derivation_candidates CASCADE');
