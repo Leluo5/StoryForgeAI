@@ -25,6 +25,18 @@ const envSchema = z.object({
   COZE_API_BASE: z.preprocess((value) => value === '' ? undefined : value, z.string().url().optional()),
   COZE_PAT: z.preprocess((value) => value === '' ? undefined : value, z.string().min(1).optional()),
   COZE_BOT_ID: z.preprocess((value) => value === '' ? undefined : value, z.string().min(1).optional()),
+  // ── M3c-3 知识库真实模型（T14 · M3b 关联 D19 门禁）：LLM 回退链 + OpenAI 兼容嵌入 ──
+  // 凭据缺失时模块层自动回退 Mock（CI/本地不炸）；生产配置后走真实模型。
+  // LLM 回退链：coze → openai → mock；provider=coze 强制 Coze，openai 强制 OpenAI，auto 自动回退。
+  KNOWLEDGE_LLM_PROVIDER: z.preprocess(
+    (value) => value === '' ? undefined : value,
+    z.enum(['coze', 'openai', 'auto']).default('auto')
+  ),
+  KNOWLEDGE_OPENAI_BASE_URL: z.preprocess((value) => value === '' ? undefined : value, z.string().url().optional()),
+  KNOWLEDGE_OPENAI_API_KEY: z.preprocess((value) => value === '' ? undefined : value, z.string().min(1).optional()),
+  KNOWLEDGE_OPENAI_MODEL: z.preprocess((value) => value === '' ? undefined : value, z.string().min(1).optional()),
+  KNOWLEDGE_OPENAI_EMBED_MODEL: z.preprocess((value) => value === '' ? undefined : value, z.string().min(1).optional()),
+  KNOWLEDGE_OPENAI_EMBED_DIM: z.coerce.number().int().positive().max(8192).default(1024),
   N8N_ARCHIVE_WEBHOOK_URL: z.preprocess((value) => value === '' ? undefined : value, z.string().url().optional()),
   N8N_ARCHIVE_TOKEN: z.preprocess((value) => value === '' ? undefined : value, z.string().min(1).optional()),
   COLLAB_HTTP_TIMEOUT_MS: z.coerce.number().int().positive().default(120_000),

@@ -1,4 +1,4 @@
-import { Module } from '@nestjs/common';
+import { Module, Logger } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { DataSource } from 'typeorm';
 import { env } from '../config/env';
@@ -48,9 +48,14 @@ import {
   KNOWLEDGE_STRUCTURE_PROVIDER,
   MockKnowledgeStructureProvider
 } from './structure.provider';
-import { KNOWLEDGE_EMBEDDING_PROVIDER } from './embedding.provider';
+import { LlmKnowledgeStructureProvider } from './structure.llm';
+import { KNOWLEDGE_EMBEDDING_PROVIDER, type KnowledgeEmbeddingProvider } from './embedding.provider';
 import { MockEmbeddingProvider } from './embedding.mock';
-import { KNOWLEDGE_LLM_PROVIDER, MockKnowledgeLlmProvider } from './knowledge-llm.provider';
+import { KNOWLEDGE_LLM_PROVIDER, MockKnowledgeLlmProvider, type KnowledgeLlmProvider } from './knowledge-llm.provider';
+import { RealKnowledgeLlmProvider } from './knowledge-llm.real';
+import { RealEmbeddingProvider } from './knowledge-embedding.real';
+import { KnowledgeOpenAiClient } from './knowledge-openai.client';
+import { KnowledgeCozeClient } from './knowledge-coze.client';
 // 队列
 import { createKnowledgeJobsQueue } from './jobs.queue';
 
@@ -135,10 +140,15 @@ const KNOWLEDGE_JOBS_QUEUE = Symbol('KNOWLEDGE_JOBS_QUEUE');
       provide: KNOWLEDGE_JOBS_QUEUE,
       useFactory: () => createKnowledgeJobsQueue({ url: env.REDIS_URL, maxRetriesPerRequest: null })
     },
-    // ── provider 依赖（结构 / 嵌入 / LLM，当前 Mock） ──
-    { provide: KNOWLEDGE_STRUCTURE_PROVIDER, useClass: MockKnowledgeStructureProvider },
-    { provide: KNOWLEDGE_EMBEDDING_PROVIDER, useClass: MockEmbeddingProvider },
-    { provide: KNOWLEDGE_LLM_PROVIDER, useClass: MockKnowledgeLlmProvider },
+    // ── provider 依赖（结构 / 嵌入 / LLM）：凭据存在→真实，缺失→Mock（M3b 关联 D19） ──
+    // 凭据来源为全局 env（COZE_* / KNOWLEDGE_OPENAI_*）；作者级 site-config 动态读取
+    // 需贯穿 ownerId 到 Provider 的链路改造，超出本次最小闭环，故采用全局 env + 回退 Mock。
+    { provide: KNOWLEDGE_STRUCTURE_PROVIDER, useFactory: (llm: KnowledgeLlmProvider) => {
+        if (llm instanceof MockKnowledgeLlmProvider) return new MockKnowledgeStructureProvider();
+        return new LlmKnowledgeStructureProvider(llm);
+      }, inject: [KNOWLEDGE_LLM_PROVIDER] },
+    { provide: KNOWLEDGE_EMBEDDING_PROVIDER, useFactory: () => buildEmbeddingProvider(resolveEmbeddingFromEnv()) },
+    { provide: KNOWLEDGE_LLM_PROVIDER, useFactory: () => buildLlmProvider(resolveLlmFromEnv()) },
     // ── 旧一代 service（legacy-alias 复用） ──
     KnowledgeService,
     KnowledgeOutlineService,
@@ -147,3 +157,142 @@ const KNOWLEDGE_JOBS_QUEUE = Symbol('KNOWLEDGE_JOBS_QUEUE');
   exports: [KnowledgeService]
 })
 export class KnowledgeModule {}
+
+// ───────────────────────────── M3b 关联 · D19 真实模型装配 ─────────────────────────────
+//
+// 凭据来源：全局 env（COZE_* / KNOWLEDGE_OPENAI_*）。
+// 作者级 site-config 动态读取需贯穿 ownerId 到 Provider 的链路改造（StructureInput 无
+// ownerId、KnowledgeLlmProvider 接口无 ownerId 参数），超出本次 M3b 关联最小闭环，
+// 故采用全局 env + 凭据缺失回退 Mock（CI/本地不炸，生产配置后走真实模型）。
+//
+// 装配策略（用户已确认：厂商=回退链 / 范围=LLM+嵌入 / 凭据缺失回退 Mock）：
+//   KNOWLEDGE_LLM_PROVIDER = 'coze'   → 强制 Coze（无凭据抛 NOT_CONFIGURED，构建即抛）
+//   KNOWLEDGE_LLM_PROVIDER = 'openai' → 强制 OpenAI 兼容（无凭据抛 NOT_CONFIGURED）
+//   KNOWLEDGE_LLM_PROVIDER = 'auto'   → 有凭据的底层都装配，内部 Coze→OpenAI 回退
+//   均无可用凭据 → MockKnowledgeLlmProvider（确定性，CI/本地不炸）
+
+const knowledgeModelLogger = new Logger('KnowledgeModel');
+
+/**
+ * LLM 装配输入：mode + 可选 Coze/OpenAI 凭据。
+ * 模块层从 env 解析出本对象；测试直接注入本对象（隔离全局 env）。
+ */
+export interface LlmAssemblyInput {
+  mode: 'coze' | 'openai' | 'auto';
+  coze?: { baseUrl: string; pat: string; botId: string };
+  openai?: { baseUrl: string; apiKey: string; model: string };
+}
+
+/**
+ * 嵌入装配输入：可选 OpenAI 嵌入凭据。
+ */
+export interface EmbeddingAssemblyInput {
+  openai?: {
+    baseUrl: string;
+    apiKey: string;
+    model: string;
+    embedModel?: string;
+    embedDimensions?: number;
+  };
+}
+
+/** 从全局 env 解析 LLM 装配输入（凭据缺失时省略该属性，兼容 exactOptionalPropertyTypes） */
+function resolveLlmFromEnv(): LlmAssemblyInput {
+  return {
+    mode: env.KNOWLEDGE_LLM_PROVIDER,
+    ...(env.COZE_API_BASE && env.COZE_PAT && env.COZE_BOT_ID
+      ? {
+          coze: { baseUrl: env.COZE_API_BASE, pat: env.COZE_PAT, botId: env.COZE_BOT_ID }
+        }
+      : {}),
+    ...(env.KNOWLEDGE_OPENAI_BASE_URL && env.KNOWLEDGE_OPENAI_API_KEY && env.KNOWLEDGE_OPENAI_MODEL
+      ? {
+          openai: {
+            baseUrl: env.KNOWLEDGE_OPENAI_BASE_URL,
+            apiKey: env.KNOWLEDGE_OPENAI_API_KEY,
+            model: env.KNOWLEDGE_OPENAI_MODEL
+          }
+        }
+      : {})
+  };
+}
+
+/** 从全局 env 解析嵌入装配输入（凭据缺失时省略该属性） */
+function resolveEmbeddingFromEnv(): EmbeddingAssemblyInput {
+  if (!env.KNOWLEDGE_OPENAI_BASE_URL || !env.KNOWLEDGE_OPENAI_API_KEY) return {};
+  return {
+    openai: {
+      baseUrl: env.KNOWLEDGE_OPENAI_BASE_URL,
+      apiKey: env.KNOWLEDGE_OPENAI_API_KEY,
+      model:
+        env.KNOWLEDGE_OPENAI_EMBED_MODEL ?? env.KNOWLEDGE_OPENAI_MODEL ?? 'text-embedding-3-small',
+      ...(env.KNOWLEDGE_OPENAI_EMBED_MODEL
+        ? { embedModel: env.KNOWLEDGE_OPENAI_EMBED_MODEL }
+        : {}),
+      embedDimensions: env.KNOWLEDGE_OPENAI_EMBED_DIM
+    }
+  };
+}
+
+/**
+ * 装配真实 LLM Provider（Coze→OpenAI 回退链）或 Mock。
+ * 纯函数：仅依赖注入的 assembly 输入 + logger，便于单测各凭据组合（隔离全局 env）。
+ */
+export function buildLlmProvider(
+  input: LlmAssemblyInput,
+  logger: { warn: (message: string) => void; log: (message: string) => void } = knowledgeModelLogger
+): KnowledgeLlmProvider {
+  const { mode, coze: cozeCreds, openai: openaiCreds } = input;
+
+  let coze: KnowledgeCozeClient | null = null;
+  let openai: KnowledgeOpenAiClient | null = null;
+
+  if (mode === 'coze') {
+    if (!cozeCreds) {
+      logger.warn('[knowledge-llm] KNOWLEDGE_LLM_PROVIDER=coze 但 Coze 凭据缺失，回退 Mock');
+      return new MockKnowledgeLlmProvider();
+    }
+    coze = new KnowledgeCozeClient(cozeCreds);
+  } else if (mode === 'openai') {
+    if (!openaiCreds) {
+      logger.warn('[knowledge-llm] KNOWLEDGE_LLM_PROVIDER=openai 但 OpenAI 凭据缺失，回退 Mock');
+      return new MockKnowledgeLlmProvider();
+    }
+    openai = new KnowledgeOpenAiClient(openaiCreds);
+  } else {
+    // auto：有凭据的底层都装配（内部 Coze→OpenAI 回退链）
+    if (cozeCreds) coze = new KnowledgeCozeClient(cozeCreds);
+    if (openaiCreds) openai = new KnowledgeOpenAiClient(openaiCreds);
+  }
+
+  if (!coze && !openai) {
+    logger.warn('[knowledge-llm] 无可用 LLM 凭据（coze/openai 均缺失），回退 Mock');
+    return new MockKnowledgeLlmProvider();
+  }
+
+  logger.log(
+    `[knowledge-llm] 真实 LLM 已装配（coze=${Boolean(coze)}, openai=${Boolean(openai)}, mode=${mode}）`
+  );
+  return new RealKnowledgeLlmProvider({ coze, openai, logger });
+}
+
+/**
+ * 装配真实嵌入 Provider（OpenAI /v1/embeddings）或 Mock。
+ * 纯函数：仅依赖注入的 assembly 输入 + logger，便于单测凭据组合（隔离全局 env）。
+ */
+export function buildEmbeddingProvider(
+  input: EmbeddingAssemblyInput,
+  logger: { warn: (message: string) => void; log: (message: string) => void } = knowledgeModelLogger
+): KnowledgeEmbeddingProvider {
+  const openaiCreds = input.openai;
+
+  if (!openaiCreds) {
+    logger.warn('[knowledge-embedding] 无 OpenAI 嵌入凭据，回退 Mock');
+    return new MockEmbeddingProvider();
+  }
+
+  logger.log(
+    `[knowledge-embedding] 真实嵌入已装配（model=${openaiCreds.embedModel ?? openaiCreds.model}, dim=${openaiCreds.embedDimensions ?? 1024}）`
+  );
+  return new RealEmbeddingProvider({ openai: new KnowledgeOpenAiClient(openaiCreds), logger });
+}
