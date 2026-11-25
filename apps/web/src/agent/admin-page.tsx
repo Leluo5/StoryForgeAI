@@ -4,6 +4,7 @@ import type {
   UpdateSiteConfigRequest
 } from '@storyforge/contracts';
 import { getSiteConfig, updateSiteConfig } from './site-config-client';
+import { CozeImportPanel } from './coze-import-panel';
 import './admin-page.css';
 
 interface CredentialsFields {
@@ -362,6 +363,8 @@ export function AdminPage(): JSX.Element {
               />
             </div>
           </section>
+
+          <CozeImportPanel defaultPat={credentials.cozePat} />
 
           <div className="admin-page__actions">
             <button

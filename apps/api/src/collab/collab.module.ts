@@ -7,9 +7,11 @@ import { WorkEntity } from '../database/work.entity';
 import { RoleProfileWritebackEntity } from '../database/role-profile-writeback.entity';
 import { RoleProfileWritebackFieldEntity } from '../database/role-profile-writeback-field.entity';
 import { AgentArchiveOutboxEntity } from '../database/agent-archive-outbox.entity';
+import { KnowledgeEntryEntity } from '../database/knowledge-entry.entity';
 import { AuthModule } from '../auth/auth.module';
 import { AiTaskModule } from '../ai/ai-task.module';
 import { SiteConfigModule } from '../site-config/site-config.module';
+import { AgentModule } from '../agent/agent.module';
 import { CollabService } from './collab.service';
 import { CollabReadinessService } from './collab-readiness.service';
 import { CollabController } from './collab.controller';
@@ -27,6 +29,9 @@ import { CollabArchiveQueue } from './collab-archive.queue';
 import { CollabArchiveProcessor } from './collab-archive.processor';
 import { COLLAB_WRITEBACK_PORT } from './collab-writeback.port';
 import { AuditService } from '../revision/audit.service';
+import { CozeImportClient } from './coze-import.client';
+import { CozeImportService } from './coze-import.service';
+import { CozeImportController } from './coze-import.controller';
 
 /**
  * 通道装配：把 Flowise / Coze 实现注册进 AgentChannelRegistry。
@@ -60,11 +65,13 @@ export class CollabChannelBootstrap implements OnModuleInit {
       WorkEntity,
       RoleProfileWritebackEntity,
       RoleProfileWritebackFieldEntity,
-      AgentArchiveOutboxEntity
+      AgentArchiveOutboxEntity,
+      KnowledgeEntryEntity
     ]),
     AuthModule,
     forwardRef(() => AiTaskModule),
-    SiteConfigModule
+    SiteConfigModule,
+    AgentModule
   ],
   providers: [
     CollabService,
@@ -81,9 +88,11 @@ export class CollabChannelBootstrap implements OnModuleInit {
     CollabArchiveQueue,
     CollabArchiveProcessor,
     AuditService,
+    CozeImportClient,
+    CozeImportService,
     { provide: COLLAB_WRITEBACK_PORT, useClass: CollabWritebackService }
   ],
-  controllers: [CollabController, CollabTaskController],
+  controllers: [CollabController, CollabTaskController, CozeImportController],
   exports: [CollabService, CollabTaskService, AgentChannelRegistry, FastGptClient, CollabTaskHandler, CollabArchiveService, CollabArchiveQueue]
 })
 export class CollabModule {}

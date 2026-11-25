@@ -82,6 +82,7 @@ import { KnowledgeVector1760600001000 } from './migrations/1760600001000-knowled
 import { WorkAccessCode1760800000000 } from './migrations/1760800000000-work-access-code';
 import { WorkCozeBindings1760900000000 } from './migrations/1760900000000-work-coze-bindings';
 import { SiteConfig1761000000000 } from './migrations/1761000000000-site-config';
+import { CozeImportOrigin1761100000000 } from './migrations/1761100000000-coze-import-origin';
 
 export function createDataSource(databaseUrl: string = env.DATABASE_URL): DataSource {
   return new DataSource({
@@ -170,7 +171,8 @@ export function createDataSource(databaseUrl: string = env.DATABASE_URL): DataSo
       KnowledgeVector1760600001000,
       WorkAccessCode1760800000000,
       WorkCozeBindings1760900000000,
-      SiteConfig1761000000000
+      SiteConfig1761000000000,
+      CozeImportOrigin1761100000000
     ],
     migrationsTableName: 'migrations',
     synchronize: false,

@@ -65,7 +65,10 @@ describe('AdminPage', () => {
     expect(screen.getByDisplayValue('https://llm.example.com')).toBeVisible();
     expect(screen.getByDisplayValue('sk-test')).toBeVisible();
     expect(screen.getByDisplayValue('gpt-4o-mini')).toBeVisible();
-    expect(screen.getByDisplayValue('pat_123')).toBeVisible();
+    // Coze 导入面板复用站点设置的 PAT（defaultPat 预填），故同一值出现在两个输入框
+    const patInputs = screen.getAllByDisplayValue('pat_123');
+    expect(patInputs.length).toBeGreaterThan(0);
+    patInputs.forEach((el) => expect(el).toBeVisible());
     expect(screen.getByDisplayValue('ds-1')).toBeVisible();
   });
 

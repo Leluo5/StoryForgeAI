@@ -105,6 +105,12 @@
   resize: vertical;
 }
 
+.admin-field__error {
+  margin: var(--sp-2, 8px) 0 0;
+  font: var(--fw-regular, 400) var(--fs-body, 14px) / 1.6 var(--font-sans, sans-serif);
+  color: var(--danger, #dc2626);
+}
+
 .admin-field__options {
   display: flex;
   gap: var(--sp-4, 16px);
@@ -120,6 +126,9 @@
 
 .admin-page__actions {
   margin-top: var(--sp-5, 24px);
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--sp-2, 8px);
 }
 
 .admin-page__save {
@@ -135,6 +144,88 @@
 .admin-page__save:disabled {
   opacity: 0.6;
   cursor: not-allowed;
+}
+
+/* ── Coze 导入面板（F1）── */
+
+.coze-import-list {
+  list-style: none;
+  margin: var(--sp-3, 12px) 0 0;
+  padding: 0;
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-md, 8px);
+  overflow: hidden;
+}
+
+.coze-import-item {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-1, 4px);
+  padding: var(--sp-2, 8px) var(--sp-3, 12px);
+  border-bottom: 1px solid var(--border-color);
+}
+
+.coze-import-item:last-child {
+  border-bottom: none;
+}
+
+.coze-import-item__label {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-2, 8px);
+  font: var(--fw-regular, 400) var(--fs-body, 14px) / 1.5 var(--font-sans, sans-serif);
+  color: var(--text-primary, #1a1a2e);
+  cursor: pointer;
+}
+
+.coze-import-item__type {
+  padding: 2px var(--sp-2, 8px);
+  border-radius: var(--radius-sm, 4px);
+  font: var(--fw-semibold, 600) 12px / 1.4 var(--font-sans, sans-serif);
+}
+
+.coze-import-item__type--bot {
+  background: rgba(79, 70, 229, 0.12);
+  color: var(--accent, #4f46e5);
+}
+
+.coze-import-item__type--dataset {
+  background: rgba(22, 163, 74, 0.12);
+  color: var(--success, #16a34a);
+}
+
+.coze-import-item__name {
+  font: var(--fw-regular, 400) var(--fs-body, 14px) / 1.5 var(--font-sans, sans-serif);
+  color: var(--text-primary, #1a1a2e);
+}
+
+.coze-import-item__desc {
+  font: var(--fw-regular, 400) 12px / 1.5 var(--font-sans, sans-serif);
+  color: var(--text-secondary, #475569);
+  margin-left: calc(var(--sp-2, 8px) + 12px);
+}
+
+.coze-import-result {
+  list-style: none;
+  margin: var(--sp-3, 12px) 0 0;
+  padding: 0;
+}
+
+.coze-import-result__item {
+  display: flex;
+  justify-content: space-between;
+  gap: var(--sp-2, 8px);
+  padding: var(--sp-1, 4px) 0;
+  font: var(--fw-regular, 400) var(--fs-body, 14px) / 1.5 var(--font-sans, sans-serif);
+  color: var(--text-secondary, #475569);
+}
+
+.coze-import-result__item.is-success {
+  color: var(--success, #16a34a);
+}
+
+.coze-import-result__item.is-error {
+  color: var(--danger, #dc2626);
 }
 
 @media (max-width: 767px) {
