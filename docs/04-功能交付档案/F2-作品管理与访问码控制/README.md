@@ -25,4 +25,5 @@
 
 - **功能名**：作品管理与访问码控制
 - **核心目标**：管理员管理作品（增删改查）、为作品配置访问码，体验者凭码体验。
-- **涉及代码**：`work_manager.py`、`app.py`（见 02-技术方案.md）。
+- **涉及代码**：`apps/api/src/writing/work.{controller,service}.ts`、`apps/api/src/database/work.entity.ts`、`apps/web/src/works/works-page.tsx`、`packages/contracts/src/works.ts`（见 02-技术方案.md）。
+- **2026-11-25 新架构迁移**：实现由 Python（`work_manager.py`/`app.py`）迁移至 TS 新架构，作品与访问码存 PostgreSQL（WorkEntity），管理走 `/works`（SessionGuard），体验走 `/experience/works`（公开），迁移提交 `1d3064e`。旧实现记录见 01/02/03 分册「新架构迁移说明」。
