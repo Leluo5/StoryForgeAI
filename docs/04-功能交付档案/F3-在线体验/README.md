@@ -25,7 +25,7 @@
 
 - **功能名**：在线体验
 - **核心目标**：体验者在页面直接与 Coze 作品交互（对话/表单/混合），支持流式输出与文件上传。
-- **涉及代码**：`app.py`（SSE 代理）、`coze_client.py`、`static/js/app.js`（见 02-技术方案.md）。
+- **涉及代码**：`apps/api/src/writing/experience.{controller,service}.ts`、`apps/web/src/experience/experience-{client,page}.tsx`、`packages/contracts/src/experience.ts`（见 02-技术方案.md）。
 
 ## 五、校准记录（2026-11-21）
 
@@ -47,3 +47,13 @@ R1–R9 全部完成，`tests/test_app.py` 72 用例全绿，`pnpm run ci` 通�
 - 发送按钮在流式期间切换为“停止生成”，支持响应前和生成中取消；保留已生成内容，不显示主动取消错误。
 - 防复发测试：Python 相关回归 113 passed，真实 JS DOM 交互测试 3 passed。
 - 完整 CI 仍被既有 NestJS PostgreSQL 测试环境故障阻塞，未记为全绿。详见 [BUG-2026-122-01 修复报告](../../BUG修复文档/BUG-2026-122-01-多轮上下文记忆与停止生成修复报告.md)。
+
+## 八、新架构迁移说明（2026-11-25）
+
+- 实现由 Python Flask（`app.py`/`coze_client.py`/`static/js/app.js`）迁移至 TS 新架构，落点为 PostgreSQL（WorkEntity 访问码字段）+ Coze API，迁移提交 `1d3064e`。
+- 公开 API：`GET/POST /experience/works`、`/experience/works/:id`、`/experience/works/:id/verify`、`/experience/works/:id/chat`（SSE）。原 `/workflow/run`、`/execute`、`/upload` 由新架构对应控制器承载。
+- 契约：`packages/contracts/src/experience.ts`（publicWork / verifyAccess / chatEvent 的 Zod schema）。
+- 鉴权：公开无登录；设访问码的作品需 `X-Access-Token`（verify 颁发签名 token）。
+- 交互：体验聊天 SSE 事件统一 `delta/done/error`；`interaction_type` 元信息供前端渲染对话/表单/混合。
+- 前端：`experience-page.tsx` + `experience-client.ts`（对应旧 `app.js`）。
+- 详细差异见 01/02/03 分册「新架构迁移说明」。
