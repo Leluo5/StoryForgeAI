@@ -142,7 +142,6 @@ describe('agent management endpoints (real PostgreSQL) · M4-T4', () => {
         status: 'active',
         is_default: false,
         version_no: 1,
-        versions: [],
         archived_at: null,
         ...overrides
       })
@@ -281,7 +280,6 @@ describe('agent management endpoints (real PostgreSQL) · M4-T4', () => {
         status: 'active',
         is_default: false,
         version_no: 1,
-        versions: [],
         archived_at: null
       })
     );

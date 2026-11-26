@@ -190,7 +190,12 @@ export class AgentService {
       if (input.project_id !== undefined) agent.project_id = input.project_id;
       // 若设为默认或作者首个 Agent，清掉其他默认
       if (agent.is_default) await this.clearOtherDefaults(manager, authorId);
+      agent.version_no = 1;
       await manager.save(agent);
+      // 初始版本快照（独立表，事务内；与 V2 创建保持一致）
+      await this.versionService.appendVersion(
+        agent.id, 1, 'create', '创建 Agent', this.versionService.buildSnapshot(agent), manager
+      );
       await this.auditService.record(authorId, 'agent_create', 'ai_agent', agent.id, {
         name: agent.name,
         platform: agent.platform
@@ -369,17 +374,17 @@ export class AgentService {
       agent.status = 'active';
       agent.is_default = input.is_default ?? false;
       agent.version_no = 1;
-      agent.versions = [];
       agent.archived_at = null;
 
       if (agent.is_default && agent.project_id) {
         await this.clearOtherDefaultsV2(manager, authorId, agent.project_id, agent.kind);
       }
 
-      // 初始版本快照
-      this.versionService.snapshot(agent, 'create', '创建 Agent');
-
       await manager.save(agent);
+      // 初始版本快照（独立表，事务内）
+      await this.versionService.appendVersion(
+        agent.id, 1, 'create', '创建 Agent', this.versionService.buildSnapshot(agent), manager
+      );
       await this.auditService.record(authorId, 'agent_create_v2', 'ai_agent', agent.id, {
         kind: agent.kind,
         project_id: agent.project_id,
@@ -444,12 +449,8 @@ export class AgentService {
       .findOneBy({ id: agentId, author_id: authorId });
     if (!agent) throw new NotFoundException('Agent not found');
 
-    if (!includeVersions) {
-      // 返回前克隆并剥掉 versions 数组
-      const { versions, ...rest } = agent as unknown as { versions: unknown[]; [k: string]: unknown };
-      void versions; // 静默未使用
-      return rest as unknown as AgentEntity;
-    }
+    // versions 已迁移至独立表（agent_version），getAgentV2 不再剥离
+    void includeVersions;
     return agent;
   }
 
@@ -498,9 +499,14 @@ export class AgentService {
         agent.manual_group_key = input.manual_group_key;
       }
 
-      // 版本快照 + 审计
-      this.versionService.snapshot(agent, 'update', `更新字段: ${Object.keys(input).join(',')}`);
+      // 版本快照：自增 version_no + save + 插独立表行（事务内）
+      agent.version_no += 1;
       await manager.save(agent);
+      await this.versionService.appendVersion(
+        agent.id, agent.version_no, 'update',
+        `更新字段: ${Object.keys(input).join(',')}`,
+        this.versionService.buildSnapshot(agent), manager
+      );
       await this.auditService.record(authorId, 'agent_update_v2', 'ai_agent', agent.id, {
         fields: Object.keys(input)
       });
@@ -524,8 +530,11 @@ export class AgentService {
 
       agent.status = 'archived';
       agent.archived_at = new Date();
-      this.versionService.snapshot(agent, 'archive', '归档 Agent');
+      agent.version_no += 1;
       await manager.save(agent);
+      await this.versionService.appendVersion(
+        agent.id, agent.version_no, 'archive', '归档 Agent', this.versionService.buildSnapshot(agent), manager
+      );
       await this.auditService.record(authorId, 'agent_archive', 'ai_agent', agent.id, {
         name: agent.name
       });
@@ -549,8 +558,11 @@ export class AgentService {
 
       agent.status = 'active';
       agent.archived_at = null;
-      this.versionService.snapshot(agent, 'restore', '恢复 Agent');
+      agent.version_no += 1;
       await manager.save(agent);
+      await this.versionService.appendVersion(
+        agent.id, agent.version_no, 'restore', '恢复 Agent', this.versionService.buildSnapshot(agent), manager
+      );
       await this.auditService.record(authorId, 'agent_restore', 'ai_agent', agent.id, {
         name: agent.name
       });
@@ -613,7 +625,7 @@ export class AgentService {
       .findOneBy({ id: agentId, author_id: authorId });
     if (!agent) throw new NotFoundException('Agent not found');
 
-    return this.versionService.summarize(agent);
+    return this.versionService.listVersions(agentId);
   }
 
   /**
@@ -625,9 +637,28 @@ export class AgentService {
       const agent = await repo.findOneBy({ id: agentId, author_id: authorId });
       if (!agent) throw new NotFoundException('Agent not found');
 
-      // 版本回滚
-      this.versionService.rollback(agent, versionNo);
+      // 读取目标版本快照（独立表，复用外层事务保证一致性）
+      const snap = await this.versionService.getSnapshot(agentId, versionNo, manager);
+      if (!snap) {
+        throw new NotFoundException(`版本 ${versionNo} 不存在`);
+      }
+
+      // 用快照字段覆盖当前 agent（反向映射 Date 类型）
+      for (const [key, val] of Object.entries(snap)) {
+        if (key === 'created_at' || key === 'archived_at') {
+          (agent as unknown as Record<string, unknown>)[key] = val != null ? new Date(val as string) : null;
+        } else {
+          (agent as unknown as Record<string, unknown>)[key] = val;
+        }
+      }
+
+      // 回滚产生新版本（不覆盖当前），保留最近 MAX_VERSIONS
+      agent.version_no += 1;
       await manager.save(agent);
+      await this.versionService.appendVersion(
+        agent.id, agent.version_no, 'rollback', `回滚至 v${versionNo}`,
+        this.versionService.buildSnapshot(agent), manager
+      );
 
       await this.auditService.record(authorId, 'agent_rollback', 'ai_agent', agent.id, {
         target_version: versionNo,

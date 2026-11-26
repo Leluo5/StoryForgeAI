@@ -17,6 +17,7 @@ import { AgentProvisionService } from './agent-provision.service';
 import { FlowProgressEntity } from '../database/flow-progress.entity';
 import { AgentGroupOverrideEntity } from '../database/agent-group-override.entity';
 import { RoleAgentBindingEntity } from '../database/role-agent-binding.entity';
+import { AgentVersionEntity } from './agent-version.entity';
 
 /**
  * Agent 配置与管理模块（M3b-B5）。
@@ -32,7 +33,8 @@ import { RoleAgentBindingEntity } from '../database/role-agent-binding.entity';
       AuditLogEntity,
       FlowProgressEntity,
       AgentGroupOverrideEntity,
-      RoleAgentBindingEntity
+      RoleAgentBindingEntity,
+      AgentVersionEntity
     ]),
     AuthModule
   ],

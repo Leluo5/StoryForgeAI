@@ -1,14 +1,5 @@
 import { Column, CreateDateColumn, Entity, PrimaryGeneratedColumn, UpdateDateColumn } from 'typeorm';
 
-/** 版本快照：Agent 每次变更的完整字段快照（不含 versions 数组本身） */
-export interface AgentVersionSnapshot {
-  version_no: number;
-  change_type: 'create' | 'update' | 'archive' | 'restore' | 'rollback';
-  note: string;
-  created_at: string;
-  snapshot: Record<string, unknown>;
-}
-
 // AI 创作 Agent：作者为每个创作工具配置的执行者（模型 + 参数）
 // V2 升级：支持作品级三类 Agent（role_agent/tool_agent/flow_step_agent）+ 版本快照 + 分组 + 归档状态
 // 存量 Agent 自动标记 kind=legacy，status 保持 active/disabled（旧 CHECK 已升级为三值）
@@ -57,10 +48,8 @@ export class AgentEntity {
   @Column({ type: 'uuid', nullable: true }) manual_group_key?: string | null;
   // 凭据来源：global（作者全局）/ own（作品专用）
   @Column({ type: 'varchar', length: 16, default: 'global' }) credential_source!: string;
-  // 当前版本号（每次变更自增）
+  // 当前版本号（每次变更自增，指向 agent_version 表最新行）
   @Column({ type: 'int', default: 1 }) version_no!: number;
-  // 版本快照数组（MAX=50 硬截断，JSONB 存储）
-  @Column({ type: 'jsonb', default: [] }) versions!: AgentVersionSnapshot[];
   // 归档时间（status=archived 时写入，恢复时置 null）
   @Column({ type: 'timestamptz', nullable: true }) archived_at?: Date | null;
 }

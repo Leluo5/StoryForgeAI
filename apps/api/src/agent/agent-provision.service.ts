@@ -93,9 +93,15 @@ export class AgentProvisionService {
         // 作品级 flow_step_agent 每作品 11 个，不能作为作者默认，须置 false。
         agent.is_default = false;
         agent.version_no = 1;
-        agent.versions = [];
         await agentRepo.save(agent).catch((err) => {
           // 并发撞唯一约束 → 跳过
+          if (isUniqueViolation(err)) return;
+          throw err;
+        });
+        // 初始版本快照（save 成功才写，撞唯一约束跳过；复用外层事务 manager，避免 FK violation）
+        await this.versionService.appendVersion(
+          agent.id, 1, 'create', 'provision 创建', this.versionService.buildSnapshot(agent), manager
+        ).catch((err) => {
           if (isUniqueViolation(err)) return;
           throw err;
         });
@@ -131,8 +137,13 @@ export class AgentProvisionService {
         // 同 flow_step_agent：is_default 为作者级唯一语义，作品级默认工具 Agent 不占用它
         agent.is_default = false;
         agent.version_no = 1;
-        agent.versions = [];
         await agentRepo.save(agent).catch((err) => {
+          if (isUniqueViolation(err)) return;
+          throw err;
+        });
+        await this.versionService.appendVersion(
+          agent.id, 1, 'create', 'provision 创建', this.versionService.buildSnapshot(agent), manager
+        ).catch((err) => {
           if (isUniqueViolation(err)) return;
           throw err;
         });
@@ -206,9 +217,14 @@ export class AgentProvisionService {
           roleAgent.status = 'active';
           roleAgent.is_default = false;
           roleAgent.version_no = 1;
-          roleAgent.versions = [];
-          await agentRepo.save(roleAgent).catch((err: { code?: string }) => {
-            if (err?.code === '23505') return;
+          await agentRepo.save(roleAgent).catch((err) => {
+            if (isUniqueViolation(err)) return;
+            throw err;
+          });
+          await this.versionService.appendVersion(
+            roleAgent.id, 1, 'create', 'provision 创建', this.versionService.buildSnapshot(roleAgent), manager
+          ).catch((err) => {
+            if (isUniqueViolation(err)) return;
             throw err;
           });
           boundCount++;
@@ -297,8 +313,13 @@ export class AgentProvisionService {
         roleAgent.status = 'active';
         roleAgent.is_default = false;
         roleAgent.version_no = 1;
-        roleAgent.versions = [];
         await agentRepo.save(roleAgent);
+        await this.versionService.appendVersion(
+          roleAgent.id, 1, 'create', 'provision 创建', this.versionService.buildSnapshot(roleAgent), manager
+        ).catch((err) => {
+          if (isUniqueViolation(err)) return;
+          throw err;
+        });
         created++;
       }
 

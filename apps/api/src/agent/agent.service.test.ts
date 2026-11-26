@@ -3,6 +3,8 @@ import { randomUUID } from 'node:crypto';
 import { ConflictException, NotFoundException } from '@nestjs/common';
 import { createWritingFixture, destroyWritingFixture, type WritingFixture } from '../../test/writing-fixture';
 import { AgentService } from './agent.service';
+import { AgentVersionService } from './agent-version.service';
+import { AgentVersionEntity } from './agent-version.entity';
 import { AiTaskService, type AiTaskQueuePort } from '../ai/ai-task.service';
 import { AiTaskEventBus } from '../ai/ai-task.sse';
 import { AiTaskEntity } from '../database/ai-task.entity';
@@ -13,13 +15,27 @@ let service: AgentService;
 
 beforeEach(async () => {
   fixture = await createWritingFixture();
-  service = new AgentService(fixture.dataSource, { record: vi.fn() } as never, {} as never, {} as never, {} as never, {} as never);
+  service = new AgentService(
+    fixture.dataSource,
+    { record: vi.fn() } as never,
+    new AgentVersionService(fixture.dataSource, fixture.dataSource.getRepository(AgentVersionEntity)),
+    {} as never,
+    {} as never,
+    {} as never
+  );
 });
 
 afterEach(() => destroyWritingFixture(fixture));
 
 function agentService(): AgentService {
-  return new AgentService(fixture.dataSource, { record: vi.fn() } as never, {} as never, {} as never, {} as never, {} as never);
+  return new AgentService(
+    fixture.dataSource,
+    { record: vi.fn() } as never,
+    new AgentVersionService(fixture.dataSource, fixture.dataSource.getRepository(AgentVersionEntity)),
+    {} as never,
+    {} as never,
+    {} as never
+  );
 }
 
 describe('AgentService', () => {

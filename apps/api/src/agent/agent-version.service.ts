@@ -1,10 +1,11 @@
 import { Inject, Injectable } from '@nestjs/common';
-import { DataSource } from 'typeorm';
-import type { AgentVersionSnapshot } from '../database/agent.entity';
+import { DataSource, EntityManager, Repository } from 'typeorm';
+import { InjectRepository } from '@nestjs/typeorm';
+import { AgentVersionEntity } from './agent-version.entity';
 import { AgentEntity } from '../database/agent.entity';
 import type { AgentChangeType, AgentVersionSummary } from '@storyforge/contracts';
 
-/** 保留最近 N 个版本快照，超出的从头部丢弃 */
+/** agent 内保留最近 N 个版本行，超出的删除（最旧） */
 export const MAX_VERSIONS = 50;
 
 /** 需要保留在快照中的字段（剔除 versions/updated_at 等冗余字段） */
@@ -16,82 +17,92 @@ const SNAPSHOT_FIELDS = [
   'manual_group_key', 'credential_source', 'archived_at'
 ] as const;
 
+/**
+ * Agent 版本历史服务（M4-T5：独立 agent_version 表）。
+ * 每版本一行，snapshot 不可变。agent.version_no 指向最新行。
+ * 版本上限 MAX_VERSIONS（appendVersion 后清理最旧）。
+ */
 @Injectable()
 export class AgentVersionService {
-  constructor(@Inject(DataSource) private readonly dataSource: DataSource) {}
+  constructor(
+    @Inject(DataSource) private readonly dataSource: DataSource,
+    @InjectRepository(AgentVersionEntity)
+    private readonly repo: Repository<AgentVersionEntity>
+  ) {}
 
-  /**
-   * 为 agent 生成一条版本快照，追加到 versions 数组并自增 version_no。
-   * MAX_VERSIONS 硬截断头部（最旧）。
-   * 注意：本方法不保存数据库，只修改传入的 entity。调用方需自行 save。
-   */
-  snapshot(agent: AgentEntity, changeType: AgentChangeType, note = ''): AgentEntity {
-    // 拷贝字段到 snapshot（剔除 versions 数组本身避免循环引用）
+  /** 构造 agent 快照字段（纯函数，不落库）。剔除了版本/时间冗余字段。 */
+  buildSnapshot(agent: AgentEntity): Record<string, unknown> {
     const snapshot: Record<string, unknown> = {};
     for (const field of SNAPSHOT_FIELDS) {
       const val = agent[field as keyof AgentEntity];
       if (val instanceof Date) snapshot[field] = val.toISOString();
       else snapshot[field] = val ?? null;
     }
+    return snapshot;
+  }
 
-    const entry: AgentVersionSnapshot = {
-      version_no: agent.version_no ?? 1,
-      change_type: changeType,
-      note,
-      created_at: new Date().toISOString(),
-      snapshot
+  /**
+   * 追加一个版本行（agent 已先更新 version_no 并 save）。
+   * 与清理超限同事务（评审修正 R4：清理与写入同事务）。
+   * 失败回滚，保证版本历史与 agent.version_no 一致。
+   * @param manager 可选：调用方已在外层事务中时传入该事务的 EntityManager，
+   *   复用同一事务（避免独立新事务读不到外层未提交的 ai_agents 行 → FK violation）。
+   */
+  async appendVersion(
+    agentId: string,
+    versionNo: number,
+    changeType: AgentChangeType,
+    note: string,
+    snapshot: Record<string, unknown>,
+    manager?: EntityManager
+  ): Promise<void> {
+    const run = async (em: EntityManager): Promise<void> => {
+      const repo = em.getRepository(AgentVersionEntity);
+      const row = repo.create({
+        agent_id: agentId,
+        version_no: versionNo,
+        action: changeType,
+        note,
+        snapshot
+      });
+      await repo.save(row);
+      // 保留最近 MAX_VERSIONS：删除 version_no <= (当前最大 - MAX_VERSIONS)
+      await em
+        .createQueryBuilder()
+        .delete()
+        .from(AgentVersionEntity)
+        .where('agent_id = :agentId AND version_no <= :cutoff', {
+          agentId,
+          cutoff: versionNo - MAX_VERSIONS
+        })
+        .execute();
     };
-
-    agent.versions = [...(agent.versions ?? []), entry].slice(-MAX_VERSIONS);
-    agent.version_no = (agent.version_no ?? 1) + 1;
-    return agent;
+    if (manager) await run(manager);
+    else await this.dataSource.transaction(run);
   }
 
-  /**
-   * 回滚到指定 version_no 的快照。
-   * 流程：找到目标快照 → 合并 snapshot 到 agent → 追加一条 change_type='rollback' 的新快照 → version_no++
-   * 不保存数据库，调用方需自行 save。
-   */
-  rollback(agent: AgentEntity, targetVersion: number): AgentEntity {
-    const versions = agent.versions ?? [];
-    const target = versions.find((v) => v.version_no === targetVersion);
-    if (!target) {
-      throw new Error(`Version ${targetVersion} not found for agent ${agent.id}`);
-    }
-
-    // 用快照字段覆盖当前 agent（反向映射 Date 类型）
-    for (const [key, val] of Object.entries(target.snapshot)) {
-      if (key === 'created_at' || key === 'archived_at') {
-        // 只在非 null 时赋值 Date
-        if (val != null) {
-          (agent as unknown as Record<string, unknown>)[key] = new Date(val as string);
-        } else {
-          (agent as unknown as Record<string, unknown>)[key] = null;
-        }
-      } else {
-        (agent as unknown as Record<string, unknown>)[key] = val;
-      }
-    }
-
-    // 生成 rollback 快照
-    const rollbackNote = `回滚至 v${targetVersion}`;
-    this.snapshot(agent, 'rollback', rollbackNote);
-    return agent;
+  /** 版本摘要列表（不含 snapshot），降序（最新在前）。 */
+  async listVersions(agentId: string): Promise<AgentVersionSummary[]> {
+    const rows = await this.repo.find({
+      where: { agent_id: agentId },
+      order: { version_no: 'DESC' }
+    });
+    return rows.map((r) => ({
+      version_no: r.version_no,
+      change_type: r.action as AgentChangeType,
+      note: r.note,
+      created_at: r.created_at.toISOString()
+    }));
   }
 
-  /**
-   * 从 versions 数组映射出不含 snapshot 内容的摘要列表，供版本历史展示。
-   * 降序排列（最新在前）。
-   */
-  summarize(agent: AgentEntity): AgentVersionSummary[] {
-    const versions = agent.versions ?? [];
-    return [...versions]
-      .sort((a, b) => b.version_no - a.version_no)
-      .map((v) => ({
-        version_no: v.version_no,
-        change_type: v.change_type,
-        note: v.note,
-        created_at: v.created_at
-      }));
+  /** 读取指定版本快照（回滚用），不存在返回 null。@param manager 可选：复用外层事务。 */
+  async getSnapshot(
+    agentId: string,
+    versionNo: number,
+    manager?: EntityManager
+  ): Promise<Record<string, unknown> | null> {
+    const repo = manager ? manager.getRepository(AgentVersionEntity) : this.repo;
+    const row = await repo.findOne({ where: { agent_id: agentId, version_no: versionNo } });
+    return row ? row.snapshot : null;
   }
 }

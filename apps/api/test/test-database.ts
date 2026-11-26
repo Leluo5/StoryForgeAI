@@ -85,6 +85,8 @@ export async function dropWritingAndAuthTables(dataSource: DataSource): Promise<
   await dataSource.query('DROP TABLE IF EXISTS plot_trees CASCADE');
   // M3b Agent 配置与管理表（先删引用表，按 FK 依赖倒序：ai_tools→ai_agents）
   await dataSource.query('DROP TABLE IF EXISTS ai_tools CASCADE');
+  // M4-T5 版本历史表（agent_version 引用 ai_agents，必须先删）
+  await dataSource.query('DROP TABLE IF EXISTS agent_version CASCADE');
   await dataSource.query('DROP TABLE IF EXISTS ai_agents CASCADE');
   // M3a AI 创作基座表（先删引用表，按 FK 依赖倒序）
   await dataSource.query('DROP TABLE IF EXISTS ai_task_events CASCADE');

@@ -60,6 +60,7 @@ import { KnowledgeJobEventEntity } from './knowledge-job-event.entity';
 import { SiteConfigEntity } from './site-config.entity';
 import { ChatRoomEntity } from './chat-room.entity';
 import { ChatRoomEventEntity } from './chat-room-event.entity';
+import { AgentVersionEntity } from '../agent/agent-version.entity';
 import { AuthBase1736899200000 } from './migrations/1736899200000-auth-base';
 import { WritingBase1736985600000 } from './migrations/1736985600000-writing-base';
 import { RevisionBase1760000000000 } from './migrations/1760000000000-revision-base';
@@ -86,6 +87,7 @@ import { WorkCozeBindings1760900000000 } from './migrations/1760900000000-work-c
 import { SiteConfig1761000000000 } from './migrations/1761000000000-site-config';
 import { CozeImportOrigin1761100000000 } from './migrations/1761100000000-coze-import-origin';
 import { ChatRoom1761200000000 } from './migrations/1761200000000-chat-room';
+import { AgentVersionTable1761300000000 } from './migrations/1761300000000-agent-version-table';
 
 export function createDataSource(databaseUrl: string = env.DATABASE_URL): DataSource {
   return new DataSource({
@@ -150,7 +152,8 @@ export function createDataSource(databaseUrl: string = env.DATABASE_URL): DataSo
       KnowledgeJobEventEntity,
       SiteConfigEntity,
       ChatRoomEntity,
-      ChatRoomEventEntity
+      ChatRoomEventEntity,
+      AgentVersionEntity
     ],
     migrations: [
       AuthBase1736899200000,
@@ -178,7 +181,8 @@ export function createDataSource(databaseUrl: string = env.DATABASE_URL): DataSo
       WorkCozeBindings1760900000000,
       SiteConfig1761000000000,
       CozeImportOrigin1761100000000,
-      ChatRoom1761200000000
+      ChatRoom1761200000000,
+      AgentVersionTable1761300000000
     ],
     migrationsTableName: 'migrations',
     synchronize: false,
