@@ -283,4 +283,134 @@ describe('workflow endpoints (real PostgreSQL)', () => {
       .set('x-csrf-token', otherToken)
       .expect(404);
   });
+
+  // ── M4-T7 运行工作流 ──
+
+  it('runs a workflow (202): enqueues a workflow_run ai-task and returns its id', async () => {
+    const created = await post('/api/v1/ai-workflows', {
+      name: '可运行',
+      llm_config: { model: 'm' },
+      platform_config: { workflow_id: 'wf-upstream-001', workspace_id: 'ws-1' }
+    }).expect(201);
+    const id = created.body.data.id as string;
+
+    const run = await post(`/api/v1/ai-workflows/${id}/run`, {}).expect(202);
+    const aiTaskId = run.body.data.aiTaskId as string;
+    expect(aiTaskId).toBeTruthy();
+
+    // 任务已入队（worker 在 e2e 未启动，保持 queued）
+    const [{ AiTaskEntity }] = await Promise.all([import('../src/database/ai-task.entity')]);
+    const task = await dataSource.getRepository(AiTaskEntity).findOneByOrFail({ id: aiTaskId });
+    expect(task.scope).toBe('workflow_run');
+    expect(task.tool).toBe('workflow_run');
+    expect(task.channel).toBe('coze');
+    expect(task.status).toBe('queued');
+    expect(task.input_summary).toMatchObject({ workflow_id: id, platform: 'coze' });
+
+    // 运行状态查询（作者本人）200
+    const status = await get(`/api/v1/ai-workflows/${id}/runs/${aiTaskId}`).expect(200);
+    expect(status.body.data.id).toBe(aiTaskId);
+    expect(status.body.data.scope).toBe('workflow_run');
+  });
+
+  it('rejects running a workflow without upstream workflow_id with 409', async () => {
+    const created = await post('/api/v1/ai-workflows', {
+      name: '无上游', llm_config: { model: 'm' }
+    }).expect(201);
+    const id = created.body.data.id as string;
+    await post(`/api/v1/ai-workflows/${id}/run`, {}).expect(409);
+  });
+
+  it('rejects running an archived workflow with 409', async () => {
+    const created = await post('/api/v1/ai-workflows', {
+      name: '归档运行',
+      llm_config: { model: 'm' },
+      platform_config: { workflow_id: 'wf-archived-001' }
+    }).expect(201);
+    const id = created.body.data.id as string;
+    await post(`/api/v1/ai-workflows/${id}/archive`, { note: '归档' }).expect(201);
+    await post(`/api/v1/ai-workflows/${id}/run`, {}).expect(409);
+  });
+
+  it('isolates runs by author: cross-author run 404 and cross-author status 404', async () => {
+    const created = await post('/api/v1/ai-workflows', {
+      name: '私有运行',
+      llm_config: { model: 'm' },
+      platform_config: { workflow_id: 'wf-private-001' }
+    }).expect(201);
+    const id = created.body.data.id as string;
+    const run = await post(`/api/v1/ai-workflows/${id}/run`, {}).expect(202);
+    const aiTaskId = run.body.data.aiTaskId as string;
+
+    // 另一作者登录
+    const [{ AuthorEntity }, { PasswordService }] = await Promise.all([
+      import('../src/database/author.entity'),
+      import('../src/auth/password.service')
+    ]);
+    const passwordHash = await new PasswordService().hash('correct horse');
+    const other = await dataSource.getRepository(AuthorEntity).save({
+      email: `wf-run-other-${randomUUID()}@example.com`,
+      display_name: 'Other',
+      password_hash: passwordHash
+    });
+    const login = await request(app.getHttpServer())
+      .post('/api/v1/auth/login')
+      .send({ email: other.email, password: 'correct horse' })
+      .expect(200);
+    const cookies = (login.headers['set-cookie'] as unknown as string[]) ?? [];
+    const otherSession = cookies.find((c) => c.startsWith('storyforge_session='))!.split(';')[0]!;
+    const otherCsrf = cookies.find((c) => c.startsWith('storyforge_csrf='))!.split(';')[0]!;
+    const otherToken = login.body.data.csrf_token as string;
+
+    await request(app.getHttpServer())
+      .post(`/api/v1/ai-workflows/${id}/run`)
+      .set('Cookie', [otherSession, otherCsrf])
+      .set('x-csrf-token', otherToken)
+      .expect(404);
+    await request(app.getHttpServer())
+      .get(`/api/v1/ai-workflows/${id}/runs/${aiTaskId}`)
+      .set('Cookie', [otherSession, otherCsrf])
+      .expect(404);
+  });
+
+  // ── M4-T7 作品文件上传 ──
+
+  it('uploads work files (202) and rejects unsupported type (400) / oversized (413)', async () => {
+    const { WorkEntity } = await import('../src/database/work.entity');
+    const work = await dataSource.getRepository(WorkEntity).save(
+      dataSource.getRepository(WorkEntity).create({
+        id: randomUUID(),
+        author_id: ctx.authorId,
+        title: '上传作品',
+        status: 'active'
+      })
+    );
+
+    // 合法上传：202 + 落盘元数据
+    const okUpload = await request(app.getHttpServer())
+      .post(`/api/v1/works/${work.id}/upload`)
+      .set('Cookie', [session.cookie, session.csrf])
+      .set('x-csrf-token', session.token)
+      .attach('files', Buffer.from('hello world'), { filename: 'chapter.txt' })
+      .expect(202);
+    expect(okUpload.body.data.count).toBe(1);
+    expect(okUpload.body.data.files[0].name).toBe('chapter.txt');
+    expect(okUpload.body.data.work_id).toBe(work.id);
+
+    // 非法类型：400
+    await request(app.getHttpServer())
+      .post(`/api/v1/works/${work.id}/upload`)
+      .set('Cookie', [session.cookie, session.csrf])
+      .set('x-csrf-token', session.token)
+      .attach('files', Buffer.from('MZ...'), { filename: 'evil.exe' })
+      .expect(400);
+
+    // 超限（>5MB）：413
+    await request(app.getHttpServer())
+      .post(`/api/v1/works/${work.id}/upload`)
+      .set('Cookie', [session.cookie, session.csrf])
+      .set('x-csrf-token', session.token)
+      .attach('files', Buffer.alloc(6 * 1024 * 1024), { filename: 'big.md' })
+      .expect(413);
+  });
 });

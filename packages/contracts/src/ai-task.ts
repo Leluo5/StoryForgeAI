@@ -14,7 +14,8 @@ export const aiTaskPersistedEventTypeSchema = z.enum(['queued', 'running', 'prog
 // 工具标识：M3b 起工具权威移至 DB 表 ai_tools（tool_id 自由字符串，由服务端权威校验存在性）
 export const aiToolSchema = z.string().min(1).max(40);
 // 任务作用域：chapter（章节正文修订）/ plot（剧情推衍与结构生成）
-export const aiTaskScopeSchema = z.enum(['chapter', 'plot']);
+// character（角色版图生成）/ role_profile（F11 角色资料）/ workflow_run（M4-T7 工作流运行）
+export const aiTaskScopeSchema = z.enum(['chapter', 'plot', 'character', 'role_profile', 'workflow_run']);
 
 export type AiTaskStatus = z.infer<typeof aiTaskStatusSchema>;
 export type AiTaskEventType = z.infer<typeof aiTaskEventTypeSchema>;
@@ -26,8 +27,9 @@ export type AiTool = z.infer<typeof aiToolSchema>;
 // AI 创作任务（对齐 database/ai-task.entity.ts）
 export const aiTaskSchema = z.object({
   id,
-  work_id: id,
-  // 章节任务必填；剧情推衍任务（scope='plot'）为空
+  // 工作流运行任务（scope='workflow_run'）无作品归属，可为空
+  work_id: id.nullable(),
+  // 章节任务必填；剧情推衍任务（scope='plot'）与工作流运行任务（scope='workflow_run'）为空
   chapter_id: id.nullable(),
   scope: aiTaskScopeSchema,
   tool: aiToolSchema,

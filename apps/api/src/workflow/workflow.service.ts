@@ -33,7 +33,7 @@ function toWorkflow(entity: WorkflowEntity): Workflow {
     llm_config: (entity.llm_config ?? { model: '' }) as Workflow['llm_config'],
     source: entity.source as Workflow['source'],
     version_no: entity.version_no,
-    versions: entity.versions ?? [],
+    versions: (entity.versions ?? []) as Workflow['versions'],
     created_at: entity.created_at.toISOString(),
     updated_at: entity.updated_at.toISOString(),
     archived_at: entity.archived_at ? entity.archived_at.toISOString() : null
@@ -79,7 +79,7 @@ export class WorkflowService {
   }
 
   private rollbackSnapshot(entity: WorkflowEntity, targetVersion: number): void {
-    const versions = entity.versions ?? [];
+    const versions = (entity.versions ?? []) as Workflow['versions'];
     const target = versions.find((v) => v.version_no === targetVersion);
     if (!target) {
       throw new ConflictException(`版本 v${targetVersion} 不存在`);
@@ -95,7 +95,7 @@ export class WorkflowService {
   }
 
   private summarize(entity: WorkflowEntity): WorkflowVersionSummary[] {
-    const versions = entity.versions ?? [];
+    const versions = (entity.versions ?? []) as Workflow['versions'];
     return [...versions]
       .sort((a, b) => b.version_no - a.version_no)
       .map((v) => ({

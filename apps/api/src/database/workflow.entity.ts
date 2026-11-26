@@ -1,37 +1,53 @@
-import { Column, CreateDateColumn, Entity, PrimaryGeneratedColumn, UpdateDateColumn } from 'typeorm';
-import type { WorkflowVersionSnapshot } from '@storyforge/contracts';
+import {
+  Column,
+  CreateDateColumn,
+  Entity,
+  PrimaryGeneratedColumn,
+  UpdateDateColumn
+} from 'typeorm';
 
-// 创作工作流（Workflow）：作者为编排创作流程配置的自动化流程
-// 对齐 F12 概念但精简 + 去敏感：
-//  - platform_config 只存非敏感标识（workflow_id/workspace_id）
-//  - llm_config 只存 model（base_url/api_key 由服务端 env 注入，禁止入库）
-//  - status 三态：active / disabled / archived
-//  - versions 为版本快照数组（保留最近 MAX_WORKFLOW_VERSIONS 条）
+/**
+ * 工作流实体。
+ * 作者隔离：替代旧版 modules/agent_management 中固定 work_id='_global' 的写法。
+ */
 @Entity('ai_workflows')
 export class WorkflowEntity {
   @PrimaryGeneratedColumn('uuid') id!: string;
+
   // 所属作者（作者隔离，替代旧版固定 _global）
   @Column({ type: 'uuid' }) author_id!: string;
-  // 工作流名称
-  @Column({ type: 'varchar', length: 80 }) name!: string;
-  // 描述
-  @Column({ type: 'text', default: '' }) description!: string;
-  // active / disabled / archived
+
+  // 作品级归属（M4-T7：作品绑定的工作流；作者级手动创建的可为空）
+  @Column({ type: 'uuid', nullable: true }) work_id!: string | null;
+
+  // 工作流名称（用户可见）
+  @Column({ type: 'varchar', length: 200 }) name!: string;
+
+  // 描述（用户可见）
+  @Column({ type: 'text', nullable: true }) description!: string | null;
+
+  // 状态：active / archived
   @Column({ type: 'varchar', length: 16, default: 'active' }) status!: string;
-  // 平台（固定 coze）
-  @Column({ type: 'varchar', length: 16, default: 'coze' }) platform!: string;
-  // 平台配置（仅非敏感标识：workflow_id/workspace_id）
-  @Column({ type: 'jsonb', default: {} }) platform_config!: Record<string, unknown>;
-  // LLM 配置（仅 model，密钥由服务端 env 注入）
-  @Column({ type: 'jsonb', default: {} }) llm_config!: Record<string, unknown>;
-  // 创建来源：manual / coze_import
+
+  // 平台标识：coze / flowise 等
+  @Column({ type: 'varchar', length: 32 }) platform!: string;
+
+  // 平台专属配置（如 bot_id、dataset_id 等）
+  @Column({ type: 'jsonb', default: () => "'{}'" }) platform_config!: Record<string, unknown>;
+
+  // LLM 配置
+  @Column({ type: 'jsonb', nullable: true }) llm_config!: Record<string, unknown> | null;
+
+  // 来源：manual / coze_import
   @Column({ type: 'varchar', length: 16, default: 'manual' }) source!: string;
-  // 当前版本号（每次变更自增）
+
+  // 当前版本号（从 1 开始）
   @Column({ type: 'int', default: 1 }) version_no!: number;
-  // 版本快照数组（MAX=50 硬截断，JSONB 存储）
-  @Column({ type: 'jsonb', default: [] }) versions!: WorkflowVersionSnapshot[];
+
+  // 历史版本快照数组（最近 50 条，超限自动淘汰）
+  @Column({ type: 'jsonb', default: () => "'[]'" }) versions!: unknown[];
+
   @CreateDateColumn({ type: 'timestamptz' }) created_at!: Date;
   @UpdateDateColumn({ type: 'timestamptz' }) updated_at!: Date;
-  // 归档时间（status=archived 时写入，恢复时置 null）
-  @Column({ type: 'timestamptz', nullable: true }) archived_at?: Date | null;
+  @Column({ type: 'timestamptz', nullable: true }) archived_at!: Date | null;
 }

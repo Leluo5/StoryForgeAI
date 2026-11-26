@@ -1,4 +1,6 @@
+import { join } from 'node:path';
 import { resolve } from 'node:path';
+import { tmpdir } from 'node:os';
 import { config } from 'dotenv';
 import { z } from 'zod';
 
@@ -16,6 +18,8 @@ const envSchema = z.object({
     z.string().url().optional()
   ),
   // ── F11 多平台 Agent 协同（全部 optional：未配置即对应能力 configured=false） ──
+  // ── M4-T7 作品文件上传落盘根目录（默认系统临时目录下 storyforge/uploads） ──
+  WORK_UPLOADS_DIR: z.string().min(1).default(join(tmpdir(), 'storyforge', 'uploads')),
   FLOWISE_BASE_URL: z.preprocess((value) => value === '' ? undefined : value, z.string().url().optional()),
   FLOWISE_API_KEY: z.preprocess((value) => value === '' ? undefined : value, z.string().min(1).optional()),
   FASTGPT_BASE_URL: z.preprocess((value) => value === '' ? undefined : value, z.string().url().optional()),

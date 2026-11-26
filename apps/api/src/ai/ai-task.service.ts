@@ -266,6 +266,74 @@ export class AiTaskService {
     });
   }
 
+  /**
+   * 工作流运行任务（M4-T7）：scope='workflow_run'，无章节、基准版本 0。
+   * 工作流运行通道由 ai_workflows.platform 决定（不经 ai_tools 权威校验），
+   * 执行 Agent 回退作者默认 Agent；工作流无作品归属时 work_id 为空。
+   */
+  createWorkflowRunTask(
+    authorId: string,
+    input: { workflowId: string; workId: string | null; platform: string; platformConfig: Record<string, unknown>; idempotencyKey: string }
+  ): Promise<{ task: AiTask; created: boolean }> {
+    return this.dataSource.transaction(async (manager) => {
+      const defaultAgent = await this.agentService.ensureDefaultAgent(authorId);
+
+      const existing = await manager
+        .getRepository(AiTaskEntity)
+        .findOneBy({ idempotency_key: input.idempotencyKey });
+      if (existing) return { task: existing, created: false };
+
+      const task = manager.getRepository(AiTaskEntity).create();
+      task.id = randomUUID();
+      task.idempotency_key = input.idempotencyKey;
+      task.work_id = input.workId;
+      task.chapter_id = null;
+      task.scope = 'workflow_run';
+      task.tool = 'workflow_run';
+      task.agent_id = defaultAgent.id;
+      task.channel = input.platform;
+      task.input_summary = {
+        workflow_id: input.workflowId,
+        platform: input.platform,
+        platform_config: input.platformConfig
+      };
+      task.base_version = 0;
+      task.status = 'queued';
+      task.event_seq = 0;
+      task.result_revision_set_id = null;
+      task.error = null;
+      task.attempts = 0;
+      task.created_by = authorId;
+      await manager.save(task);
+
+      await appendEvent(manager, task, this.eventBus, 'queued', {
+        tool: task.tool,
+        scope: 'workflow_run',
+        workflow_id: input.workflowId
+      });
+
+      await this.auditService.record(authorId, 'ai_task_create', 'ai_task', task.id, {
+        tool: task.tool,
+        scope: 'workflow_run',
+        workflow_id: input.workflowId
+      }, input.workId ?? undefined);
+
+      return { task, created: true };
+    }).then(async (result) => {
+      if (result.created) await this.queue.enqueue(result.task.id).catch(() => undefined);
+      return { task: toAiTask(result.task), created: result.created };
+    });
+  }
+
+  /** 工作流运行任务详情（工作流可能无作品归属，不做作品级归属校验） */
+  async getWorkflowRunTask(taskId: string): Promise<{ task: AiTask }> {
+    const entity = await this.dataSource
+      .getRepository(AiTaskEntity)
+      .findOneBy({ id: taskId, scope: 'workflow_run' });
+    if (!entity) throw new NotFoundException('工作流运行任务不存在');
+    return { task: toAiTask(entity) };
+  }
+
   /** 单任务详情（作品内归属校验） */
   async getTask(authorId: string, workId: string, taskId: string): Promise<{ task: AiTask }> {
     const task = await assertOwnedTask(this.dataSource.manager, workId, taskId, authorId);

@@ -74,7 +74,7 @@ export interface ConfirmDerivationCandidateInput {
 export interface AiTaskView {
   id: string;
   idempotency_key: string;
-  work_id: string;
+  work_id: string | null;
   chapter_id: string | null;
   scope: 'chapter' | 'plot';
   tool: string;
@@ -95,7 +95,7 @@ function toAiTaskView(task: AiTaskEntity): AiTaskView {
   return {
     id: task.id,
     idempotency_key: task.idempotency_key,
-    work_id: task.work_id,
+    work_id: task.work_id ?? null,
     chapter_id: task.chapter_id,
     // 契约 scope 仅 chapter/plot；character 为运行时扩展值
     scope: task.scope as AiTaskView['scope'],

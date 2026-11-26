@@ -30,6 +30,7 @@ import { CsrfGuard } from '../auth/csrf.guard';
 import { ZodValidationPipe } from '../common/zod-validation.pipe';
 import { ok, type AuthenticatedRequest } from '../common/http';
 import { WorkflowService } from './workflow.service';
+import { WorkflowRunService } from './workflow-run.service';
 
 /**
  * F12 工作流管理：创作工作流配置管理接口层。
@@ -43,11 +44,16 @@ import { WorkflowService } from './workflow.service';
  * - POST   /ai-workflows/:workflowId/restore  恢复工作流
  * - GET    /ai-workflows/:workflowId/versions  版本历史摘要
  * - POST   /ai-workflows/:workflowId/versions/:versionNo/rollback  回滚到指定版本
+ * - POST   /ai-workflows/:workflowId/run     运行工作流（M4-T7，入队返回 aiTaskId）
+ * - GET    /ai-workflows/:workflowId/runs/:aiTaskId  查询运行状态（M4-T7）
  */
 @Controller()
 @UseGuards(SessionGuard)
 export class WorkflowController {
-  constructor(@Inject(WorkflowService) private readonly workflowService: WorkflowService) {}
+  constructor(
+    @Inject(WorkflowService) private readonly workflowService: WorkflowService,
+    @Inject(WorkflowRunService) private readonly runService: WorkflowRunService
+  ) {}
 
   // ── 列出工作流 ──
 
@@ -160,5 +166,25 @@ export class WorkflowController {
       request,
       await this.workflowService.rollbackWorkflow(request.author.id, workflowId, Number(versionNo))
     );
+  }
+
+  // ── 运行工作流（M4-T7）：创建 ai-task（scope=workflow_run）并入队，202 返回 aiTaskId ──
+
+  @Post('ai-workflows/:workflowId/run')
+  @HttpCode(HttpStatus.ACCEPTED)
+  @UseGuards(CsrfGuard)
+  async runWorkflow(@Req() request: AuthenticatedRequest, @Param('workflowId') workflowId: string) {
+    return ok(request, await this.runService.runWorkflow(request.author.id, workflowId));
+  }
+
+  // ── 查询运行状态（M4-T7） ──
+
+  @Get('ai-workflows/:workflowId/runs/:aiTaskId')
+  async getRunStatus(
+    @Req() request: AuthenticatedRequest,
+    @Param('workflowId') workflowId: string,
+    @Param('aiTaskId') aiTaskId: string
+  ) {
+    return ok(request, await this.runService.getRunStatus(request.author.id, workflowId, aiTaskId));
   }
 }

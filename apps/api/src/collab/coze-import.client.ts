@@ -116,6 +116,40 @@ export class CozeImportClient {
     }
   }
 
+  /**
+   * M4-T7 运行 Coze 工作流（POST /v1/workflow/run，非流式）。
+   * 返回 Coze 原始响应体（code/data/msg/debug_url）；code!==0 由调用方按 upstream error 语义处理。
+   */
+  async runWorkflow(authorId: string, workflowId: string, parameters: Record<string, unknown>, pat?: string): Promise<CozeV1Response<unknown>> {
+    const { base, pat: resolved } = await this.resolve(authorId, pat);
+    if (!workflowId) throw upstreamFailedError('Coze 工作流 ID 缺失');
+    return this.post<CozeV1Response<unknown>>(`${base}/v1/workflow/run`, { workflow_id: workflowId, parameters }, resolved);
+  }
+
+  private async post<T>(url: string, body: Record<string, unknown>, pat: string): Promise<T> {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), this.timeoutMs());
+    try {
+      const response = await fetch(url, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${pat}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+        signal: controller.signal
+      });
+      if (!response.ok) {
+        throw upstreamFailedError(`Coze 返回 ${response.status}`);
+      }
+      return (await response.json()) as T;
+    } catch (error) {
+      if (error instanceof CollabUpstreamError) throw error;
+      const isTimeout = error instanceof Error && error.name === 'AbortError';
+      if (isTimeout) throw timeoutError('Coze 请求超时');
+      throw upstreamFailedError(`Coze 请求失败: ${error instanceof Error ? error.message : '未知错误'}`);
+    } finally {
+      clearTimeout(timer);
+    }
+  }
+
   private ensureOk(data: CozeV1Response<unknown>): void {
     if (typeof data.code === 'number' && data.code !== 0) {
       throw upstreamFailedError(`Coze 上游返回错误: ${data.code} ${data.msg ?? ''}`.trim());

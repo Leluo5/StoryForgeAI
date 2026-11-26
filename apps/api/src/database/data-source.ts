@@ -88,6 +88,7 @@ import { SiteConfig1761000000000 } from './migrations/1761000000000-site-config'
 import { CozeImportOrigin1761100000000 } from './migrations/1761100000000-coze-import-origin';
 import { ChatRoom1761200000000 } from './migrations/1761200000000-chat-room';
 import { AgentVersionTable1761300000000 } from './migrations/1761300000000-agent-version-table';
+import { WorkflowRunScope1761400000000 } from './migrations/1761400000000-workflow-run-scope';
 
 export function createDataSource(databaseUrl: string = env.DATABASE_URL): DataSource {
   return new DataSource({
@@ -182,7 +183,8 @@ export function createDataSource(databaseUrl: string = env.DATABASE_URL): DataSo
       SiteConfig1761000000000,
       CozeImportOrigin1761100000000,
       ChatRoom1761200000000,
-      AgentVersionTable1761300000000
+      AgentVersionTable1761300000000,
+      WorkflowRunScope1761400000000
     ],
     migrationsTableName: 'migrations',
     synchronize: false,

@@ -30,6 +30,7 @@ import {
 } from '../character/character-task.handler';
 import { CollabTaskHandler } from '../collab/collab-task.handler';
 import { CollabUpstreamError } from '../collab/channel/collab-upstream.error';
+import { WorkflowRunHandler } from '../collab/workflow-run.handler';
 import { env } from '../config/env';
 
 // ───────────────────────────── 结果映射端口（A6 实现，避免 A5↔A6 循环依赖） ─────────────────────────────
@@ -88,13 +89,13 @@ async function appendEvent(
 interface BaseProcessContext {
   taskId: string;
   authorId: string;
-  workId: string;
   tool: string;
   inputSummary: Record<string, unknown>;
 }
 
 interface ChapterProcessContext extends BaseProcessContext {
   kind: 'chapter';
+  workId: string;
   chapterId: string;
   baseVersion: number;
   baseDocument: ProseMirrorNode;
@@ -102,6 +103,7 @@ interface ChapterProcessContext extends BaseProcessContext {
 
 interface PlotDerivationProcessContext extends BaseProcessContext {
   kind: 'plot';
+  workId: string;
   operation: 'derivation';
   sessionId: string;
   stepNo: number;
@@ -110,6 +112,7 @@ interface PlotDerivationProcessContext extends BaseProcessContext {
 
 interface PlotGenerationProcessContext extends BaseProcessContext {
   kind: 'plot';
+  workId: string;
   operation: 'generation';
   draftId: string;
   plot: PlotTreeContext;
@@ -119,13 +122,20 @@ type PlotProcessContext = PlotDerivationProcessContext | PlotGenerationProcessCo
 
 interface CharacterProcessContext extends BaseProcessContext {
   kind: 'character';
+  workId: string;
 }
 
 interface RoleProfileProcessContext extends BaseProcessContext {
   kind: 'role_profile';
+  workId: string;
 }
 
-type ProcessContext = ChapterProcessContext | PlotProcessContext | CharacterProcessContext | RoleProfileProcessContext;
+interface WorkflowRunProcessContext extends BaseProcessContext {
+  kind: 'workflow_run';
+  workId: string | null; // M4-T7 工作流运行任务可能无作品归属
+}
+
+type ProcessContext = ChapterProcessContext | PlotProcessContext | CharacterProcessContext | RoleProfileProcessContext | WorkflowRunProcessContext;
 
 /**
  * AI 任务处理器：消费 BullMQ 队列，执行一次 AI 创作任务。
@@ -149,7 +159,10 @@ export class AiTaskProcessor {
     private readonly characterHandler?: CharacterTaskHandler,
     @Optional()
     @Inject(CollabTaskHandler)
-    private readonly collabHandler?: CollabTaskHandler
+    private readonly collabHandler?: CollabTaskHandler,
+    @Optional()
+    @Inject(WorkflowRunHandler)
+    private readonly workflowRunHandler?: WorkflowRunHandler
   ) {}
 
   /** 创建消费该队列的 BullMQ Worker（A8 在 main.ts 启动；测试可直接调用） */
@@ -207,6 +220,22 @@ export class AiTaskProcessor {
         return;
       }
 
+      // M4-T7 工作流运行（scope='workflow_run'，无章节、可无作品归属）
+      if (started.context.kind === 'workflow_run') {
+        if (!this.workflowRunHandler) {
+          throw new Error('WorkflowRunHandler 未装配');
+        }
+        const summary = await this.workflowRunHandler.handle({
+          taskId: started.context.taskId,
+          authorId: started.context.authorId,
+          workId: started.context.workId,
+          tool: started.context.tool,
+          inputSummary: started.context.inputSummary
+        });
+        await this.finishWorkflowRunSucceeded(started.context, summary);
+        return;
+      }
+
       if (started.context.kind === 'plot') {
         if (started.context.operation === 'generation') {
           const payload = await this.plotModel.generateTree(started.context.plot);
@@ -260,6 +289,7 @@ export class AiTaskProcessor {
 
       // scope='character' 的任务无章节，直接构建角色上下文
       if (task.scope === 'character') {
+        if (!task.work_id) throw new Error(`Character task ${task.id} missing work_id`);
         return {
           skipped: false,
           context: {
@@ -278,10 +308,26 @@ export class AiTaskProcessor {
         if (task.channel !== 'flowise' && task.channel !== 'coze') {
           throw new Error(`Role profile task ${task.id} missing valid channel`);
         }
+        if (!task.work_id) throw new Error(`Role profile task ${task.id} missing work_id`);
         return {
           skipped: false,
           context: {
             kind: 'role_profile',
+            taskId: task.id,
+            authorId: task.created_by,
+            workId: task.work_id,
+            tool: task.tool,
+            inputSummary: task.input_summary
+          }
+        };
+      }
+
+      // scope='workflow_run'（M4-T7）任务无章节，可无作品归属
+      if (task.scope === 'workflow_run') {
+        return {
+          skipped: false,
+          context: {
+            kind: 'workflow_run',
             taskId: task.id,
             authorId: task.created_by,
             workId: task.work_id,
@@ -298,6 +344,7 @@ export class AiTaskProcessor {
 
       // scope='chapter' 的任务必有章节（DB 迁移已允许 plot 任务为空）
       if (!task.chapter_id) throw new Error(`Chapter task ${task.id} missing chapter_id`);
+      if (!task.work_id) throw new Error(`Chapter task ${task.id} missing work_id`);
       const chapter = await manager.getRepository(ChapterEntity).findOneByOrFail({ id: task.chapter_id });
       return {
         skipped: false,
@@ -318,6 +365,7 @@ export class AiTaskProcessor {
 
   /** 按工具构建剧情任务上下文，避免自动建树误入推衍会话链路。 */
   private async buildPlotContext(manager: EntityManager, task: AiTaskEntity): Promise<PlotProcessContext> {
+    if (!task.work_id) throw new Error(`Plot task ${task.id} missing work_id`);
     if (task.tool === 'plot_generate') return this.buildPlotGenerationContext(manager, task);
     if (task.tool !== 'plot_derivation') throw new Error(`Unsupported plot tool ${task.tool}`);
 
@@ -378,6 +426,7 @@ export class AiTaskProcessor {
     manager: EntityManager,
     task: AiTaskEntity
   ): Promise<PlotGenerationProcessContext> {
+    if (!task.work_id) throw new Error(`Plot generation task ${task.id} missing work_id`);
     const draftId = typeof task.input_summary?.draft_id === 'string' ? task.input_summary.draft_id : null;
     if (!draftId) throw new Error(`Plot generation task ${task.id} missing draft_id`);
     const draft = await manager.getRepository(PlotGenerationDraftEntity).findOneBy({ id: draftId, work_id: task.work_id });
@@ -566,6 +615,34 @@ export class AiTaskProcessor {
     });
   }
 
+  /** M4-T7 工作流运行成功：写 succeeded 事件 + 审计（不生成修订集，输出在 summary.data） */
+  private async finishWorkflowRunSucceeded(
+    context: WorkflowRunProcessContext,
+    summary: Record<string, unknown>
+  ): Promise<{ skipped: boolean }> {
+    return this.dataSource.transaction(async (manager) => {
+      const task = await manager.getRepository(AiTaskEntity).createQueryBuilder('task')
+        .where('task.id = :taskId', { taskId: context.taskId })
+        .setLock('pessimistic_write')
+        .getOne();
+      if (!task || task.status !== 'running') return { skipped: true };
+
+      task.status = 'succeeded';
+      await appendEvent(manager, task, this.eventBus, 'succeeded', {
+        tool: context.tool,
+        ...summary
+      });
+
+      await this.auditService.record(context.authorId, 'ai_task_succeeded', 'ai_task', task.id, {
+        tool: context.tool,
+        scope: 'workflow_run',
+        ...summary
+      }, context.workId ?? undefined);
+
+      return { skipped: false };
+    });
+  }
+
   /** 标记任务失败：锁任务，仅 running/queued 可转 failed（终态跳过，幂等） */
   private async markFailed(taskId: string, err: unknown): Promise<void> {
     const message = err instanceof Error ? err.message : String(err);
@@ -593,6 +670,7 @@ export class AiTaskProcessor {
       task.status = 'failed';
       task.error = { message, code, retryable };
       if (task.scope === 'plot' && task.tool === 'plot_generate') {
+        if (!task.work_id) throw new Error(`Plot generation task ${task.id} missing work_id`);
         await this.plotHandler.failGeneration(manager, {
           taskId: task.id,
           workId: task.work_id,
@@ -600,6 +678,7 @@ export class AiTaskProcessor {
         });
       }
       if (task.scope === 'character') {
+        if (!task.work_id) throw new Error(`Character task ${task.id} missing work_id`);
         pendingCharacter.context = {
           taskId: task.id,
           authorId: task.created_by,
@@ -617,7 +696,7 @@ export class AiTaskProcessor {
         message,
         code,
         retryable
-      }, task.work_id);
+      }, task.work_id ?? undefined);
     });
 
     if (pendingCharacter.context && this.characterHandler) {

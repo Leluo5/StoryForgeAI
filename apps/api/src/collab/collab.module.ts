@@ -32,6 +32,7 @@ import { AuditService } from '../revision/audit.service';
 import { CozeImportClient } from './coze-import.client';
 import { CozeImportService } from './coze-import.service';
 import { CozeImportController } from './coze-import.controller';
+import { WorkflowRunHandler } from './workflow-run.handler';
 
 /**
  * 通道装配：把 Flowise / Coze 实现注册进 AgentChannelRegistry。
@@ -90,9 +91,10 @@ export class CollabChannelBootstrap implements OnModuleInit {
     AuditService,
     CozeImportClient,
     CozeImportService,
+    WorkflowRunHandler,
     { provide: COLLAB_WRITEBACK_PORT, useClass: CollabWritebackService }
   ],
   controllers: [CollabController, CollabTaskController, CozeImportController],
-  exports: [CollabService, CollabTaskService, AgentChannelRegistry, FastGptClient, CollabTaskHandler, CollabArchiveService, CollabArchiveQueue]
+  exports: [CollabService, CollabTaskService, AgentChannelRegistry, FastGptClient, CollabTaskHandler, CollabArchiveService, CollabArchiveQueue, CozeImportClient, WorkflowRunHandler]
 })
 export class CollabModule {}
