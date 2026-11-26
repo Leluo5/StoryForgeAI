@@ -14,6 +14,7 @@ import {
   type AiToolListItem,
   type CreateAgentRequest,
   type GetAgentDetailResponse,
+  type ModelConfig,
   type UpdateAgentRequest,
   type UpdateToolRequest
 } from '@storyforge/contracts';
@@ -24,6 +25,22 @@ const part = encodeURIComponent;
 const json = (method: string, body: unknown): RequestInit => ({ method, body: JSON.stringify(body) });
 
 // ───────────────────────────── Agent 管理 ─────────────────────────────
+
+/**
+ * 完整默认模型配置（M4-T6：契约 modelConfigSchema 缺省字段由 default 补齐）。
+ * web 端表单仅编辑 temperature/max_tokens，提交时合并完整字段，避免触发契约层 422。
+ */
+export const DEFAULT_MODEL_CONFIG: ModelConfig = {
+  temperature: 0.7,
+  top_p: 1.0,
+  max_tokens: 2048,
+  system_prompt: '',
+  stream: false,
+  frequency_penalty: 0,
+  presence_penalty: 0,
+  response_format: 'text',
+  stop: []
+};
 
 /** 列出当前作者全部 Agent（含绑定工具数） */
 export function listAgents() {

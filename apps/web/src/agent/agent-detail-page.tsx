@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState, type JSX } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import type { AgentListItem, AiToolListItem, AgentPlatform, AgentStatus } from '@storyforge/contracts';
-import { getAgentDetail, updateAgent, updateTool } from './agent-client';
+import { getAgentDetail, updateAgent, updateTool, DEFAULT_MODEL_CONFIG } from './agent-client';
 import './agent-detail-page.css';
 
 /** 平台 / 状态中文标签（与 agent-panel 保持一致） */
@@ -121,7 +121,9 @@ export function AgentDetailPage(): JSX.Element {
     try {
       await updateAgent(agent.id, {
         model_id: modelEdit.modelId,
+        // M4-T6：表单仅编辑 temperature/max_tokens，其余字段取完整默认，避免契约层缺字段 422
         model_config: {
+          ...DEFAULT_MODEL_CONFIG,
           temperature: Number(modelEdit.temperature),
           max_tokens: Number(modelEdit.maxTokens)
         }

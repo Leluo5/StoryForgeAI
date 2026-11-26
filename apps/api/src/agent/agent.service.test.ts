@@ -47,7 +47,11 @@ describe('AgentService', () => {
     });
     expect(agent.name).toBe('灵感助手');
     expect(agent.platform).toBe('mock');
-    expect(agent.model_config).toEqual({});
+    expect(agent.model_config).toEqual({
+      temperature: 0.7, top_p: 1.0, max_tokens: 2048, system_prompt: '',
+      stream: false, frequency_penalty: 0, presence_penalty: 0,
+      response_format: 'text', stop: []
+    });
     expect(agent.status).toBe('active');
     expect(agent.is_default).toBe(false);
     expect(agent.author_id).toBe(fixture.authorId);
@@ -83,7 +87,11 @@ describe('AgentService', () => {
     });
     expect(updated.agent.name).toBe('默认改名');
     expect(updated.agent.model_id).toBe('m2');
-    expect(updated.agent.model_config).toEqual({ temperature: 0.5 });
+    expect(updated.agent.model_config).toEqual({
+      temperature: 0.5, top_p: 1.0, max_tokens: 2048, system_prompt: '',
+      stream: false, frequency_penalty: 0, presence_penalty: 0,
+      response_format: 'text', stop: []
+    });
     expect(updated.agent.is_default).toBe(true); // 默认仍保持
   });
 

@@ -356,4 +356,73 @@ describe('agent management endpoints (real PostgreSQL) · M4-T4', () => {
       expect([400, 404, 500]).toContain(r.status);
     });
   });
+
+  // ── M4-T6 完整 LLM 参数（验收 5 完整写入 / 验收 4 向后兼容） ──
+
+  it('T6 完整写入：POST /ai-agents 写入完整 model_config 后读取一致', async () => {
+    const full = {
+      name: '完整参数Agent',
+      model_id: 'gpt-4o',
+      model_config: {
+        temperature: 0.8,
+        top_p: 0.9,
+        max_tokens: 4096,
+        system_prompt: '你是资深小说家',
+        stream: true,
+        frequency_penalty: 0.5,
+        presence_penalty: -0.3,
+        response_format: 'json',
+        stop: ['\n\n', '作者']
+      }
+    };
+    const created = await post('/api/v1/ai-agents', full).expect(201);
+    const agent = created.body.data.agent;
+    expect(agent.model_config).toEqual({
+      temperature: 0.8, top_p: 0.9, max_tokens: 4096,
+      system_prompt: '你是资深小说家', stream: true,
+      frequency_penalty: 0.5, presence_penalty: -0.3,
+      response_format: 'json', stop: ['\n\n', '作者']
+    });
+
+    // 读取一致（详情端点）
+    const detail = await get(`/api/v1/ai-agents/${agent.id}`).expect(200);
+    expect(detail.body.data.agent.model_config).toEqual(agent.model_config);
+  });
+
+  it('T6 向后兼容：旧记录仅 {temperature,max_tokens} 读取补齐其余字段默认', async () => {
+    // 经数据层构造旧形状 model_config（模拟迁移前存量数据）
+    const [{ AgentEntity }] = await Promise.all([import('../src/database/agent.entity')]);
+    const repo = dataSource.getRepository(AgentEntity);
+    const legacy = await repo.save(
+      repo.create({
+        id: randomUUID(),
+        author_id: authorId,
+        project_id: workId,
+        kind: 'legacy',
+        name: `旧参数Agent-${randomUUID().slice(0, 8)}`,
+        description: '',
+        platform: 'mock',
+        platform_config: {},
+        model_id: 'gpt-4o-mini',
+        model_config: { temperature: 0.6, max_tokens: 1024 }, // 旧形状，无 top_p 等
+        role_id: null,
+        tool_name: null,
+        step_order: null,
+        scope: 'project',
+        source: 'migration',
+        tags: [],
+        status: 'active',
+        is_default: false,
+        version_no: 1,
+        archived_at: null
+      })
+    );
+
+    const detail = await get(`/api/v1/ai-agents/${legacy.id}`).expect(200);
+    expect(detail.body.data.agent.model_config).toEqual({
+      temperature: 0.6, top_p: 1.0, max_tokens: 1024, system_prompt: '',
+      stream: false, frequency_penalty: 0, presence_penalty: 0,
+      response_format: 'text', stop: []
+    });
+  });
 });

@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useState, type JSX } from 'react';
-import type { Agent, AgentListItem, AiToolListItem, AgentPlatform } from '@storyforge/contracts';
+import type { Agent, AgentListItem, AiToolListItem, AgentPlatform, ModelConfig } from '@storyforge/contracts';
 import {
-  createAgent, deleteAgent, listAgents, listTools, updateAgent, updateTool
+  createAgent, deleteAgent, listAgents, listTools, updateAgent, updateTool, DEFAULT_MODEL_CONFIG
 } from './agent-client';
 import './agent-panel.css';
 
@@ -87,7 +87,9 @@ export function AgentPanel(): JSX.Element {
     setBusy('agent-form');
     setError('');
     try {
-      const model_config = {
+      // M4-T6：表单仅编辑 temperature/max_tokens，其余字段取完整默认，避免契约层缺字段 422
+      const model_config: ModelConfig = {
+        ...DEFAULT_MODEL_CONFIG,
         temperature: Number(agentForm.temperature),
         max_tokens: Number(agentForm.maxTokens)
       };

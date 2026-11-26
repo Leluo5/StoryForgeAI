@@ -28,14 +28,26 @@ export const agentPlatformConfigSchema = z
   .default({});
 export type AgentPlatformConfig = z.infer<typeof agentPlatformConfigSchema>;
 
-// 模型参数：受控字段（温度/最大 token），防任意 JSON 注入
+// 模型参数：完整 LLM 参数（M4-T6 迁移对齐旧语义），防任意 JSON 注入。
+// 全部字段用 .default() 补默认值，缺省字段自动补齐；model 为 optional（缺省不输出，由 agent.model_id 承载）。
 export const modelConfigSchema = z
   .object({
-    temperature: z.number().min(0).max(2).optional(),
-    max_tokens: z.number().int().positive().max(32768).optional()
+    model: z.string().max(80).optional(),
+    temperature: z.number().min(0).max(2).default(0.7),
+    top_p: z.number().min(0).max(1).default(1.0),
+    max_tokens: z.number({ invalid_type_error: 'max_tokens 须为整数' })
+      .int().min(1).max(32768).default(2048),
+    system_prompt: z.string().default(''),
+    stream: z.boolean().default(false),
+    frequency_penalty: z.number().min(-2).max(2).default(0),
+    presence_penalty: z.number().min(-2).max(2).default(0),
+    response_format: z.enum(['text', 'json', 'markdown']).default('text'),
+    stop: z.array(z.string().max(64)).max(4).default([])
   })
   .strict()
   .default({});
+
+export type ModelConfig = z.infer<typeof modelConfigSchema>;
 
 // ───────────────────────────── 核心实体 ─────────────────────────────
 
@@ -204,22 +216,9 @@ export const flowProgressStatusSchema = z.enum(['idle', 'running', 'done', 'fail
 export type FlowProgressStatus = z.infer<typeof flowProgressStatusSchema>;
 
 // ─── V2 完整模型参数（10 项） ───
+// 与 V1 modelConfigSchema 语义完全一致（M4-T6 统一）；V2 命名保留作向后兼容别名。
 
-export const modelConfigV2Schema = z
-  .object({
-    model: z.string().max(80).optional(),
-    temperature: z.number().min(0).max(2).default(0.7),
-    top_p: z.number().min(0).max(1).default(1.0),
-    max_tokens: z.number().int().positive().max(32768).default(2048),
-    system_prompt: z.string().default(''),
-    stream: z.boolean().default(false),
-    frequency_penalty: z.number().min(-2).max(2).default(0),
-    presence_penalty: z.number().min(-2).max(2).default(0),
-    response_format: z.enum(['text', 'json', 'markdown']).default('text'),
-    stop: z.array(z.string().max(64)).max(4).default([])
-  })
-  .strict()
-  .default({});
+export const modelConfigV2Schema = modelConfigSchema;
 
 export type ModelConfigV2 = z.infer<typeof modelConfigV2Schema>;
 

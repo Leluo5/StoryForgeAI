@@ -18,7 +18,7 @@ const baseAgent: AgentListItem = {
   platform: 'mock',
   platform_config: {},
   model_id: 'gpt-4o-mini',
-  model_config: { temperature: 0.7, max_tokens: 4096 },
+  model_config: { temperature: 0.7, top_p: 1.0, max_tokens: 4096, system_prompt: '', stream: false, frequency_penalty: 0, presence_penalty: 0, response_format: 'text', stop: [] },
   status: 'active',
   is_default: false,
   description: '用于章节灵感与续写的助手',

@@ -26,6 +26,7 @@ import { AgentVersionService } from './agent-version.service';
 import { AgentProvisionService } from './agent-provision.service';
 import { AgentGroupService } from './agent-group.service';
 import { FlowProgressService } from './flow-progress.service';
+import { normalizeModelConfig } from './model-config';
 
 // ───────────────────────────── 实体 ↔ 契约映射 ─────────────────────────────
 
@@ -37,7 +38,7 @@ function toAgent(entity: AgentEntity): Agent {
     platform: entity.platform as Agent['platform'],
     platform_config: entity.platform_config ?? {},
     model_id: entity.model_id,
-    model_config: entity.model_config,
+    model_config: normalizeModelConfig(entity.model_config),
     status: entity.status as Agent['status'],
     is_default: entity.is_default,
     // 功能描述（V2 实体已有字段；V1 契约映射补齐）
@@ -179,7 +180,7 @@ export class AgentService {
       agent.platform = input.platform ?? 'mock';
       agent.platform_config = input.platform_config ?? {};
       agent.model_id = input.model_id;
-      agent.model_config = input.model_config ?? {};
+      agent.model_config = normalizeModelConfig(input.model_config ?? {});
       agent.status = 'active';
       agent.is_default = input.is_default ?? false;
       // F1 扩展：Coze 导入可携带 description/kind/source/scope/project_id（均可选，普通创建不受影响）
@@ -219,7 +220,7 @@ export class AgentService {
       if (input.platform !== undefined) agent.platform = input.platform;
       if (input.platform_config !== undefined) agent.platform_config = input.platform_config;
       if (input.model_id !== undefined) agent.model_id = input.model_id;
-      if (input.model_config !== undefined) agent.model_config = input.model_config;
+      if (input.model_config !== undefined) agent.model_config = normalizeModelConfig(input.model_config);
       if (input.status !== undefined) {
         // 不允许禁用默认 Agent（至少保留一个可用执行者）
         if (input.status === 'disabled' && agent.is_default) {
@@ -364,7 +365,7 @@ export class AgentService {
       agent.platform = input.platform ?? 'mock';
       agent.platform_config = input.platform_config ?? {};
       agent.model_id = input.model_id ?? 'default';
-      agent.model_config = input.model_config ?? {};
+      agent.model_config = normalizeModelConfig(input.model_config ?? {});
       agent.role_id = input.role_id ?? null;
       agent.tool_name = input.tool_name ?? null;
       agent.step_order = input.step_order ?? null;
@@ -473,7 +474,7 @@ export class AgentService {
       if (input.platform !== undefined) agent.platform = input.platform;
       if (input.platform_config !== undefined) agent.platform_config = input.platform_config;
       if (input.model_id !== undefined) agent.model_id = input.model_id;
-      if (input.model_config !== undefined) agent.model_config = input.model_config;
+      if (input.model_config !== undefined) agent.model_config = normalizeModelConfig(input.model_config);
       if (input.status !== undefined) {
         const status = input.status as AgentStatusV2;
         // 不允许禁用默认 Agent

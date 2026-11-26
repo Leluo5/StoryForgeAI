@@ -9,13 +9,18 @@ import { getAgentDetail, updateAgent, updateTool } from './agent-client';
 vi.mock('./agent-client', () => ({
   getAgentDetail: vi.fn(),
   updateAgent: vi.fn(),
-  updateTool: vi.fn()
+  updateTool: vi.fn(),
+  DEFAULT_MODEL_CONFIG: {
+    temperature: 0.7, top_p: 1.0, max_tokens: 2048, system_prompt: '',
+    stream: false, frequency_penalty: 0, presence_penalty: 0,
+    response_format: 'text', stop: []
+  }
 }));
 
 const detailFixture: { agent: AgentListItem; tools: AiToolListItem[] } = {
   agent: {
     id: 'agent-1', author_id: 'a1', name: '灵感助手', platform: 'mock', platform_config: {},
-    model_id: 'gpt-4o-mini', model_config: { temperature: 0.7, max_tokens: 4096 },
+    model_id: 'gpt-4o-mini', model_config: { temperature: 0.7, top_p: 1.0, max_tokens: 4096, system_prompt: '', stream: false, frequency_penalty: 0, presence_penalty: 0, response_format: 'text', stop: [] },
     status: 'active', is_default: true, description: '章节续写助手',
     created_at: '2026-01-01T00:00:00.000Z', updated_at: '2026-01-02T00:00:00.000Z',
     bound_tool_count: 1
@@ -62,7 +67,7 @@ describe('AgentDetailPage', () => {
     vi.mocked(getAgentDetail).mockResolvedValue({
       agent: {
         id: 'agent-1', author_id: 'a1', name: '无绑定', platform: 'flowise', platform_config: {},
-        model_id: 'm1', model_config: {}, status: 'disabled', is_default: false,
+        model_id: 'm1', model_config: { temperature: 0.7, top_p: 1.0, max_tokens: 2048, system_prompt: '', stream: false, frequency_penalty: 0, presence_penalty: 0, response_format: 'text', stop: [] }, status: 'disabled', is_default: false,
         description: '', created_at: '2026-01-01T00:00:00.000Z', updated_at: '2026-01-01T00:00:00.000Z',
         bound_tool_count: 0
       },
@@ -79,7 +84,7 @@ describe('AgentDetailPage', () => {
     vi.mocked(getAgentDetail).mockResolvedValue({
       agent: {
         id: 'agent-1', author_id: 'a1', name: '返回', platform: 'mock', platform_config: {},
-        model_id: 'm1', model_config: {}, status: 'active', is_default: false,
+        model_id: 'm1', model_config: { temperature: 0.7, top_p: 1.0, max_tokens: 2048, system_prompt: '', stream: false, frequency_penalty: 0, presence_penalty: 0, response_format: 'text', stop: [] }, status: 'active', is_default: false,
         description: '', created_at: '2026-01-01T00:00:00.000Z', updated_at: '2026-01-01T00:00:00.000Z',
         bound_tool_count: 0
       },
@@ -112,7 +117,7 @@ describe('AgentDetailPage', () => {
     await userEvent.click(screen.getByRole('button', { name: '保存' }));
     await waitFor(() => expect(updateAgent).toHaveBeenCalledWith('agent-1', {
       model_id: 'gpt-4o',
-      model_config: { temperature: 0.5, max_tokens: 4096 }
+      model_config: { temperature: 0.5, top_p: 1.0, max_tokens: 4096, system_prompt: '', stream: false, frequency_penalty: 0, presence_penalty: 0, response_format: 'text', stop: [] }
     }));
     // 保存后刷新详情
     expect(getAgentDetail).toHaveBeenCalledTimes(2);
