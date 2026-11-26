@@ -423,3 +423,83 @@ export interface GroupTreeNode {
   children: GroupTreeNode[];
   agent_ids: string[];
 }
+
+// ═══════════════════════════════════════════════════════════════════
+// M4-T4 请求 Schema：Agent 管理 HTTP 入口补齐（归档/恢复/版本/分组/provision/进度/工具开关）
+// 以服务层方法签名 + 旧 Flask 路由语义为基准，方案 4.3 表格为起点但补全缺漏字段：
+//  - upsertOverride/deleteOverride/createManualGroup/switchTool 均需 project_id（旧路由经 body/query 传）
+//  - createManualGroup 需 name（旧路由必填）+ parent_key（缺省 project:）
+//  - switchTool.agent_id 必填非空（服务签名 agentId: string，非 null）
+//  - resetRoleDefaultFlow 需 mode（fill|replace，缺省 fill）
+// ═══════════════════════════════════════════════════════════════════
+
+// 归档/恢复：空 body，POST（.default({}) 使 undefined body 合法，controller 无请求体时通过）
+export const archiveAgentSchema = z.object({}).default({});
+export type ArchiveAgentRequest = z.infer<typeof archiveAgentSchema>;
+
+// 版本回滚：body 携带目标版本号
+export const rollbackAgentSchema = z.object({
+  version_no: z.number().int().positive()
+});
+export type RollbackAgentRequest = z.infer<typeof rollbackAgentSchema>;
+
+// 分组覆盖 upsert：key 取值域对齐服务层 buildTree 自动分组键——
+//   flow:{step_order} / tool:{tool_name} / role:{role_id} / project:{project_id} / manual:{uuid}
+// （评审 R3 文字 roleName/agentName 为示意，实际以 buildTree 生成的 key 为准）
+export const upsertOverrideSchema = z.object({
+  project_id: id,
+  key: z.string().min(1).max(80),
+  name: z.string().max(80).optional(),
+  sort_order: z.number().int().optional(),
+  hidden: z.boolean().optional()
+});
+export type UpsertOverrideRequest = z.infer<typeof upsertOverrideSchema>;
+
+// 分组覆盖删除：DELETE，query 带 project_id + key
+export const deleteOverrideSchema = z.object({
+  project_id: id,
+  key: z.string().min(1).max(80)
+});
+export type DeleteOverrideRequest = z.infer<typeof deleteOverrideSchema>;
+
+// 手动分组创建
+export const createManualGroupSchema = z.object({
+  project_id: id,
+  parent_key: z.string().default('project:'),
+  name: z.string().min(1).max(80),
+  sort_order: z.number().int().default(0)
+});
+export type CreateManualGroupRequest = z.infer<typeof createManualGroupSchema>;
+
+// 手动分组删除：DELETE，query 带 project_id
+export const deleteManualGroupSchema = z.object({
+  project_id: id
+});
+export type DeleteManualGroupRequest = z.infer<typeof deleteManualGroupSchema>;
+
+// 设 Agent 分组：manual_group_key 为手工分组纯 uuid，null 表示回落自动分组。
+// 对齐服务层：ai_agents.manual_group_key 列为 uuid；createManualGroup 返回纯 uuid id（无 manual: 前缀）。
+export const setAgentGroupSchema = z.object({
+  manual_group_key: id.nullable()
+});
+export type SetAgentGroupRequest = z.infer<typeof setAgentGroupSchema>;
+
+// 工具开关：agent_id 必填非空（服务签名 agentId: string）
+export const switchToolSchema = z.object({
+  agent_id: id
+});
+export type SwitchToolRequest = z.infer<typeof switchToolSchema>;
+
+// provision 默认流：路径带 projectId，body 空
+export const provisionSchema = z.object({}).default({});
+export type ProvisionRequest = z.infer<typeof provisionSchema>;
+
+// 绑定角色：路径带 projectId，body 空
+export const bindRolesSchema = z.object({}).default({});
+export type BindRolesRequest = z.infer<typeof bindRolesSchema>;
+
+// 重置角色默认流：mode fill|replace，缺省 fill
+export const resetRoleDefaultFlowSchema = z.object({
+  mode: z.enum(['fill', 'replace']).default('fill')
+});
+export type ResetRoleDefaultFlowRequest = z.infer<typeof resetRoleDefaultFlowSchema>;

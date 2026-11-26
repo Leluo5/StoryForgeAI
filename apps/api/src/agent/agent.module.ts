@@ -4,6 +4,9 @@ import { AgentEntity } from '../database/agent.entity';
 import { AiToolEntity } from '../database/ai-tool.entity';
 import { AgentService } from './agent.service';
 import { AgentController } from './agent.controller';
+import { AgentLifecycleController } from './agent-lifecycle.controller';
+import { AgentGroupController } from './agent-group.controller';
+import { AgentProvisionController } from './agent-provision.controller';
 import { AuditService } from '../revision/audit.service';
 import { AuditLogEntity } from '../database/audit-log.entity';
 import { AuthModule } from '../auth/auth.module';
@@ -41,7 +44,12 @@ import { RoleAgentBindingEntity } from '../database/role-agent-binding.entity';
     FlowProgressService,
     AgentProvisionService
   ],
-  controllers: [AgentController],
+  controllers: [
+    AgentController,
+    AgentLifecycleController,
+    AgentGroupController,
+    AgentProvisionController
+  ],
   exports: [
     AgentService,
     AgentVersionService,

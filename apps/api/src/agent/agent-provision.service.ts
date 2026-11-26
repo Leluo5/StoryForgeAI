@@ -13,20 +13,32 @@ import type { AgentSummary } from '@storyforge/contracts';
 
 const logger = new Logger('AgentProvisionService');
 
-// 懒加载配置文件（避免 import resolve 问题）
+/**
+ * 判断是否为唯一约束冲突（PG 23505）。
+ * TypeORM 会把驱动错误包在 QueryFailedError 里：err.code 是其自身类型标识（如 ERR_QUERY_FAILED），
+ * 真正的 PG 错误码在 err.databaseError.code，需两者都查。
+ */
+function isUniqueViolation(err: unknown): boolean {
+  const maybe = err as { code?: string; databaseError?: { code?: string } } | null;
+  return maybe?.code === '23505' || maybe?.databaseError?.code === '23505';
+}
+
+// 懒加载配置文件（避免 import resolve 问题）。
+// 不依赖 process.cwd()（dev/e2e 两种 cwd 不同），以本文件位置向上定位仓库根 config/。
 function loadDefaultFlowConfig(): { version: number; steps: Array<{ step_order: number; name: string; desc: string; platform: string; platform_config: Record<string, unknown>; model_config: Record<string, unknown> }> } {
-  try {
-    const configPath = join(process.cwd(), '..', '..', '..', 'config', 'default_flow_agents.json');
-    return JSON.parse(readFileSync(configPath, 'utf-8'));
-  } catch {
-    // 回退路径：从 apps/api 往上找
+  const candidates = [
+    join(__dirname, '..', '..', '..', '..', 'config', 'default_flow_agents.json'), // src/agent → 仓库根
+    join(process.cwd(), '..', '..', '..', 'config', 'default_flow_agents.json'),
+    join(process.cwd(), 'config', 'default_flow_agents.json')
+  ];
+  for (const configPath of candidates) {
     try {
-      const altPath = join(process.cwd(), 'apps', 'api', 'src', '..', '..', '..', 'config', 'default_flow_agents.json');
-      return JSON.parse(readFileSync(altPath, 'utf-8'));
+      return JSON.parse(readFileSync(configPath, 'utf-8'));
     } catch {
-      throw new Error('default_flow_agents.json not found');
+      // 尝试下一个候选路径
     }
   }
+  throw new Error(`default_flow_agents.json not found, tried: ${candidates.join(', ')}`);
 }
 
 @Injectable()
@@ -35,7 +47,7 @@ export class AgentProvisionService {
     @Inject(DataSource) private readonly dataSource: DataSource,
     @InjectRepository(AgentEntity) private readonly agentRepo: Repository<AgentEntity>,
     @InjectRepository(RoleAgentBindingEntity) private readonly bindingRepo: Repository<RoleAgentBindingEntity>,
-    private readonly versionService: AgentVersionService
+    @Inject(AgentVersionService) private readonly versionService: AgentVersionService
   ) {}
 
   /**
@@ -77,12 +89,14 @@ export class AgentProvisionService {
         agent.scope = 'project';
         agent.source = 'auto';
         agent.status = 'active';
-        agent.is_default = true;
+        // is_default 为「作者级唯一默认」语义（uq_ai_agents_author_default ON (author_id) WHERE is_default），
+        // 作品级 flow_step_agent 每作品 11 个，不能作为作者默认，须置 false。
+        agent.is_default = false;
         agent.version_no = 1;
         agent.versions = [];
-        await agentRepo.save(agent).catch((err: { code?: string }) => {
+        await agentRepo.save(agent).catch((err) => {
           // 并发撞唯一约束 → 跳过
-          if (err?.code === '23505') return;
+          if (isUniqueViolation(err)) return;
           throw err;
         });
         flowCount++;
@@ -114,11 +128,12 @@ export class AgentProvisionService {
         agent.scope = 'project';
         agent.source = 'auto';
         agent.status = 'active';
-        agent.is_default = true;
+        // 同 flow_step_agent：is_default 为作者级唯一语义，作品级默认工具 Agent 不占用它
+        agent.is_default = false;
         agent.version_no = 1;
         agent.versions = [];
-        await agentRepo.save(agent).catch((err: { code?: string }) => {
-          if (err?.code === '23505') return;
+        await agentRepo.save(agent).catch((err) => {
+          if (isUniqueViolation(err)) return;
           throw err;
         });
         toolCount++;

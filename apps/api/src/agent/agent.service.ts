@@ -76,10 +76,10 @@ export class AgentService {
   constructor(
     @Inject(DataSource) private readonly dataSource: DataSource,
     @Inject(AuditService) private readonly auditService: AuditService,
-    private readonly versionService: AgentVersionService,
-    private readonly provisionService: AgentProvisionService,
-    private readonly groupService: AgentGroupService,
-    private readonly flowProgressService: FlowProgressService
+    @Inject(AgentVersionService) private readonly versionService: AgentVersionService,
+    @Inject(AgentProvisionService) private readonly provisionService: AgentProvisionService,
+    @Inject(AgentGroupService) private readonly groupService: AgentGroupService,
+    @Inject(FlowProgressService) private readonly flowProgressService: FlowProgressService
   ) {}
 
   /**

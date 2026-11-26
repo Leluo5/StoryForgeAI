@@ -4,6 +4,7 @@ import { randomUUID } from 'node:crypto';
 import { InjectRepository } from '@nestjs/typeorm';
 import { AgentGroupOverrideEntity, GroupOverride, ManualGroup } from '../database/agent-group-override.entity';
 import { AgentEntity } from '../database/agent.entity';
+import { WorkEntity } from '../database/work.entity';
 import type { GroupTreeNode } from '@storyforge/contracts';
 
 const DEFAULT_OVERRIDES: GroupOverride[] = [];
@@ -20,8 +21,29 @@ export class AgentGroupService {
   constructor(
     @Inject(DataSource) private readonly dataSource: DataSource,
     @InjectRepository(AgentGroupOverrideEntity)
-    private readonly overrideRepo: Repository<AgentGroupOverrideEntity>
+    private readonly overrideRepo: Repository<AgentGroupOverrideEntity>,
+    @InjectRepository(AgentEntity)
+    private readonly agentRepo: Repository<AgentEntity>
   ) {}
+
+  /**
+   * 构建分组树（查数据 + buildTree 纯函数）。
+   * 校验项目归属（works.author_id = authorId）。
+   * 偏差 3 落地：controller 无需查数据，直接调本方法。
+   */
+  async getTreeData(authorId: string, projectId: string): Promise<GroupTreeNode[]> {
+    const work = await this.dataSource.getRepository(WorkEntity).findOne({
+      where: { id: projectId, author_id: authorId },
+      select: { id: true }
+    });
+    if (!work) {
+      throw new NotFoundException('作品不存在或无权访问');
+    }
+
+    const agents = await this.agentRepo.find({ where: { project_id: projectId } });
+    const overrides = await this.loadOverrides(projectId);
+    return this.buildTree(projectId, agents, overrides);
+  }
 
   /**
    * 加载作品的分组覆盖配置。不存在则返回默认空结构。
@@ -114,7 +136,8 @@ export class AgentGroupService {
       }
 
       const newGroup: ManualGroup = {
-        id: `manual:${randomUUID()}`,
+        // 纯 uuid 存 DB（ai_agents.manual_group_key 列为 uuid），与旧 _groups.json 的 "manual:{uuid}" 前缀解耦
+        id: randomUUID(),
         parent_key: parentKey,
         name,
         sort_order: sortOrder

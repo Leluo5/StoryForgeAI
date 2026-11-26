@@ -1,9 +1,11 @@
-import { ArgumentsHost, Catch, ExceptionFilter, HttpException, HttpStatus } from '@nestjs/common';
+import { ArgumentsHost, Catch, ExceptionFilter, HttpException, HttpStatus, Logger } from '@nestjs/common';
 import type { Response } from 'express';
 import type { ApiError } from '@storyforge/contracts';
 import type { RequestWithId } from './http';
 
 type ErrorCode = ApiError['error']['code'];
+
+const logger = new Logger('HttpEnvelopeFilter');
 
 function errorCode(status: number): ErrorCode {
   if (status === 401) return 'UNAUTHORIZED';
@@ -44,6 +46,9 @@ export class HttpEnvelopeFilter implements ExceptionFilter {
           return Object.keys(extra).length > 0 ? extra : undefined;
         })();
 
+    if (!(exception instanceof HttpException)) {
+      logger.error(`未捕获异常（兜底 500）：${(exception as Error)?.message ?? exception}`, (exception as Error)?.stack);
+    }
     response.status(status).json({
       error: {
         code: errorCode(status),

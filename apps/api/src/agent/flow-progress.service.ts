@@ -1,8 +1,11 @@
-import { Inject, Injectable } from '@nestjs/common';
+import { Inject, Injectable, NotFoundException } from '@nestjs/common';
 import { DataSource, Repository } from 'typeorm';
 import { randomUUID } from 'node:crypto';
 import { InjectRepository } from '@nestjs/typeorm';
 import { FlowProgressEntity, FlowStepRecord } from '../database/flow-progress.entity';
+import { RoleAgentBindingEntity } from '../database/role-agent-binding.entity';
+import { AgentEntity } from '../database/agent.entity';
+import { WorkEntity } from '../database/work.entity';
 import type { FlowStepStatus } from '@storyforge/contracts';
 
 /** 流程进度状态常量 */
@@ -38,13 +41,57 @@ export class FlowProgressService {
   constructor(
     @Inject(DataSource) private readonly dataSource: DataSource,
     @InjectRepository(FlowProgressEntity)
-    private readonly repo: Repository<FlowProgressEntity>
+    private readonly repo: Repository<FlowProgressEntity>,
+    @InjectRepository(RoleAgentBindingEntity)
+    private readonly bindingRepo: Repository<RoleAgentBindingEntity>,
+    @InjectRepository(AgentEntity)
+    private readonly agentRepo: Repository<AgentEntity>
   ) {}
 
   /**
-   * 获取角色的流程进度。不存在则懒创建初始 idle 记录。
+   * R2 反查：role_id → project_id，并校验归属（works.author_id = authorId）。
+   * 反查来源：role_agent_bindings（权威）→ fallback ai_agents.role_id。
+   * 未绑定或归属不符 → NotFoundException。
    */
-  async getProgress(projectId: string, roleId: string): Promise<FlowProgressEntity> {
+  private async resolveProjectId(authorId: string, roleId: string): Promise<string> {
+    // 1) role_agent_bindings 按 role_id 查 project_id
+    const binding = await this.bindingRepo.findOne({
+      where: { role_id: roleId },
+      select: { project_id: true }
+    });
+    let projectId = binding?.project_id ?? null;
+
+    // 2) fallback：ai_agents 按 role_id + author_id
+    if (!projectId) {
+      const agent = await this.agentRepo.findOne({
+        where: { role_id: roleId, author_id: authorId },
+        select: { project_id: true }
+      });
+      projectId = agent?.project_id ?? null;
+    }
+
+    if (!projectId) {
+      throw new NotFoundException('角色未绑定作品');
+    }
+
+    // 3) 归属校验：作品属于该作者
+    const work = await this.dataSource.getRepository(WorkEntity).findOne({
+      where: { id: projectId, author_id: authorId },
+      select: { id: true }
+    });
+    if (!work) {
+      throw new NotFoundException('角色所属作品不存在或无权访问');
+    }
+
+    return projectId;
+  }
+
+  /**
+   * 获取角色的流程进度。不存在则懒创建初始 idle 记录。
+   * R2：入参为 (authorId, roleId)，内部反查 role → project 并校验归属。
+   */
+  async getProgress(authorId: string, roleId: string): Promise<FlowProgressEntity> {
+    const projectId = await this.resolveProjectId(authorId, roleId);
     return this.dataSource.transaction(async (manager) => {
       const repo = manager.getRepository(FlowProgressEntity);
       let progress = await repo.findOneBy({ project_id: projectId, role_id: roleId });
@@ -180,8 +227,10 @@ export class FlowProgressService {
 
   /**
    * 重置流程进度到 idle 初始状态（清空 steps/run_id/completed_steps）。
+   * R2：入参为 (authorId, roleId)，内部反查 role → project 并校验归属。
    */
-  async resetProgress(projectId: string, roleId: string): Promise<FlowProgressEntity> {
+  async resetProgress(authorId: string, roleId: string): Promise<FlowProgressEntity> {
+    const projectId = await this.resolveProjectId(authorId, roleId);
     return this.dataSource.transaction(async (manager) => {
       const repo = manager.getRepository(FlowProgressEntity);
       let progress = await repo.findOneBy({ project_id: projectId, role_id: roleId });
