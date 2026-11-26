@@ -34,11 +34,14 @@ export const plotPositionSchema = z.object({
 });
 
 // 节点受控属性：禁止任意 JSON 透传
+// sync_room_origin：M4-T3 聊天室联动回写标记，格式 sync-room:<roomId>:<stepNo>
+// 存 attributes 而非 origin 列，因 DB 层 origin 列为 varchar(16) 且带枚举 CHECK 约束
 export const plotNodeAttributesSchema = z
   .object({
     time_point: z.string().trim().max(120).optional(),
     place: z.string().trim().max(120).optional(),
-    status: z.string().trim().max(40).optional()
+    status: z.string().trim().max(40).optional(),
+    sync_room_origin: z.string().trim().max(200).optional()
   })
   .strict();
 
@@ -198,6 +201,19 @@ export const updatePlotNodeRequestSchema = z.object({
   content: content.optional(),
   attributes: plotNodeAttributesSchema.optional(),
   expected_version: expectedVersion
+});
+
+// ───────────────────── 聊天室双向联动（M4-T3） ─────────────────────
+
+// 联动动作：push（树 → 房间上下文注入）/ pull（房间推衍步骤 → 回写剧情节点）
+// 单独导出供 service 层二次判定，非法值抛 400（对齐旧端点「联动动作非法」语义）
+export const syncRoomActionSchema = z.enum(['push', 'pull']);
+
+// action 在契约层做格式校验（长度/非空），语义合法性由 service 层判定为 400
+export const syncRoomSchema = z.object({
+  action: z.string().trim().min(1).max(16),
+  context_node_ids: z.array(id).min(1).max(200).optional(),
+  parent_node_id: id.nullable().optional()
 });
 
 export const movePlotNodeRequestSchema = z.object({
@@ -481,3 +497,5 @@ export type DerivationStep = z.infer<typeof derivationStepSchema>;
 export type DerivationCandidate = z.infer<typeof derivationCandidateSchema>;
 export type PlotGenerationSource = z.infer<typeof plotGenerationSourceSchema>;
 export type PlotGenerationDraft = z.infer<typeof plotGenerationDraftSchema>;
+export type SyncRoomAction = z.infer<typeof syncRoomActionSchema>;
+export type SyncRoomInput = z.input<typeof syncRoomSchema>;

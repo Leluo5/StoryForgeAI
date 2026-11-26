@@ -13,7 +13,9 @@ import {
   derivationStepSchema,
   createDerivationCandidateRequestSchema,
   createPlotGenerationRequestSchema,
-  commitPlotGenerationRequestSchema
+  commitPlotGenerationRequestSchema,
+  syncRoomSchema,
+  syncRoomActionSchema
 } from './plot';
 
 const uuid = () => crypto.randomUUID();
@@ -217,5 +219,20 @@ describe('plot contracts', () => {
   it('defaults includeArchivedOwner to false and coerces query strings', () => {
     expect(plotTreeQuerySchema.parse({})).toEqual({ includeArchivedOwner: false });
     expect(plotTreeQuerySchema.parse({ includeArchivedOwner: 'true' })).toEqual({ includeArchivedOwner: true });
+  });
+
+  it('validates sync-room action enum and accepts push/pull payloads', () => {
+    expect(syncRoomActionSchema.safeParse('push').success).toBe(true);
+    expect(syncRoomActionSchema.safeParse('pull').success).toBe(true);
+    expect(syncRoomActionSchema.safeParse('explode').success).toBe(false);
+    expect(syncRoomSchema.safeParse({ action: 'push', context_node_ids: [uuid()] }).success).toBe(true);
+    expect(syncRoomSchema.safeParse({ action: 'pull' }).success).toBe(true);
+    // 契约层只做格式校验，语义合法性由 service 层判定（非法值抛 400）
+    expect(syncRoomSchema.safeParse({ action: 'explode' }).success).toBe(true);
+  });
+
+  it('accepts sync_room_origin inside strict node attributes', () => {
+    expect(plotNodeAttributesSchema.safeParse({ sync_room_origin: `sync-room:${uuid()}:1` }).success).toBe(true);
+    expect(plotNodeAttributesSchema.safeParse({ sync_room_origin: 'x'.repeat(201) }).success).toBe(false);
   });
 });

@@ -5,6 +5,7 @@ import {
   Get,
   HttpCode,
   HttpStatus,
+  Inject,
   Param,
   Post,
   Query,
@@ -39,8 +40,8 @@ import { ChatRoomSseService } from './chat-room.sse';
 @UseGuards(SessionGuard)
 export class ChatRoomController {
   constructor(
-    private readonly chatRoomService: ChatRoomService,
-    private readonly chatRoomSseService: ChatRoomSseService
+    @Inject(ChatRoomService) private readonly chatRoomService: ChatRoomService,
+    @Inject(ChatRoomSseService) private readonly chatRoomSseService: ChatRoomSseService
   ) {}
 
   @Post()

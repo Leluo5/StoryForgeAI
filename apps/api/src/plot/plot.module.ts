@@ -19,9 +19,11 @@ import { AuditService } from '../revision/audit.service';
 import { AuthModule } from '../auth/auth.module';
 import { AgentModule } from '../agent/agent.module';
 import { AiTaskModule } from '../ai/ai-task.module';
+import { ChatRoomModule } from '../chat-room/chat-room.module';
 import { PlotController } from './plot.controller';
 import { PlotTreeService } from './plot-tree.service';
 import { PlotDerivationService } from './plot-derivation.service';
+import { PlotRoomSyncService } from './plot-room-sync.service';
 import { PlotOwnerService } from './plot-owner.service';
 import { PlotGenerationController } from './plot-generation.controller';
 import { PlotGenerationService } from './plot-generation.service';
@@ -49,9 +51,17 @@ import { PlotOwnerController } from './plot-owner.controller';
     ]),
     AuthModule,
     AgentModule,
-    AiTaskModule
+    AiTaskModule,
+    ChatRoomModule
   ],
-  providers: [PlotTreeService, PlotDerivationService, PlotOwnerService, PlotGenerationService, AuditService],
+  providers: [
+    PlotTreeService,
+    PlotDerivationService,
+    PlotRoomSyncService,
+    PlotOwnerService,
+    PlotGenerationService,
+    AuditService
+  ],
   controllers: [PlotController, PlotGenerationController, PlotOwnerController],
   exports: [PlotTreeService, PlotDerivationService, PlotOwnerService, PlotGenerationService]
 })

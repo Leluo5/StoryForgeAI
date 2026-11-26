@@ -237,6 +237,36 @@ export class PlotTreeService {
     });
   }
 
+  /**
+   * M4-T3 联动复用：在调用方事务内做作品归属 + 树行锁，返回加锁树实体。
+   * 供外部模块（聊天室联动）在其事务内复用同一把树锁，避免跨事务版本错乱。
+   */
+  async assertTreeOwned(manager: EntityManager, authorId: string, workId: string, treeId: string): Promise<PlotTreeEntity> {
+    await this.assertOwnedWork(manager, authorId, workId);
+    const tree = await manager
+      .getRepository(PlotTreeEntity)
+      .createQueryBuilder('t')
+      .setLock('pessimistic_write')
+      .where('t.work_id = :workId', { workId })
+      .getOne();
+    if (!tree) throw new NotFoundException('剧情树不存在');
+    if (treeId && tree.id !== treeId) throw new NotFoundException('剧情树不存在');
+    return tree;
+  }
+
+  /** M4-T3 联动复用：按 id 批量取本树节点（保持入参顺序），不存在的不补位由调用方比对数量 */
+  async getNodesByIds(manager: EntityManager, treeId: string, nodeIds: string[]): Promise<PlotNode[]> {
+    if (nodeIds.length === 0) return [];
+    const nodes = await manager
+      .getRepository(PlotNodeEntity)
+      .createQueryBuilder('n')
+      .where('n.tree_id = :treeId', { treeId })
+      .andWhere('n.id IN (:...ids)', { ids: nodeIds })
+      .getMany();
+    const byId = new Map(nodes.map((node) => [node.id, node]));
+    return nodeIds.map((id) => byId.get(id)).filter((node): node is PlotNodeEntity => node !== undefined).map(mapNode);
+  }
+
   /** 结构变更推进版本号，返回新版本 */
   private async bumpVersion(manager: EntityManager, tree: PlotTreeEntity): Promise<number> {
     const next = tree.version + 1;
@@ -829,5 +859,83 @@ export class PlotTreeService {
       workId
     );
     return this.getTree(authorId, workId);
+  }
+
+  /**
+   * M4-T3 聊天室联动回写：按 sync_room_origin 去重的批量建节点。
+   * 先校验后写入——去重命中即跳过，父环风险由调用方以 ConflictException(422) 拦截。
+   */
+  async batchCreateSyncNodes(
+    manager: EntityManager,
+    authorId: string,
+    workId: string,
+    input: {
+      parentNodeId: string | null;
+      nodes: Array<{ syncRoomOrigin: string; title: string; content: string }>;
+    }
+  ): Promise<{ created: PlotNode[]; skipped: string[] }> {
+    const tree = await this.requireTree(manager, workId);
+    const repository = manager.getRepository(PlotNodeEntity);
+    // 去重：origin 全标记存 attributes，列宽 varchar(16) 无法承载，故按 attributes 精确匹配
+    const existing = await repository
+      .createQueryBuilder('n')
+      .where('n.tree_id = :treeId', { treeId: tree.id })
+      .select('n.attributes')
+      .getMany();
+    const existingOrigins = new Set(
+      existing.map((n) => n.attributes?.sync_room_origin).filter((v): v is string => typeof v === 'string')
+    );
+    // 父环校验：回写统一挂到同一父下，新增边本身不构成环（新节点尚无 id）；
+    // 但若父节点的父链自身成环（脏数据），沿链上溯会无限循环，必须拒绝写入而非带病挂载。
+    if (input.parentNodeId !== null) {
+      const all = await repository.find({ where: { tree_id: tree.id } });
+      const byId = new Map(all.map((node) => [node.id, node]));
+      const parent = byId.get(input.parentNodeId);
+      if (!parent) throw new NotFoundException('父节点不存在');
+      const seen = new Set<string>();
+      let cursor: string | null = parent.parent_id;
+      while (cursor) {
+        if (seen.has(cursor)) throw new UnprocessableEntityException({ code: 'PLOT_PARENT_CYCLE' });
+        seen.add(cursor);
+        cursor = byId.get(cursor)?.parent_id ?? null;
+      }
+    }
+    const created: PlotNode[] = [];
+    const skipped: string[] = [];
+    let nextOrder = await this.nextSiblingOrder(manager, tree.id, input.parentNodeId);
+    for (const step of input.nodes) {
+      if (existingOrigins.has(step.syncRoomOrigin)) {
+        skipped.push(step.syncRoomOrigin);
+        continue;
+      }
+      const id = randomUUID();
+      const saved = await repository.save(
+        repository.create({
+          id,
+          tree_id: tree.id,
+          parent_id: input.parentNodeId,
+          sibling_order: nextOrder++,
+          title: step.title,
+          summary: null,
+          content: step.content,
+          attributes: { sync_room_origin: step.syncRoomOrigin },
+          position_x: 0,
+          position_y: 0,
+          group_id: null,
+          origin: 'derivation'
+        })
+      );
+      created.push(mapNode(saved));
+    }
+    await this.bumpVersion(manager, tree);
+    await this.audit.record(
+      authorId,
+      'plot_room_sync_pull',
+      'plot_tree',
+      tree.id,
+      { created: created.length, skipped: skipped.length },
+      workId
+    );
+    return { created, skipped };
   }
 }

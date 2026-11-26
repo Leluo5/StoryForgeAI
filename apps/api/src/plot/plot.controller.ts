@@ -33,6 +33,7 @@ import {
   updateDerivationStepRequestSchema,
   updatePlotGroupRequestSchema,
   updatePlotNodeRequestSchema,
+  syncRoomSchema,
   updatePlotPositionsRequestSchema,
   updatePlotTreeRequestSchema
 } from '@storyforge/contracts';
@@ -42,6 +43,7 @@ import { ZodValidationPipe } from '../common/zod-validation.pipe';
 import { ok, type AuthenticatedRequest } from '../common/http';
 import { PlotTreeService } from './plot-tree.service';
 import { PlotDerivationService } from './plot-derivation.service';
+import { PlotRoomSyncService } from './plot-room-sync.service';
 
 type CreatePlotTreeRequest = z.infer<typeof createPlotTreeRequestSchema>;
 type UpdatePlotTreeRequest = z.infer<typeof updatePlotTreeRequestSchema>;
@@ -59,6 +61,7 @@ type UpdateDerivationSessionRequest = z.infer<typeof updateDerivationSessionRequ
 type UpdateDerivationStepRequest = z.infer<typeof updateDerivationStepRequestSchema>;
 type CreateDerivationCandidateRequest = z.infer<typeof createDerivationCandidateRequestSchema>;
 type ConfirmDerivationCandidateRequest = z.infer<typeof confirmDerivationCandidateRequestSchema>;
+type SyncRoomRequest = z.input<typeof syncRoomSchema>;
 
 /**
  * M3c-1 剧情树接口层。
@@ -69,7 +72,8 @@ type ConfirmDerivationCandidateRequest = z.infer<typeof confirmDerivationCandida
 export class PlotController {
   constructor(
     @Inject(PlotTreeService) private readonly plotTree: PlotTreeService,
-    @Inject(PlotDerivationService) private readonly derivations: PlotDerivationService
+    @Inject(PlotDerivationService) private readonly derivations: PlotDerivationService,
+    @Inject(PlotRoomSyncService) private readonly roomSync: PlotRoomSyncService
   ) {}
 
   @Get('works/:workId/plot-tree')
@@ -239,6 +243,21 @@ export class PlotController {
     @Body(new ZodValidationPipe(importPlotTreeRequestSchema)) input: ImportPlotTreeRequest
   ) {
     return ok(request, await this.plotTree.importTree(request.author.id, workId, input));
+  }
+
+  // ── 聊天室双向联动（M4-T3） ──
+
+  /** 树 ↔ 房间双向联动：push 注入上下文节点，pull 回写房间推衍步骤 */
+  @Post('works/:workId/plot-tree/sync-room/:roomId')
+  @HttpCode(HttpStatus.OK)
+  @UseGuards(CsrfGuard)
+  async syncRoom(
+    @Req() request: AuthenticatedRequest,
+    @Param('workId') workId: string,
+    @Param('roomId') roomId: string,
+    @Body(new ZodValidationPipe(syncRoomSchema)) input: SyncRoomRequest
+  ) {
+    return ok(request, await this.roomSync.syncRoom(request.author.id, workId, '', roomId, input));
   }
 
   // ── 推衍 ──

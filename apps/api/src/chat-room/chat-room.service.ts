@@ -145,6 +145,50 @@ export class ChatRoomService {
     return this.loadOwnedRoom(this.dataSource, authorId, workId, roomId);
   }
 
+  /**
+   * 已提交推衍步骤（M4-T3 sync-room pull 数据源）。
+   * manager 由调用方事务提供时在其事务内读，避免跨事务隔离级别不一致。
+   */
+  async getHistory(
+    manager: DataSource | EntityManager,
+    authorId: string,
+    workId: string,
+    roomId: string
+  ): Promise<Record<string, unknown>[]> {
+    return (await this.loadOwnedRoom(manager, authorId, workId, roomId)).history;
+  }
+
+  /** 房间创建时间（pull 仅回写房间创建后的步骤，规避 history 清空重建后 step_no 复用误判） */
+  async getCreatedAt(
+    manager: DataSource | EntityManager,
+    authorId: string,
+    workId: string,
+    roomId: string
+  ): Promise<Date> {
+    return (await this.loadOwnedRoom(manager, authorId, workId, roomId)).created_at;
+  }
+
+  /** 注入剧情节点上下文（M4-T3 sync-room push：对齐 chat_room.context 语义），行锁更新 */
+  async updateContext(
+    manager: DataSource | EntityManager,
+    authorId: string,
+    workId: string,
+    roomId: string,
+    contextNodeIds: string[]
+  ): Promise<void> {
+    const room = await manager
+      .getRepository(ChatRoomEntity)
+      .createQueryBuilder('room')
+      .setLock('pessimistic_write')
+      .where('room.id = :roomId', { roomId })
+      .andWhere('room.work_id = :workId', { workId })
+      .getOne();
+    if (!room) throw new NotFoundException('聊天室不存在');
+    await this.assertOwnedWork(manager, authorId, workId);
+    room.context = { ...room.context, context_node_ids: contextNodeIds };
+    await manager.getRepository(ChatRoomEntity).save(room);
+  }
+
   async deleteRoom(authorId: string, workId: string, roomId: string): Promise<void> {
     await this.dataSource.transaction(async (tx) => {
       await this.assertOwnedWork(tx, authorId, workId);
