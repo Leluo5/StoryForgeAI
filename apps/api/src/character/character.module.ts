@@ -43,7 +43,15 @@ import { CharacterPortabilityService } from './character-portability.service';
 import { CharacterArchiveScanService } from './character-scan.service';
 import { CharacterAnchorService } from './character-anchor.service';
 import { CharacterAvatarModelProvider } from './character-model.provider';
+import { CharacterMapTaskHandler } from './character-map.handler';
+import { CharacterMapService } from './character-map.service';
+import { CharacterMapController } from './character-map.controller';
+import {
+  CHARACTER_MAP_MODEL_PROVIDER,
+  MockCharacterMapModelProvider
+} from './character-map.model';
 import { AiTaskModule } from '../ai/ai-task.module';
+import { env } from '../config/env';
 
 // M3c-2 角色版图模块：角色 / 关系 / 视图 / 成长线 / 归档锚点
 @Module({
@@ -88,6 +96,11 @@ import { AiTaskModule } from '../ai/ai-task.module';
     PlotOwnerService,
     CharacterAvatarModelProvider,
     CharacterTaskHandler,
+    CharacterMapTaskHandler,
+    CharacterMapService,
+    // M4-T8 AI 建图模型 Provider：Mock 占位（与 PlotModelProvider/AiModelProvider 同模式）
+    // E2E（NODE_ENV=test）加延迟制造「发起→消费」窗口；生产/开发 0 延迟
+    { provide: CHARACTER_MAP_MODEL_PROVIDER, useFactory: () => new MockCharacterMapModelProvider({ latencyMs: env.NODE_ENV === 'test' ? 200 : 0 }) },
     AuditService
   ],
   controllers: [
@@ -98,7 +111,8 @@ import { AiTaskModule } from '../ai/ai-task.module';
     CharacterAvatarController,
     CharacterAiController,
     CharacterAnchorController,
-    CharacterPortabilityController
+    CharacterPortabilityController,
+    CharacterMapController
   ],
   exports: [
     CharacterService,
@@ -110,7 +124,9 @@ import { AiTaskModule } from '../ai/ai-task.module';
     CharacterAnchorService,
     CharacterAiService,
     CharacterAvatarService,
-    CharacterTaskHandler
+    CharacterTaskHandler,
+    CharacterMapTaskHandler,
+    CharacterMapService
   ]
 })
 export class CharacterModule {}

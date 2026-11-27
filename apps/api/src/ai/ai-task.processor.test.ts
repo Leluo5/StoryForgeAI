@@ -12,6 +12,7 @@ import { AiTaskEventBus } from './ai-task.sse';
 import { AiTaskEntity } from '../database/ai-task.entity';
 import { AiTaskEventEntity } from '../database/ai-task-event.entity';
 import { RevisionSetEntity } from '../database/revision-set.entity';
+import { CharacterMapTaskHandler } from '../character/character-map.handler';
 
 let fixture: WritingFixture;
 let processor: AiTaskProcessor;
@@ -209,5 +210,51 @@ describe('AiTaskProcessor', () => {
     const stored = await fixture.dataSource.getRepository(AiTaskEntity).findOneByOrFail({ id: task.id });
     expect(stored.status).toBe('succeeded');
     expect(mapperCalls).toBe(0); // 未重复执行
+  });
+
+  it('dispatches scope=character_map to CharacterMapTaskHandler and succeeds', async () => {
+    const service = new AiTaskService(fixture.dataSource, {
+      record: vi.fn(async () => ({ id: randomUUID() }))
+    } as never, {
+      enqueue: vi.fn(async () => undefined),
+      remove: vi.fn(async () => undefined)
+    }, new AiTaskEventBus(),
+    new AgentService(fixture.dataSource, { record: vi.fn() } as never, {} as never, {} as never, {} as never, {} as never));
+    const { task } = await service.createCharacterMapTask(fixture.authorId, fixture.workId, {
+      tool: 'character_map_generate',
+      inputSummary: { work_id: fixture.workId },
+      idempotencyKey: `cmap-${randomUUID()}`
+    });
+    const stored = await fixture.dataSource.getRepository(AiTaskEntity).findOneByOrFail({ id: task.id });
+    expect(stored.scope).toBe('character_map');
+
+    const mapHandler = {
+      handle: vi.fn(async () => ({ relations_created: 2 }))
+    } as unknown as CharacterMapTaskHandler;
+    processor = new AiTaskProcessor(
+      fixture.dataSource,
+      { record: vi.fn(async () => ({ id: randomUUID() })) } as never,
+      new MockAiModelProvider(),
+      makeMapper(),
+      new AiTaskEventBus(),
+      undefined,
+      undefined,
+      undefined, // characterHandler
+      mapHandler, // characterMapHandler（第 9 参数）
+      undefined,
+      undefined
+    );
+
+    await processor.process(makeJob(stored.id, 0));
+
+    expect(mapHandler.handle).toHaveBeenCalledWith(expect.objectContaining({
+      taskId: stored.id,
+      authorId: fixture.authorId,
+      workId: fixture.workId,
+      tool: 'character_map_generate'
+    }));
+    const done = await fixture.dataSource.getRepository(AiTaskEntity).findOneByOrFail({ id: stored.id });
+    expect(done.status).toBe('succeeded');
+    expect(mapperCalls).toBe(0); // 建图不产生 revision_set
   });
 });

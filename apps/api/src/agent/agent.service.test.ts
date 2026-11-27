@@ -238,14 +238,15 @@ describe('AgentService', () => {
 
   // ── M3b-B4 listTools / updateTool ──
 
-  it('lists all seeded tools (9) with bound agent summary', async () => {
+  it('lists all seeded tools (10) with bound agent summary', async () => {
     const { tools } = await service.listTools(fixture.authorId);
-    expect(tools).toHaveLength(9);
+    expect(tools).toHaveLength(10);
     const ids = tools.map((t) => t.tool_id).sort();
     expect(ids).toEqual([
       'character_avatar_generate',
       'character_extract',
       'character_growth_extract',
+      'character_map_generate',
       'continue',
       'expand',
       'plot_derivation',

@@ -267,6 +267,71 @@ export class AiTaskService {
   }
 
   /**
+   * AI 建图任务（M4-T8）：scope='character_map'，无章节，基准版本 0。
+   * 输入 = 已入库角色（由 handler 读取），LLM 只生成关系边写入 character_relation。
+   * 工具未启用/不存在 → 409 AI_TOOL_DISABLED；幂等键命中直接返回既有任务。
+   */
+  createCharacterMapTask(
+    authorId: string,
+    workId: string,
+    input: { tool: string; inputSummary: Record<string, unknown>; idempotencyKey: string }
+  ): Promise<{ task: AiTask; created: boolean }> {
+    return this.dataSource.transaction(async (manager) => {
+      const work = await manager
+        .getRepository(WorkEntity)
+        .findOneBy({ id: workId, author_id: authorId });
+      if (!work) throw new NotFoundException('作品不存在');
+
+      let agentId: string | null = null;
+      try {
+        const resolved = await this.agentService.resolveToolForTask(input.tool);
+        agentId = resolved.agentId;
+      } catch {
+        throw new ConflictException({ code: 'AI_TOOL_DISABLED', tool: input.tool });
+      }
+      const defaultAgent = await this.agentService.ensureDefaultAgent(authorId);
+
+      const existing = await manager
+        .getRepository(AiTaskEntity)
+        .findOneBy({ idempotency_key: input.idempotencyKey });
+      if (existing) return { task: existing, created: false };
+
+      const task = manager.getRepository(AiTaskEntity).create();
+      task.id = randomUUID();
+      task.idempotency_key = input.idempotencyKey;
+      task.work_id = workId;
+      task.chapter_id = null;
+      task.scope = 'character_map';
+      task.tool = input.tool;
+      task.agent_id = agentId ?? defaultAgent.id;
+      task.input_summary = input.inputSummary;
+      task.base_version = 0;
+      task.status = 'queued';
+      task.event_seq = 0;
+      task.result_revision_set_id = null;
+      task.error = null;
+      task.attempts = 0;
+      task.created_by = authorId;
+      await manager.save(task);
+
+      await appendEvent(manager, task, this.eventBus, 'queued', {
+        tool: task.tool,
+        scope: 'character_map'
+      });
+
+      await this.auditService.record(authorId, 'ai_task_create', 'ai_task', task.id, {
+        tool: task.tool,
+        scope: 'character_map'
+      }, workId);
+
+      return { task, created: true };
+    }).then(async (result) => {
+      if (result.created) await this.queue.enqueue(result.task.id).catch(() => undefined);
+      return { task: toAiTask(result.task), created: result.created };
+    });
+  }
+
+  /**
    * 工作流运行任务（M4-T7）：scope='workflow_run'，无章节、基准版本 0。
    * 工作流运行通道由 ai_workflows.platform 决定（不经 ai_tools 权威校验），
    * 执行 Agent 回退作者默认 Agent；工作流无作品归属时 work_id 为空。

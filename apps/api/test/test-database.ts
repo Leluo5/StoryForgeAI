@@ -132,7 +132,8 @@ export async function clearAuthTables(dataSource: DataSource): Promise<void> {
       (gen_random_uuid(), 'plot_generate', '剧情结构生成', '从大纲或正文生成剧情树草稿', true),
       (gen_random_uuid(), 'character_extract', '角色关系抽取', '从章节或作品文本中抽取角色与关系候选', true),
       (gen_random_uuid(), 'character_growth_extract', '成长事件抽取', '从章节或作品文本中抽取角色成长事件候选', true),
-      (gen_random_uuid(), 'character_avatar_generate', '角色头像生成', '根据角色档案生成头像资产', true)
+      (gen_random_uuid(), 'character_avatar_generate', '角色头像生成', '根据角色档案生成头像资产', true),
+      (gen_random_uuid(), 'character_map_generate', 'AI建图', '基于已入库角色生成关系边', true)
     ON CONFLICT (tool_id) DO NOTHING
   `);
 }

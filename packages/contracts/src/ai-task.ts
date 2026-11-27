@@ -15,7 +15,8 @@ export const aiTaskPersistedEventTypeSchema = z.enum(['queued', 'running', 'prog
 export const aiToolSchema = z.string().min(1).max(40);
 // 任务作用域：chapter（章节正文修订）/ plot（剧情推衍与结构生成）
 // character（角色版图生成）/ role_profile（F11 角色资料）/ workflow_run（M4-T7 工作流运行）
-export const aiTaskScopeSchema = z.enum(['chapter', 'plot', 'character', 'role_profile', 'workflow_run']);
+// character_map（M4-T8 AI 建图：仅基于已入库角色生成关系边）
+export const aiTaskScopeSchema = z.enum(['chapter', 'plot', 'character', 'role_profile', 'workflow_run', 'character_map']);
 
 export type AiTaskStatus = z.infer<typeof aiTaskStatusSchema>;
 export type AiTaskEventType = z.infer<typeof aiTaskEventTypeSchema>;

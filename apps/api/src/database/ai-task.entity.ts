@@ -11,8 +11,8 @@ export class AiTaskEntity {
   @Column({ type: 'uuid', nullable: true }) work_id!: string | null;
   // 章节任务必填；剧情推衍任务（scope='plot'）与工作流运行任务（scope='workflow_run'）为空
   @Column({ type: 'uuid', nullable: true }) chapter_id!: string | null;
-  // 任务作用域：chapter（章节正文修订）/ plot（剧情推衍与结构生成）/ character（角色版图）/ role_profile（F11 角色资料生成）/ workflow_run（M4-T7 工作流运行）
-  @Column({ type: 'varchar', length: 16, default: 'chapter' }) scope!: 'chapter' | 'plot' | 'character' | 'role_profile' | 'workflow_run';
+  // 任务作用域：chapter（章节正文修订）/ plot（剧情推衍与结构生成）/ character（角色版图）/ role_profile（F11 角色资料生成）/ workflow_run（M4-T7 工作流运行）/ character_map（M4-T8 AI 建图）
+  @Column({ type: 'varchar', length: 16, default: 'chapter' }) scope!: 'chapter' | 'plot' | 'character' | 'role_profile' | 'workflow_run' | 'character_map';
   // F11 任务实际执行通道：flowise / coze（列由 1760700000000-collab-base 迁移建立，历史任务为 NULL）
   @Column({ type: 'varchar', length: 16, nullable: true }) channel!: string | null;
   // 工具标识（如 continue）
