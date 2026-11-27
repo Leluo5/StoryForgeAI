@@ -104,6 +104,31 @@ describe('CozeImportClient (F1)', () => {
     expect(String(url)).toBe('https://api.coze.example.com/v1/datasets?page=1&size=100');
   });
 
+  // M4-T10 · Coze 工作流列表迁移（旧 coze_client.get_workflow_list → GET /v1/workflows）
+  it('listWorkflows GETs /v1/workflows with pagination & Bearer', async () => {
+    fetchMock.mockResolvedValueOnce(
+      okJson({ has_more: false, items: [{ workflow_id: 'w1', workflow_name: '主线生成' }] })
+    );
+    const client = new CozeImportClient(baseEnv, undefined);
+    const workflows = await client.get_workflows('author-1', 'pat-req', 'ws-1');
+
+    expect(workflows).toEqual([{ workflow_id: 'w1', workflow_name: '主线生成' }]);
+    const [url, init] = fetchMock.mock.calls[0]!;
+    expect(String(url)).toBe(
+      'https://api.coze.example.com/v1/workflows?page_num=1&page_size=100&workspace_id=ws-1'
+    );
+    expect((init as RequestInit).method).toBe('GET');
+    expect((init as RequestInit).headers).toMatchObject({ Authorization: 'Bearer pat-req' });
+  });
+
+  it('listWorkflows omits workspace_id when not given', async () => {
+    fetchMock.mockResolvedValueOnce(okJson({ has_more: false, items: [] }));
+    const client = new CozeImportClient(baseEnv, undefined);
+    await client.get_workflows('author-1', 'pat');
+    const [url] = fetchMock.mock.calls[0]!;
+    expect(String(url)).toBe('https://api.coze.example.com/v1/workflows?page_num=1&page_size=100');
+  });
+
   it('maps non-zero code to COLLAB_UPSTREAM_FAILED', async () => {
     fetchMock.mockResolvedValueOnce(okJson({ bot_list: [] }, 4200, 'bad token'));
     const client = new CozeImportClient(baseEnv, undefined);

@@ -1,9 +1,0 @@
-# modules/knowledge_base —— 知识库模块（F5）
-# 知识库管理（F5，含大纲自动提取）。目标架构见 docs/02-技术与架构/知识库模块拆分说明.md。
-# 边界：本模块不 import 小说创作模块任何符号；知识条目可注入角色上下文（只读）。
-
-from modules.knowledge_base.knowledge_store import KnowledgeStore
-from modules.knowledge_base.knowledge_parser import KnowledgeParser
-from modules.knowledge_base.knowledge_linker import KnowledgeLinker
-
-__all__ = ["KnowledgeStore", "KnowledgeParser", "KnowledgeLinker"]

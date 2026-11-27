@@ -88,6 +88,8 @@ export async function dropWritingAndAuthTables(dataSource: DataSource): Promise<
   // M4-T5 版本历史表（agent_version 引用 ai_agents，必须先删）
   await dataSource.query('DROP TABLE IF EXISTS agent_version CASCADE');
   await dataSource.query('DROP TABLE IF EXISTS ai_agents CASCADE');
+  // M4-T11 旧数据 ID 映射表（独立表，无引用者，任意顺序）
+  await dataSource.query('DROP TABLE IF EXISTS legacy_id_map CASCADE');
   // M3a AI 创作基座表（先删引用表，按 FK 依赖倒序）
   await dataSource.query('DROP TABLE IF EXISTS ai_task_events CASCADE');
   await dataSource.query('DROP TABLE IF EXISTS ai_tasks CASCADE');

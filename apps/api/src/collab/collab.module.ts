@@ -8,6 +8,7 @@ import { RoleProfileWritebackEntity } from '../database/role-profile-writeback.e
 import { RoleProfileWritebackFieldEntity } from '../database/role-profile-writeback-field.entity';
 import { AgentArchiveOutboxEntity } from '../database/agent-archive-outbox.entity';
 import { KnowledgeEntryEntity } from '../database/knowledge-entry.entity';
+import { WorkflowEntity } from '../database/workflow.entity';
 import { AuthModule } from '../auth/auth.module';
 import { AiTaskModule } from '../ai/ai-task.module';
 import { SiteConfigModule } from '../site-config/site-config.module';
@@ -67,7 +68,8 @@ export class CollabChannelBootstrap implements OnModuleInit {
       RoleProfileWritebackEntity,
       RoleProfileWritebackFieldEntity,
       AgentArchiveOutboxEntity,
-      KnowledgeEntryEntity
+      KnowledgeEntryEntity,
+      WorkflowEntity
     ]),
     AuthModule,
     forwardRef(() => AiTaskModule),

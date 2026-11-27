@@ -2,13 +2,13 @@ import { z } from 'zod';
 
 // ─────────────────────────────────────────────────────────────────────────
 // F1 · Coze 资源拉取与批量导入契约
-// 旧架构（Python）F1：从 Coze 拉取 bot/dataset 列表并批量导入。
+// 旧架构（Python）F1：从 Coze 拉取 bot/dataset/workflow 列表并批量导入。
 // 新架构落点：Coze 智能体 → AgentEntity（platform='coze'），
-//             Coze 知识库 → KnowledgeEntryEntity（origin='coze_import'）。
-// Coze 工作流本次不做（工作流模块独立，留待后续）。
+//             Coze 知识库 → KnowledgeEntryEntity（origin='coze_import'），
+//             Coze 工作流 → WorkflowEntity（platform='coze'，source='coze_import'，M4-T10）。
 // ─────────────────────────────────────────────────────────────────────────
 
-export const cozeResourceTypeSchema = z.enum(['bot', 'dataset']);
+export const cozeResourceTypeSchema = z.enum(['bot', 'dataset', 'workflow']);
 export type CozeResourceType = z.infer<typeof cozeResourceTypeSchema>;
 
 // 拉取返回的单个资源（列表项，不含正文）

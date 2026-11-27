@@ -36,9 +36,20 @@ export interface CozeDatasetListItem {
   [key: string]: unknown;
 }
 
+// 资源列表项原始返回（workflow，M4-T10：旧 coze_client.get_workflow_list）
+export interface CozeWorkflowListItem {
+  workflow_id?: string;
+  workflow_name?: string;
+  description?: string;
+  icon_url?: string;
+  created_at?: string;
+  updated_at?: string;
+  [key: string]: unknown;
+}
+
 /**
  * F1 Coze 资源拉取客户端。
- * 能力：listBots / getBotInfo / listDatasets / testConnection。
+ * 能力：listBots / getBotInfo / listDatasets / listWorkflows / testConnection / runWorkflow。
  * 与 CozeChannel 同属 collab/，复用其凭据解析模式：
  *   优先级 = 请求体显式 pat_token > site_config 平台凭据 > env.COZE_PAT
  *   基础 URL = site_config.base_url > env.COZE_API_BASE > 默认 https://api.coze.cn
@@ -103,6 +114,19 @@ export class CozeImportClient {
     );
     this.ensureOk(data);
     return data.data?.dataset_list ?? [];
+  }
+
+  /** 拉取 workflow 列表（GET /v1/workflows，M4-T10；方法名 get_workflows 对齐任务规划完成标准） */
+  async get_workflows(authorId: string, pat: string, workspaceId?: string): Promise<CozeWorkflowListItem[]> {
+    const { base, pat: resolved } = await this.resolve(authorId, pat);
+    const params = new URLSearchParams({ page_num: '1', page_size: '100' });
+    if (workspaceId) params.set('workspace_id', workspaceId);
+    const data = await this.get<CozeV1Response<{ items?: CozeWorkflowListItem[] }>>(
+      `${base}/v1/workflows?${params.toString()}`,
+      resolved
+    );
+    this.ensureOk(data);
+    return data.data?.items ?? [];
   }
 
   /** 测试连接：调 listBots 首页判 code===0 */

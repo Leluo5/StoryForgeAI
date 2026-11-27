@@ -91,6 +91,8 @@ import { AgentVersionTable1761300000000 } from './migrations/1761300000000-agent
 import { WorkflowRunScope1761400000000 } from './migrations/1761400000000-workflow-run-scope';
 import { CharacterMapScope1761500000000 } from './migrations/1761500000000-character-map-scope';
 import { CharacterMapTool1761500001000 } from './migrations/1761500001000-character-map-tool';
+import { LegacyIdMapEntity } from './legacy-id-map.entity';
+import { LegacyIdMap1761600000000 } from './migrations/1761600000000-legacy-id-map';
 
 export function createDataSource(databaseUrl: string = env.DATABASE_URL): DataSource {
   return new DataSource({
@@ -156,7 +158,8 @@ export function createDataSource(databaseUrl: string = env.DATABASE_URL): DataSo
       SiteConfigEntity,
       ChatRoomEntity,
       ChatRoomEventEntity,
-      AgentVersionEntity
+      AgentVersionEntity,
+      LegacyIdMapEntity
     ],
     migrations: [
       AuthBase1736899200000,
@@ -188,7 +191,8 @@ export function createDataSource(databaseUrl: string = env.DATABASE_URL): DataSo
       AgentVersionTable1761300000000,
       WorkflowRunScope1761400000000,
       CharacterMapScope1761500000000,
-      CharacterMapTool1761500001000
+      CharacterMapTool1761500001000,
+      LegacyIdMap1761600000000
     ],
     migrationsTableName: 'migrations',
     synchronize: false,

@@ -5,7 +5,7 @@ import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 // 本地全量/分阶段执行需要 .env；报告聚合模式只读证据文件，不依赖 node_modules。
-// CI 的 legacy 作业不安装 Node 依赖，因此 .env 加载失败时降级为使用进程环境变量。
+// 旧 Python 链路（Flask / pytest / legacy 作业）已于 M4-T14 归零；CI 门禁现为纯 Node 质量链。
 if (process.env.M1_REPORT_ONLY !== '1') {
   try {
     await import('dotenv/config');
@@ -65,9 +65,6 @@ const allChecks = [
   { id: 'docker', label: 'PostgreSQL 16 测试服务', command: 'docker', args: ['compose', '-f', 'infra/docker-compose.yml', 'up', '-d', 'postgres', '--wait'] },
   { id: 'quality', label: '静态质量门禁（lint / typecheck / build）', command: pnpm, args: ['run', 'quality'] },
   { id: 'unit-test', label: '单元与 API E2E 测试', command: pnpm, args: ['run', 'test'] },
-  { id: 'compliance', label: '四类合规检查', command: 'python', args: ['scripts/run_checks.py', '--path', '.'] },
-  { id: 'legacy-pytest', label: '旧 Python 测试', command: 'python', args: ['-m', 'pytest', '-q'] },
-  { id: 'legacy-compile', label: '旧 Python 语法编译', command: 'python', args: ['-m', 'compileall', '-q', '.'] },
   { id: 'migration-fresh', label: '测试库清表与完整显式迁移', command: pnpm, args: ['--filter', '@storyforge/api', 'test:prepare'], env: undefined },
   { id: 'migration-second', label: '显式迁移幂等重跑', command: pnpm, args: ['--filter', '@storyforge/api', 'migration:run'], env: undefined },
   { id: 'knowledge-migration', label: 'M3c-3 知识库迁移双跑（空库 + 存量库 up/down + 结构断言）', command: pnpm, args: ['--filter', '@storyforge/api', 'exec', 'tsx', 'src/database/verify-knowledge-migrations.ts'], env: undefined },
@@ -230,8 +227,6 @@ async function renderReport() {
   const databaseFailureLabel = !databaseFailure ? '未执行'
     : databaseFailurePassed ? '通过；无半提交，重试和幂等重放均为一个版本/一条变更' : '未通过';
   const blocked = results.find((result) => result.exitCode !== 0);
-  const pythonResult = results.find((result) => result.id === 'legacy-pytest');
-  const pythonSummary = pythonResult?.output.trim().split(/\r?\n/).filter(Boolean).at(-1) ?? '未执行到测试汇总';
 
   const report = [
     '# M1 写作基座验收报告',
@@ -246,7 +241,6 @@ async function renderReport() {
     `| Git 验收基线（Task 14 提交前 HEAD） | \`${revision}\` |`,
     `| Node.js / pnpm | \`${process.version}\` / \`${pnpmVersion}\` |`,
     `| PostgreSQL | \`${postgresVersion}\` |`,
-    `| 旧 Python 测试汇总 | ${cell(pythonSummary)} |`,
     `| 重复显式迁移 | ${repeatedMigrationPassed ? 'No migrations are pending' : '未确认'} |`,
     '',
     '## 命令结果',
@@ -282,7 +276,7 @@ async function renderReport() {
     '',
     '- ProseMirror JSON 是唯一正文；Markdown 经共享白名单转换；服务端在行锁事务内按 change_id 幂等保存。',
     '- 本地 WAL 只确认连续边界；409 不静默覆盖；租约为 15 秒 TTL、5 秒 heartbeat，并使用 fencing token。',
-    '- 旧 Flask、JSON 业务数据和旧 UI 未修改、未迁移、未双写；NestJS 仅新增 M0/M1 PostgreSQL 表。',
+    '- 旧 Flask、JSON 业务数据和旧 UI 已迁移归零；唯一写入方为 NestJS（PG），旧 Python 链路已下线。',
     '- M2+ 修订、评论、AI、剧情、知识库和旧数据切换均不属于本次通过范围。',
     ''
   ].join('\n');

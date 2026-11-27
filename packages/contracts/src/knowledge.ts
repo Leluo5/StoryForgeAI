@@ -440,6 +440,74 @@ export const knowledgeSummaryQuerySchema = z
   .strict();
 export type KnowledgeSummaryQuery = z.infer<typeof knowledgeSummaryQuerySchema>;
 
+// ───────────────────────────── M4-T9 知识库旧端点迁移：detect-type / similar / markdown-render ─────────────────────────────
+
+// 类型判定（旧 POST /knowledge/detect-type）：raw_content 必填，manual 可显式指定类型
+export const knowledgeDetectTypeRequestSchema = z
+  .object({
+    raw_content: z.string().min(1).max(KNOWLEDGE_TEXT_MAX_CHARS),
+    manual: knowledgeEntryTypeSchema.optional(),
+    title: z.string().max(KNOWLEDGE_TITLE_MAX).optional(),
+    file_name: z.string().max(200).optional()
+  })
+  .strict();
+export type KnowledgeDetectTypeRequest = z.infer<typeof knowledgeDetectTypeRequestSchema>;
+
+// 类型判定响应（复用 classify.ts 的 ClassifyResult 形状：type/confidence/reasons/warnings）
+export const knowledgeDetectTypeResponseSchema = z
+  .object({
+    type: knowledgeEntryTypeSchema,
+    confidence: z.enum(['high', 'medium', 'low']),
+    reasons: z.array(z.string()),
+    warnings: z.array(z.string())
+  })
+  .strict();
+export type KnowledgeDetectTypeResponse = z.infer<typeof knowledgeDetectTypeResponseSchema>;
+
+// 相似检索查询（旧 GET /entries/:id/similar）：entry_id 必填，limit 可调
+export const knowledgeSimilarQuerySchema = z
+  .object({
+    limit: z.coerce.number().int().min(1).max(50).default(10)
+  })
+  .strict();
+export type KnowledgeSimilarQuery = z.infer<typeof knowledgeSimilarQuerySchema>;
+
+// 相似条目项
+export const knowledgeSimilarItemSchema = z
+  .object({
+    entry_id: id,
+    title: z.string().max(KNOWLEDGE_TITLE_MAX),
+    entry_type: knowledgeEntryTypeSchema,
+    excerpt: z.string().max(KNOWLEDGE_EXCERPT_MAX),
+    score: z.number()
+  })
+  .strict();
+export type KnowledgeSimilarItem = z.infer<typeof knowledgeSimilarItemSchema>;
+
+// 相似检索响应
+export const knowledgeSimilarResponseSchema = z
+  .object({
+    items: z.array(knowledgeSimilarItemSchema)
+  })
+  .strict();
+export type KnowledgeSimilarResponse = z.infer<typeof knowledgeSimilarResponseSchema>;
+
+// Markdown 渲染（旧 POST /markdown/render）：text 必填，返回 html（正文预览，纯渲染不落库）
+export const knowledgeMarkdownRenderRequestSchema = z
+  .object({
+    text: z.string().max(1_000_000)
+  })
+  .strict();
+export type KnowledgeMarkdownRenderRequest = z.infer<typeof knowledgeMarkdownRenderRequestSchema>;
+
+// Markdown 渲染响应
+export const knowledgeMarkdownRenderResponseSchema = z
+  .object({
+    html: z.string()
+  })
+  .strict();
+export type KnowledgeMarkdownRenderResponse = z.infer<typeof knowledgeMarkdownRenderResponseSchema>;
+
 // ───────────────────────────── 错误码约定（§4.8，T04） ─────────────────────────────
 
 export const knowledgeErrorCode = {

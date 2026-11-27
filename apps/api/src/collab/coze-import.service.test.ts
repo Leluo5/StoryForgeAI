@@ -6,6 +6,7 @@ import { CozeImportService } from './coze-import.service';
 import { CozeImportClient } from './coze-import.client';
 import { KnowledgeEntryEntity } from '../database/knowledge-entry.entity';
 import { AgentEntity } from '../database/agent.entity';
+import { WorkflowEntity } from '../database/workflow.entity';
 
 // F1 CozeImportService：分流 / 去重 / 错误映射 / 落库字段（真库 + 替身 client/agentService）
 
@@ -38,7 +39,8 @@ describe('CozeImportService.listResources (F1)', () => {
   it('合并 bot + dataset 并归一化为 CozeResourceItem', async () => {
     fetchMock
       .mockResolvedValueOnce(okJson({ bot_list: [{ bot_id: 'b1', name: '博文', description: 'desc', icon_url: 'https://i' }] }))
-      .mockResolvedValueOnce(okJson({ dataset_list: [{ dataset_id: 'd1', name: '知识' }] }));
+      .mockResolvedValueOnce(okJson({ dataset_list: [{ dataset_id: 'd1', name: '知识' }] }))
+      .mockResolvedValueOnce(okJson({ has_more: false, items: [] }));
 
     const service = makeService(fixture.dataSource, {});
     const res = await service.listResources(fixture.authorId, 'pat');
@@ -56,10 +58,25 @@ describe('CozeImportService.listResources (F1)', () => {
   it('过滤缺失 id 的资源', async () => {
     fetchMock
       .mockResolvedValueOnce(okJson({ bot_list: [{ name: '无 id' }] }))
-      .mockResolvedValueOnce(okJson({ dataset_list: [] }));
+      .mockResolvedValueOnce(okJson({ dataset_list: [] }))
+      .mockResolvedValueOnce(okJson({ has_more: false, items: [] }));
     const service = makeService(fixture.dataSource, {});
     const res = await service.listResources(fixture.authorId, 'pat');
     expect(res.resources).toHaveLength(0);
+  });
+
+  it('合并 workflow（M4-T10）：GET /v1/workflows 归一化为 type=workflow', async () => {
+    fetchMock
+      .mockResolvedValueOnce(okJson({ bot_list: [] }))
+      .mockResolvedValueOnce(okJson({ dataset_list: [] }))
+      .mockResolvedValueOnce(okJson({ has_more: false, items: [{ workflow_id: 'w1', workflow_name: '主线生成', description: 'd', icon_url: 'https://i' }] }));
+    const service = makeService(fixture.dataSource, {});
+    const res = await service.listResources(fixture.authorId, 'pat');
+    const wf = res.resources.find((r) => r.id === 'w1')!;
+    expect(wf.type).toBe('workflow');
+    expect(wf.name).toBe('主线生成');
+    expect(wf.description).toBe('d');
+    expect(wf.icon_url).toBe('https://i');
   });
 });
 
@@ -182,5 +199,77 @@ describe('CozeImportService.importResources (F1)', () => {
     expect(input.platform).toBe('coze');
     expect(input.source).toBe('migration');
     expect(input.kind).toBe('legacy');
+  });
+
+  it('workflow 项走 importWorkflows（M4-T10）', async () => {
+    fetchMock.mockResolvedValueOnce(okJson({ has_more: false, items: [{ workflow_id: 'w1', workflow_name: '主线生成' }] }));
+    const service = makeService(fixture.dataSource, {});
+    const res = await service.importResources(fixture.authorId, {
+      pat_token: 'pat',
+      items: [{ id: 'w1', type: 'workflow' }]
+    });
+    expect(res.total).toBe(1);
+    expect(res.imported).toBe(1);
+    expect(res.results[0]).toMatchObject({ success: true, id: 'w1', name: '主线生成', type: 'workflow' });
+  });
+});
+
+describe('CozeImportService.importWorkflows (M4-T10)', () => {
+  it('成功：以 platform=coze/source=coze_import 落库 WorkflowEntity', async () => {
+    fetchMock.mockResolvedValueOnce(
+      okJson({ has_more: false, items: [{ workflow_id: 'w1', workflow_name: '主线生成', description: '生成主线', icon_url: 'https://i' }] })
+    );
+    const service = makeService(fixture.dataSource, {});
+    const results = await service.importWorkflows(fixture.authorId, 'pat', ['w1']);
+
+    expect(results).toEqual([{ success: true, id: 'w1', name: '主线生成', type: 'workflow', error: null }]);
+    const entity = await fixture.dataSource.getRepository(WorkflowEntity).findOneBy({ author_id: fixture.authorId });
+    expect(entity?.platform).toBe('coze');
+    expect(entity?.source).toBe('coze_import');
+    expect(entity?.status).toBe('active');
+    expect(entity?.name).toBe('主线生成');
+    expect(entity?.description).toBe('生成主线');
+    expect(entity?.platform_config).toMatchObject({ workflow_id: 'w1', icon_url: 'https://i' });
+  });
+
+  it('相同 workflow_id 已存在 → error=duplicate 不落库（幂等）', async () => {
+    fetchMock.mockResolvedValueOnce(
+      okJson({ has_more: false, items: [{ workflow_id: 'w1', workflow_name: '主线生成' }] })
+    );
+    const service = makeService(fixture.dataSource, {});
+    const first = await service.importWorkflows(fixture.authorId, 'pat', ['w1']);
+    expect(first[0]!.success).toBe(true);
+
+    fetchMock.mockResolvedValueOnce(
+      okJson({ has_more: false, items: [{ workflow_id: 'w1', workflow_name: '主线生成' }] })
+    );
+    const second = await service.importWorkflows(fixture.authorId, 'pat', ['w1']);
+    expect(second[0]).toMatchObject({ success: false, error: 'duplicate' });
+
+    const count = await fixture.dataSource.getRepository(WorkflowEntity).countBy({ author_id: fixture.authorId });
+    expect(count).toBe(1);
+  });
+
+  it('找不到 workflow → error=not_found', async () => {
+    fetchMock.mockResolvedValueOnce(okJson({ has_more: false, items: [] }));
+    const service = makeService(fixture.dataSource, {});
+    const results = await service.importWorkflows(fixture.authorId, 'pat', ['nope']);
+    expect(results[0]).toMatchObject({ success: false, error: 'not_found' });
+  });
+
+  it('同作者不同 work_id 也去重（全局工作流去重按作者级）', async () => {
+    // work_id 归属：workflow 可挂作品，但 Coze workflow_id 去重按作者级（跨作品不重复导入）
+    fetchMock.mockResolvedValueOnce(
+      okJson({ has_more: false, items: [{ workflow_id: 'w1', workflow_name: '主线生成' }] })
+    );
+    const service = makeService(fixture.dataSource, {});
+    await service.importWorkflows(fixture.authorId, 'pat', ['w1']);
+
+    fetchMock.mockResolvedValueOnce(
+      okJson({ has_more: false, items: [{ workflow_id: 'w1', workflow_name: '主线生成' }] })
+    );
+    // 换 workId 再次导入 → 仍去重
+    const second = await service.importWorkflows(fixture.authorId, 'pat', ['w1'], fixture.workId);
+    expect(second[0]).toMatchObject({ success: false, error: 'duplicate' });
   });
 });

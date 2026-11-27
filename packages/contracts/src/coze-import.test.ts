@@ -46,8 +46,12 @@ describe('F1 coze-import contracts', () => {
       expect(parsed.icon_url).toBeNull();
     });
 
+    it('accepts workflow type (M4-T10 新增)', () => {
+      expect(cozeResourceTypeSchema.safeParse('workflow').success).toBe(true);
+    });
+
     it('rejects unknown type', () => {
-      expect(cozeResourceTypeSchema.safeParse('workflow').success).toBe(false);
+      expect(cozeResourceTypeSchema.safeParse('unknown_type').success).toBe(false);
     });
 
     it('strictly rejects extra keys', () => {

@@ -25,7 +25,6 @@ jobs:
     timeout-minutes: 5
     outputs:
       docs_only: ${{ steps.flags.outputs.docs_only }}
-      legacy: ${{ steps.flags.outputs.legacy }}
       e2e: ${{ steps.flags.outputs.e2e }}
       full: ${{ steps.flags.outputs.full }}
     steps:
@@ -39,7 +38,6 @@ jobs:
             code:
               - 'apps/**'
               - 'packages/**'
-              - 'modules/**'
               - 'tests/**'
               - 'scripts/**'
               - 'config/**'
@@ -48,23 +46,12 @@ jobs:
               - 'pnpm-lock.yaml'
               - 'pnpm-workspace.yaml'
               - 'playwright.config.ts'
-              - 'requirements.txt'
               - '.github/**'
-              - '**/*.py'
               - '**/*.ts'
               - '**/*.tsx'
               - '**/*.js'
               - '**/*.mjs'
               - '**/*.json'
-            legacy:
-              - 'modules/**'
-              - 'config/**'
-              - 'scripts/**'
-              - 'tests/**'
-              - 'app.py'
-              - '**/*.py'
-              - 'requirements.txt'
-              - '.github/**'
             e2e:
               - 'apps/**'
               - 'packages/**'
@@ -79,11 +66,9 @@ jobs:
         run: |
           if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
             code='true'
-            legacy='true'
             e2e='true'
           else
             code='${{ steps.filter.outputs.code }}'
-            legacy='${{ steps.filter.outputs.legacy }}'
             e2e='${{ steps.filter.outputs.e2e }}'
           fi
           # 无代码变更（纯文档/图片）时跳过全部重活
@@ -92,12 +77,11 @@ jobs:
           else
             echo "docs_only=true" >> "$GITHUB_OUTPUT"
           fi
-          echo "legacy=$legacy" >> "$GITHUB_OUTPUT"
           echo "e2e=$e2e" >> "$GITHUB_OUTPUT"
           # 合入主干（push / 手动触发）always 全量验收；PR 在模块全覆盖时才跑全量验收报告
           if [ "$code" = "true" ] && [ "${{ github.event_name }}" != "pull_request" ]; then
             echo "full=true" >> "$GITHUB_OUTPUT"
-          elif [ "$code" = "true" ] && [ "$legacy" = "true" ] && [ "$e2e" = "true" ]; then
+          elif [ "$code" = "true" ] && [ "$e2e" = "true" ]; then
             echo "full=true" >> "$GITHUB_OUTPUT"
           else
             echo "full=false" >> "$GITHUB_OUTPUT"
@@ -200,44 +184,6 @@ jobs:
           retention-days: 7
           if-no-files-found: ignore
 
-  # 旧体系 Python 门禁：四类合规检查 + pytest + 语法编译，与前端/浏览器任务完全并行
-  legacy:
-    name: 旧体系 Python 门禁（合规 / pytest / 编译）
-    needs: changes
-    if: needs.changes.outputs.docs_only == 'false' && (needs.changes.outputs.legacy == 'true' || needs.changes.outputs.full == 'true')
-    runs-on: ubuntu-24.04
-    timeout-minutes: 20
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-      - name: Setup Node.js and pnpm
-        uses: ./.github/actions/setup-node-pnpm
-        with:
-          node-version: "22.16.0"
-      - name: Setup Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: "3.9"
-          cache: pip
-          cache-dependency-path: requirements.txt
-      - name: Install Python dependencies
-        run: |
-          python -m pip install --upgrade pip
-          pip install -r requirements.txt
-          pip install pytest
-      - name: Run legacy python gates
-        run: pnpm verify:m1
-        env:
-          M1_STAGES: compliance,legacy-pytest,legacy-compile
-      - name: Upload evidence
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: m1-evidence-legacy
-          path: test-results/m1-evidence/
-          retention-days: 7
-          if-no-files-found: ignore
-
   # 浏览器 E2E 验收：独立作业并行执行，Chromium 走缓存，避免每次重装 130MB 浏览器
   e2e:
     name: 浏览器 E2E 验收（Playwright）
@@ -319,7 +265,7 @@ jobs:
   # 触发规则：只在主干合并（push）或手动触发时生成；PR 阶段不运行 m1，避免精简模式下出现 skipped 的必需检查
   m1:
     name: M0–M3c 全链路验收（含浏览器 E2E）
-    needs: [changes, quality, test, legacy, e2e]
+    needs: [changes, quality, test, e2e]
     if: always() && github.event_name != 'pull_request' && needs.changes.outputs.full == 'true' && !cancelled()
     runs-on: ubuntu-24.04
     timeout-minutes: 15

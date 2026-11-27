@@ -27,6 +27,7 @@ import { KnowledgeJobsController } from './jobs.controller';
 import { KnowledgeJobsSseController } from './jobs-sse.controller';
 import { KnowledgePortabilityController } from './portability.controller';
 import { KnowledgeBackupController } from './backup.controller';
+import { KnowledgeToolsController } from './knowledge-tools.controller';
 // 旧端点兼容别名（T27）
 import { KnowledgeLegacyAliasController } from './legacy-alias.controller';
 // Service
@@ -41,6 +42,7 @@ import { KnowledgeJobService } from './jobs.processor';
 import { KnowledgeJobSseService, KnowledgeJobEventBus } from './jobs.sse';
 import { KnowledgePortabilityService } from './knowledge-portability.service';
 import { KnowledgeBackupService } from './knowledge-backup.service';
+import { KnowledgeToolsService } from './knowledge-tools.service';
 import { KnowledgeStructureHandler } from './knowledge-structure.handler';
 import { KnowledgeJobWorker } from './knowledge-job.worker';
 // Provider 依赖（结构 / 嵌入 / LLM，当前均为 Mock）
@@ -109,6 +111,7 @@ const KNOWLEDGE_JOBS_QUEUE = Symbol('KNOWLEDGE_JOBS_QUEUE');
     KnowledgeJobsSseController,
     KnowledgePortabilityController,
     KnowledgeBackupController,
+    KnowledgeToolsController,
     // 旧端点兼容别名（T27）
     KnowledgeLegacyAliasController
   ],
@@ -124,6 +127,7 @@ const KNOWLEDGE_JOBS_QUEUE = Symbol('KNOWLEDGE_JOBS_QUEUE');
     KnowledgeJobSseService,
     KnowledgePortabilityService,
     KnowledgeBackupService,
+    KnowledgeToolsService,
     KnowledgeStructureHandler,
     KnowledgeJobWorker,
     KnowledgeJobEventBus,

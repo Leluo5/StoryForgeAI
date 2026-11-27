@@ -43,6 +43,10 @@ scripts/cdp_tmp/
 # 历史归档目录（不进主仓库）
 docs-archive/
 
+# 迁移前的原始数据备份（含 .master.key / sessions.json 等敏感数据，只保留文件，禁止提交）
+data.backup-*/
+legacy-data-snapshot/
+
 # Node 工作区
 node_modules/
 dist/

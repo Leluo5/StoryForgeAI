@@ -1,4 +1,4 @@
-import { Injectable, Logger, ConflictException } from '@nestjs/common';
+import { Injectable, Logger, ConflictException, Inject } from '@nestjs/common';
 import { InjectDataSource } from '@nestjs/typeorm';
 import { DataSource, IsNull } from 'typeorm';
 import { randomUUID, createHash } from 'node:crypto';
@@ -11,8 +11,14 @@ import type {
 } from '@storyforge/contracts';
 import { AgentEntity } from '../database/agent.entity';
 import { KnowledgeEntryEntity } from '../database/knowledge-entry.entity';
+import { WorkflowEntity } from '../database/workflow.entity';
 import { AgentService } from '../agent/agent.service';
-import { CozeImportClient, type CozeBotListItem, type CozeDatasetListItem } from './coze-import.client';
+import {
+  CozeImportClient,
+  type CozeBotListItem,
+  type CozeDatasetListItem,
+  type CozeWorkflowListItem
+} from './coze-import.client';
 
 // content_hash 归一化：与知识库 entries.service 保持一致
 function normalizeContentForHash(rawContent: string): string {
@@ -28,8 +34,9 @@ function normalizeTitleKey(title: string): string {
 /**
  * F1 Coze 资源拉取与批量导入服务。
  * 落点：Coze 智能体 → AgentEntity（platform='coze'，source='migration'）；
- *       Coze 知识库 → KnowledgeEntryEntity（origin='coze_import'）。
- * 逐项处理：单项失败（同名冲突/重复哈希）标记 success=false，不整批回滚。
+ *       Coze 知识库 → KnowledgeEntryEntity（origin='coze_import'）；
+ *       Coze 工作流 → WorkflowEntity（platform='coze'，source='coze_import'，M4-T10）。
+ * 逐项处理：单项失败（同名冲突/重复哈希/重复 workflow_id）标记 success=false，不整批回滚。
  */
 @Injectable()
 export class CozeImportService {
@@ -37,15 +44,16 @@ export class CozeImportService {
 
   constructor(
     @InjectDataSource() private readonly dataSource: DataSource,
-    private readonly client: CozeImportClient,
-    private readonly agentService: AgentService
+    @Inject(CozeImportClient) private readonly client: CozeImportClient,
+    @Inject(AgentService) private readonly agentService: AgentService
   ) {}
 
-  /** 拉取全部资源（bot + dataset 合并归一化） */
+  /** 拉取全部资源（bot + dataset + workflow 合并归一化，M4-T10 加 workflow） */
   async listResources(authorId: string, pat: string, workspaceId?: string): Promise<CozeListResourcesResponse> {
-    const [bots, datasets] = await Promise.all([
+    const [bots, datasets, workflows] = await Promise.all([
       this.client.listBots(authorId, pat, workspaceId),
-      this.client.listDatasets(authorId, pat)
+      this.client.listDatasets(authorId, pat),
+      this.client.get_workflows(authorId, pat, workspaceId)
     ]);
 
     const resources: CozeResourceItem[] = [
@@ -66,9 +74,33 @@ export class CozeImportService {
           description: d.description ?? '',
           icon_url: null,
           type: 'dataset'
+        })),
+      ...workflows
+        .filter((w) => w.workflow_id)
+        .map((w): CozeResourceItem => ({
+          id: w.workflow_id as string,
+          name: w.workflow_name ?? '未命名工作流',
+          description: w.description ?? '',
+          icon_url: w.icon_url ?? null,
+          type: 'workflow'
         }))
     ];
 
+    return { resources };
+  }
+
+  /** 仅拉取工作流资源（M4-T10：/admin/coze/workflows 专用，不触发 bot/dataset 的 Coze 请求） */
+  async listWorkflowResources(authorId: string, pat: string, workspaceId?: string): Promise<CozeListResourcesResponse> {
+    const workflows = await this.client.get_workflows(authorId, pat, workspaceId);
+    const resources: CozeResourceItem[] = workflows
+      .filter((w) => w.workflow_id)
+      .map((w): CozeResourceItem => ({
+        id: w.workflow_id as string,
+        name: w.workflow_name ?? '未命名工作流',
+        description: w.description ?? '',
+        icon_url: w.icon_url ?? null,
+        type: 'workflow'
+      }));
     return { resources };
   }
 
@@ -76,11 +108,13 @@ export class CozeImportService {
   async importResources(authorId: string, input: CozeImportRequest): Promise<CozeImportResponse> {
     const bots = input.items.filter((i) => i.type === 'bot');
     const datasets = input.items.filter((i) => i.type === 'dataset');
+    const workflows = input.items.filter((i) => i.type === 'workflow');
 
     const botResults = bots.length > 0 ? await this.importBots(authorId, input.pat_token, bots.map((b) => b.id), input.work_id) : [];
     const datasetResults = datasets.length > 0 ? await this.importDatasets(authorId, input.pat_token, datasets.map((d) => d.id)) : [];
+    const workflowResults = workflows.length > 0 ? await this.importWorkflows(authorId, input.pat_token, workflows.map((w) => w.id), input.work_id) : [];
 
-    const results = [...botResults, ...datasetResults];
+    const results = [...botResults, ...datasetResults, ...workflowResults];
     return {
       total: results.length,
       imported: results.filter((r) => r.success).length,
@@ -175,6 +209,60 @@ export class CozeImportService {
         results.push({ success: true, id: datasetId, name, type: 'dataset', error: null });
       } catch (error) {
         results.push({ success: false, id: datasetId, name, type: 'dataset', error: this.errorMessage(error) });
+      }
+    }
+    return results;
+  }
+
+  /** 批量导入 Coze 工作流 → WorkflowEntity（platform='coze'，source='coze_import'，按 workflow_id 幂等，M4-T10） */
+  async importWorkflows(authorId: string, pat: string, workflowIds: string[], workId?: string): Promise<CozeImportResultItem[]> {
+    // 列表按作者全量拉取（不限定 Coze workspace；导入时挂到本地作品 workId，可空）
+    const all = await this.client.get_workflows(authorId, pat);
+    const byId = new Map<string, CozeWorkflowListItem>();
+    for (const w of all) if (w.workflow_id) byId.set(w.workflow_id, w);
+
+    const results: CozeImportResultItem[] = [];
+    for (const workflowId of workflowIds) {
+      const wf = byId.get(workflowId);
+      if (!wf) {
+        results.push({ success: false, id: workflowId, name: workflowId, type: 'workflow', error: 'not_found' });
+        continue;
+      }
+      const name = wf.workflow_name?.trim() || '未命名工作流';
+      try {
+        const dup = await this.dataSource.getRepository(WorkflowEntity)
+          .createQueryBuilder('w')
+          .where('w.author_id = :authorId', { authorId })
+          .andWhere("w.platform_config->>'workflow_id' = :wfId", { wfId: workflowId })
+          .andWhere('w.archived_at IS NULL')
+          .getOne();
+        if (dup) {
+          results.push({ success: false, id: workflowId, name, type: 'workflow', error: 'duplicate' });
+          continue;
+        }
+        const repo = this.dataSource.getRepository(WorkflowEntity);
+        const entity = repo.create({
+          id: randomUUID(),
+          author_id: authorId,
+          work_id: workId ?? null,
+          name,
+          description: wf.description ?? '',
+          status: 'active',
+          platform: 'coze',
+          platform_config: {
+            workflow_id: workflowId,
+            ...(wf.icon_url ? { icon_url: wf.icon_url } : {}),
+            ...(wf.description ? { description: wf.description } : {})
+          },
+          source: 'coze_import',
+          version_no: 1,
+          versions: [],
+          archived_at: null
+        });
+        await repo.save(entity);
+        results.push({ success: true, id: workflowId, name, type: 'workflow', error: null });
+      } catch (error) {
+        results.push({ success: false, id: workflowId, name, type: 'workflow', error: this.errorMessage(error) });
       }
     }
     return results;

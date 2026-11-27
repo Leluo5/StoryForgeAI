@@ -31,9 +31,6 @@ function requiredOutput(command, args) {
 
 const checks = [
   { id: 'workspace-ci', label: '工作区 CI', command: pnpm, args: ['run', 'ci'] },
-  { id: 'compliance', label: '四类合规检查', command: 'python', args: ['scripts/run_checks.py', '--path', '.'] },
-  { id: 'legacy-pytest', label: '旧 Python 测试', command: 'python', args: ['-m', 'pytest', '-q'] },
-  { id: 'legacy-compile', label: '旧 Python 语法编译', command: 'python', args: ['-m', 'compileall', '-q', '.'] },
   { id: 'migration-first', label: '开发库迁移第一次执行', command: pnpm, args: ['--filter', '@storyforge/api', 'migration:run'] },
   { id: 'migration-second', label: '开发库迁移第二次执行', command: pnpm, args: ['--filter', '@storyforge/api', 'migration:run'] },
   { id: 'browser', label: 'Chromium 登录恢复退出', command: pnpm, args: ['test:e2e'] }
@@ -80,8 +77,6 @@ try {
 const secondMigration = results.find((result) => result.id === 'migration-second');
 const repeatedMigrationPassed = secondMigration?.exitCode === 0
   && secondMigration.output.includes('No migrations are pending');
-const pythonResult = results.find((result) => result.id === 'legacy-pytest');
-const pythonSummary = pythonResult?.output.trim().split(/\r?\n/).filter(Boolean).at(-1) ?? '未执行到测试汇总';
 const allPassed = results.length === checks.length
   && results.every((result) => result.exitCode === 0)
   && toolchainPassed
@@ -102,7 +97,6 @@ const report = [
   `| Node.js | \`${process.version}\` |`,
   `| pnpm | \`${pnpmVersion}\` |`,
   `| PostgreSQL | \`${postgresVersion}\` |`,
-  `| 旧 Python 测试汇总 | ${pythonSummary.replace(/\|/g, '\\|')} |`,
   `| 第二次显式迁移 | ${repeatedMigrationPassed ? 'No migrations are pending' : '未确认'} |`,
   '',
   '## 命令结果',
@@ -114,10 +108,9 @@ const report = [
   '## 验收结论',
   '',
   `- 工作区 Lint、类型检查、单元/e2e 测试和构建：${results.find((result) => result.id === 'workspace-ci')?.exitCode === 0 ? '通过' : '未通过'}。`,
-  `- 四类合规检查：${results.find((result) => result.id === 'compliance')?.exitCode === 0 ? '0 条违规' : '未通过'}。`,
   `- 浏览器截图与 HTML 报告：${results.find((result) => result.id === 'browser')?.exitCode === 0 ? '已生成于 test-results/playwright/ 与 playwright-report/，失败时另保留 trace' : '未通过，trace 已保留用于定位'}。`,
   '- 数据库 e2e 已断言 `synchronize=false`、显式迁移、摘要唯一约束与测试库清理。',
-  '- 旧 Flask 未修改，仍是既有小说业务数据的唯一写入方；NestJS 仅写 M0 的 authors/sessions。',
+  '- 旧 Flask 已下线，唯一写入方为 NestJS（PG）；M4-T13 切换完成。',
   ''
 ].join('\n');
 writeFileSync(reportPath, report, 'utf8');

@@ -74,6 +74,9 @@ importers:
       mammoth:
         specifier: ^1.13.0
         version: 1.13.0
+      markdown-it:
+        specifier: ^14.3.3
+        version: 14.3.3
       multer:
         specifier: ^2.5.0
         version: 2.5.0
@@ -114,6 +117,9 @@ importers:
       '@types/iconv-lite':
         specifier: ^0.0.1
         version: 0.0.1
+      '@types/markdown-it':
+        specifier: ^14.2.0
+        version: 14.2.0
       '@types/multer':
         specifier: ^2.3.0
         version: 2.3.0
